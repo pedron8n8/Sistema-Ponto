@@ -1,0 +1,75 @@
+// schema.prisma
+
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  SUPERVISOR
+  MEMBER
+}
+
+enum EntryStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id              String        @id @default(uuid())
+  email           String        @unique
+  name            String?
+  role            Role          @default(MEMBER)
+  supervisorId    String?
+  supervisor      User?         @relation("TeamHierarchy", fields: [supervisorId], references: [id])
+  subordinates    User[]        @relation("TeamHierarchy")
+  timeEntries     TimeEntry[]
+  reviewedLogs    ApprovalLog[] @relation("ReviewerAction")
+  createdAt       DateTime      @default(now())
+
+  @@index([email])
+  @@index([role])
+  @@index([supervisorId])
+}
+
+model TimeEntry {
+  id          String        @id @default(uuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id])
+  clockIn     DateTime
+  clockOut    DateTime?
+  notes       String?
+  ipAddress   String?
+  location    Json?         // { lat: number, lng: number }
+  device      String?
+  status      EntryStatus   @default(PENDING)
+  logs        ApprovalLog[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([clockIn])
+  @@index([userId, status])
+  @@index([userId, clockIn])
+}
+
+model ApprovalLog {
+  id          String    @id @default(uuid())
+  timeEntryId String
+
+  @@index([timeEntryId])
+  @@index([reviewerId])
+  @@index([timestamp])
+  timeEntry   TimeEntry @relation(fields: [timeEntryId], references: [id])
+  reviewerId  String
+  reviewer    User      @relation("ReviewerAction", fields: [reviewerId], references: [id])
+  action      String    // ex: "APPROVED", "REJECTED", "EDIT_REQUESTED"
+  comment     String?
+  timestamp   DateTime  @default(now())
+}
