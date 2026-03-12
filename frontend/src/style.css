@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --ink: #0f172a;
+  --muted: #6b7280;
+  --surface: #f5f3ef;
+  --surface-strong: #ede9e3;
+  --accent: #0f766e;
+  --accent-strong: #115e59;
+  --ring: rgba(15, 118, 110, 0.35);
+  font-family: "IBM Plex Sans", "Space Grotesk", sans-serif;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background: radial-gradient(circle at 10% 20%, #f7f6f2, #eef2f3 45%, #e8efee 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: rgba(15, 118, 110, 0.2);
+}

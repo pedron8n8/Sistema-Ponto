@@ -11,16 +11,18 @@ const prisma = require('../config/database');
 const getTeamPendingEntries = async (req, res) => {
   try {
     const supervisorId = req.user.id;
+    const isAdmin = req.user.role === 'ADMIN';
     const { status = 'PENDING', page = 1, limit = 20, userId, startDate, endDate } = req.query;
 
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
 
-    // Busca os subordinados do supervisor
+    // Se for ADMIN, pode visualizar todos os usuários não-admin
+    // Se for SUPERVISOR, visualiza apenas os subordinados
     const subordinates = await prisma.user.findMany({
       where: {
-        supervisorId: supervisorId,
+        ...(isAdmin ? { role: { not: 'ADMIN' } } : { supervisorId: supervisorId }),
       },
       select: {
         id: true,
@@ -34,6 +36,11 @@ const getTeamPendingEntries = async (req, res) => {
         message: 'Nenhum subordinado encontrado',
         entries: [],
         subordinates: [],
+        stats: {
+          PENDING: 0,
+          APPROVED: 0,
+          REJECTED: 0,
+        },
         pagination: {
           page: pageNum,
           limit: limitNum,
@@ -64,8 +71,8 @@ const getTeamPendingEntries = async (req, res) => {
       }
     }
 
-    // Verifica se o userId solicitado é subordinado deste supervisor
-    if (userId && !subordinateIds.includes(userId)) {
+    // Verifica se o userId solicitado é subordinado deste supervisor (ADMIN pode ver todos)
+    if (!isAdmin && userId && !subordinateIds.includes(userId)) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode visualizar registros de seus subordinados',
@@ -166,6 +173,7 @@ const getTeamPendingEntries = async (req, res) => {
 const approveEntry = async (req, res) => {
   try {
     const supervisorId = req.user.id;
+    const isAdmin = req.user.role === 'ADMIN';
     const { id } = req.params;
     const { comment } = req.body;
 
@@ -192,7 +200,7 @@ const approveEntry = async (req, res) => {
     }
 
     // Verifica se o registro é de um subordinado do supervisor
-    if (entry.user.supervisorId !== supervisorId) {
+    if (!isAdmin && entry.user.supervisorId !== supervisorId) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode aprovar registros de seus subordinados',
@@ -264,6 +272,7 @@ const approveEntry = async (req, res) => {
 const rejectEntry = async (req, res) => {
   try {
     const supervisorId = req.user.id;
+    const isAdmin = req.user.role === 'ADMIN';
     const { id } = req.params;
     const { comment } = req.body;
 
@@ -298,7 +307,7 @@ const rejectEntry = async (req, res) => {
     }
 
     // Verifica se o registro é de um subordinado
-    if (entry.user.supervisorId !== supervisorId) {
+    if (!isAdmin && entry.user.supervisorId !== supervisorId) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode rejeitar registros de seus subordinados',
@@ -362,6 +371,7 @@ const rejectEntry = async (req, res) => {
 const requestEdit = async (req, res) => {
   try {
     const supervisorId = req.user.id;
+    const isAdmin = req.user.role === 'ADMIN';
     const { id } = req.params;
     const { comment } = req.body;
 
@@ -396,7 +406,7 @@ const requestEdit = async (req, res) => {
     }
 
     // Verifica se é subordinado
-    if (entry.user.supervisorId !== supervisorId) {
+    if (!isAdmin && entry.user.supervisorId !== supervisorId) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode solicitar edição de registros de seus subordinados',
@@ -452,6 +462,7 @@ const requestEdit = async (req, res) => {
 const getEntryDetails = async (req, res) => {
   try {
     const supervisorId = req.user.id;
+    const isAdmin = req.user.role === 'ADMIN';
     const { id } = req.params;
 
     const entry = await prisma.timeEntry.findUnique({
@@ -489,7 +500,7 @@ const getEntryDetails = async (req, res) => {
     }
 
     // Verifica se é subordinado do supervisor
-    if (entry.user.supervisorId !== supervisorId) {
+    if (!isAdmin && entry.user.supervisorId !== supervisorId) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode visualizar registros de seus subordinados',
@@ -528,10 +539,11 @@ const getEntryDetails = async (req, res) => {
 const getTeamMembers = async (req, res) => {
   try {
     const supervisorId = req.user.id;
+    const isAdmin = req.user.role === 'ADMIN';
 
     const subordinates = await prisma.user.findMany({
       where: {
-        supervisorId: supervisorId,
+        ...(isAdmin ? { role: { not: 'ADMIN' } } : { supervisorId: supervisorId }),
       },
       select: {
         id: true,
