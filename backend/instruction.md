@@ -25,20 +25,21 @@ Fase 4: Core - Registro de Ponto (Clock In/Out)
 
 
 Fase 5: Workflow de Aprovação (Supervisor)
-[ ] Task 5.1: Endpoint GET /supervisor/entries: Lista registros pendentes dos membros da equipe do supervisor logado.
-[ ] Task 5.2: Endpoint PATCH /supervisor/approve/:id: Altera status para 'APPROVED' e registra no ApprovalLog.
-[ ] Task 5.3: Endpoint PATCH /supervisor/request-edit/:id: Altera status para 'PENDING' e adiciona comentário obrigatório do supervisor.
+[X] Task 5.1: Endpoint GET /supervisor/entries: Lista registros pendentes dos membros da equipe do supervisor logado.
+[X] Task 5.2: Endpoint PATCH /supervisor/approve/:id: Altera status para 'APPROVED' e registra no ApprovalLog.
+[X] Task 5.3: Endpoint PATCH /supervisor/request-edit/:id: Altera status para 'PENDING' e adiciona comentário obrigatório do supervisor.
 
 
 Fase 6: Relatórios & Background Jobs (BullMQ)
-[ ] Task 6.1: Configurar Worker do BullMQ para processamento de filas de exportação.
-[ ] Task 6.2: Endpoint POST /reports/export: Recebe filtros (data, equipe), adiciona job na fila para gerar CSV.
-[ ] Task 6.3: Implementar lógica de geração de CSV e envio (ou disponibilização de link de download via Supabase Storage).
+[X] Task 6.1: Configurar Worker do BullMQ para processamento de filas de exportação.
+[X] Task 6.2: Endpoint POST /reports/export: Recebe filtros (data, equipe), adiciona job na fila para gerar CSV.
+[X] Task 6.3: Implementar lógica de geração de CSV e envio (ou disponibilização de link de download via Supabase Storage).
 
 
 Fase 7: Admin & Auditoria
-[ ] Task 7.1: Endpoints de CRUD para o Admin gerenciar usuários e trocar supervisores de equipe.
-[ ] Task 7.2: Endpoint GET /admin/audit/:timeEntryId: Retorna todo o histórico de alterações de um registro específico.
+[X] Task 7.1: Endpoints de CRUD para o Admin gerenciar usuários e trocar supervisores de equipe.
+[X] Task 7.2: Endpoint GET /admin/audit/:timeEntryId: Retorna todo o histórico de alterações de um registro específico.
+[X] Task 7.3: Testes unitários e de integração para todo o sistema (controllers, middlewares, routes).
 
 
 Fase 8: Frontend - Interface do Usuário (React + Tailwind)

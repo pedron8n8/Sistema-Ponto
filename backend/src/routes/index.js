@@ -2,6 +2,9 @@ const express = require('express');
 const authRoutes = require('./auth.routes');
 const userRoutes = require('./user.routes');
 const timeRoutes = require('./time.routes');
+const supervisorRoutes = require('./supervisor.routes');
+const reportRoutes = require('./report.routes');
+const adminRoutes = require('./admin.routes');
 
 const router = express.Router();
 
@@ -13,6 +16,15 @@ router.use('/users', userRoutes);
 
 // Rotas de registro de ponto
 router.use('/time', timeRoutes);
+
+// Rotas de supervisor (aprovação de pontos)
+router.use('/supervisor', supervisorRoutes);
+
+// Rotas de relatórios
+router.use('/reports', reportRoutes);
+
+// Rotas administrativas
+router.use('/admin', adminRoutes);
 
 // Health check (sem autenticação)
 router.get('/health', (req, res) => {

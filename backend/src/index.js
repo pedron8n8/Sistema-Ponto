@@ -6,6 +6,9 @@ require('dotenv').config();
 // Import routes
 const routes = require('./routes');
 
+// Import BullMQ worker
+const { createReportWorker } = require('./workers/reportWorker');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -44,10 +47,14 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
+// Start server and worker
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+
+  // Inicializa o worker de relatórios
+  const reportWorker = createReportWorker();
+  console.log('📋 Report worker initialized');
 });
 
 module.exports = app;
