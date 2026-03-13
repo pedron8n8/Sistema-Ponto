@@ -3,6 +3,7 @@ const prisma = require('../config/database');
 const redis = require('../config/redis');
 const fs = require('fs');
 const path = require('path');
+const xlsx = require('xlsx');
 
 // Fila de exportação de relatórios
 const reportQueue = new Queue('report-export', {
@@ -17,10 +18,23 @@ if (!fs.existsSync(REPORTS_DIR)) {
   fs.mkdirSync(REPORTS_DIR, { recursive: true });
 }
 
-/**
- * Gera CSV de registros de ponto
- */
-const generateTimeEntriesCSV = async (filters) => {
+const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+const parseDateFilter = (value, endOfDay = false) => {
+  if (!value) return null;
+
+  if (typeof value === 'string' && DATE_ONLY_REGEX.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    return endOfDay
+      ? new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999))
+      : new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const getReportRows = async (filters) => {
   const { userId, teamId, startDate, endDate, status, supervisorId } = filters;
 
   // Construir filtro dinâmico
@@ -28,6 +42,13 @@ const generateTimeEntriesCSV = async (filters) => {
 
   if (userId) {
     where.userId = userId;
+  } else if (supervisorId) {
+    // Supervisor sempre fica restrito aos próprios subordinados
+    const subordinates = await prisma.user.findMany({
+      where: { supervisorId },
+      select: { id: true },
+    });
+    where.userId = { in: subordinates.map((s) => s.id) };
   } else if (teamId) {
     // Busca membros da equipe de um supervisor específico
     const teamMembers = await prisma.user.findMany({
@@ -35,13 +56,6 @@ const generateTimeEntriesCSV = async (filters) => {
       select: { id: true },
     });
     where.userId = { in: teamMembers.map((m) => m.id) };
-  } else if (supervisorId) {
-    // Busca subordinados do supervisor que solicitou
-    const subordinates = await prisma.user.findMany({
-      where: { supervisorId },
-      select: { id: true },
-    });
-    where.userId = { in: subordinates.map((s) => s.id) };
   }
 
   if (status && status !== 'ALL') {
@@ -51,12 +65,20 @@ const generateTimeEntriesCSV = async (filters) => {
   if (startDate || endDate) {
     where.clockIn = {};
     if (startDate) {
-      where.clockIn.gte = new Date(startDate);
+      const parsedStartDate = parseDateFilter(startDate, false);
+      if (parsedStartDate) {
+        where.clockIn.gte = parsedStartDate;
+      }
     }
     if (endDate) {
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      where.clockIn.lte = end;
+      const parsedEndDate = parseDateFilter(endDate, true);
+      if (parsedEndDate) {
+        where.clockIn.lte = parsedEndDate;
+      }
+    }
+
+    if (!where.clockIn.gte && !where.clockIn.lte) {
+      delete where.clockIn;
     }
   }
 
@@ -93,7 +115,7 @@ const generateTimeEntriesCSV = async (filters) => {
     orderBy: [{ clockIn: 'desc' }],
   });
 
-  // Cabeçalho do CSV
+  // Cabeçalho do relatório
   const headers = [
     'ID',
     'Colaborador',
@@ -113,7 +135,7 @@ const generateTimeEntriesCSV = async (filters) => {
     'Revisor',
   ];
 
-  // Converter para linhas CSV
+  // Converter para linhas do relatório
   const rows = entries.map((entry) => {
     // Calcular duração
     let durationHours = '';
@@ -142,20 +164,52 @@ const generateTimeEntriesCSV = async (filters) => {
       durationHours,
       durationMinutes,
       translateStatus(entry.status),
-      escapeCSV(entry.notes || ''),
+      entry.notes || '',
       entry.ipAddress || '',
-      escapeCSV(entry.device || ''),
+      entry.device || '',
       lastLog ? translateAction(lastLog.action) : '',
       lastLog?.reviewer?.name || '',
     ];
   });
 
+  return {
+    headers,
+    rows,
+    totalRecords: entries.length,
+  };
+};
+
+/**
+ * Gera CSV de registros de ponto
+ */
+const generateTimeEntriesCSV = async (filters) => {
+  const { headers, rows, totalRecords } = await getReportRows(filters);
+
   // Montar CSV
-  const csvContent = [headers.join(';'), ...rows.map((row) => row.join(';'))].join('\n');
+  const csvContent = [
+    headers.map((cell) => escapeCSV(cell)).join(';'),
+    ...rows.map((row) => row.map((cell) => escapeCSV(cell)).join(';')),
+  ].join('\n');
 
   return {
     content: csvContent,
-    totalRecords: entries.length,
+    totalRecords,
+  };
+};
+
+/**
+ * Gera XLSX de registros de ponto
+ */
+const generateTimeEntriesXLSX = async (filters) => {
+  const { headers, rows, totalRecords } = await getReportRows(filters);
+  const worksheet = xlsx.utils.aoa_to_sheet([headers, ...rows]);
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, worksheet, 'RelatorioPonto');
+  const content = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+  return {
+    content,
+    totalRecords,
   };
 };
 
@@ -204,14 +258,18 @@ const createReportWorker = () => {
     async (job) => {
       console.log(`📊 Processando job de relatório: ${job.id}`);
 
-      const { filters, requestedBy, format = 'csv' } = job.data;
+      const { filters, requestedBy, format = 'xlsx' } = job.data;
 
       try {
         // Atualiza progresso
         await job.updateProgress(10);
 
-        // Gera o CSV
-        const { content, totalRecords } = await generateTimeEntriesCSV({
+        const normalizedFormat = String(format || 'xlsx').toLowerCase();
+        const outputFormat = normalizedFormat === 'csv' ? 'csv' : 'xlsx';
+
+        // Gera o conteúdo do relatório no formato solicitado
+        const generator = outputFormat === 'csv' ? generateTimeEntriesCSV : generateTimeEntriesXLSX;
+        const { content, totalRecords } = await generator({
           ...filters,
           supervisorId: requestedBy.role === 'SUPERVISOR' ? requestedBy.id : null,
         });
@@ -220,11 +278,15 @@ const createReportWorker = () => {
 
         // Gera nome único para o arquivo
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `relatorio_ponto_${timestamp}.csv`;
+        const filename = `relatorio_ponto_${timestamp}.${outputFormat}`;
         const filepath = path.join(REPORTS_DIR, filename);
 
         // Salva o arquivo
-        fs.writeFileSync(filepath, '\ufeff' + content, 'utf8'); // BOM para Excel
+        if (outputFormat === 'csv') {
+          fs.writeFileSync(filepath, '\ufeff' + content, 'utf8'); // BOM para Excel
+        } else {
+          fs.writeFileSync(filepath, content);
+        }
 
         await job.updateProgress(90);
 
@@ -237,6 +299,7 @@ const createReportWorker = () => {
           filename,
           filepath,
           totalRecords,
+          format: outputFormat,
           generatedAt: new Date().toISOString(),
           downloadUrl: `/api/v1/reports/download/${filename}`,
         };
@@ -270,5 +333,6 @@ module.exports = {
   reportQueue,
   createReportWorker,
   generateTimeEntriesCSV,
+  generateTimeEntriesXLSX,
   REPORTS_DIR,
 };

@@ -6,6 +6,7 @@ const {
   downloadReport,
   listReports,
   deleteReport,
+  getDailyBreakdown,
 } = require('../controllers/report.controller');
 
 const router = express.Router();
@@ -37,6 +38,12 @@ router.get('/list', listReports);
  * Faz download de um relatório
  */
 router.get('/download/:filename', downloadReport);
+
+/**
+ * GET /reports/daily-breakdown
+ * Detalhamento diário por colaborador
+ */
+router.get('/daily-breakdown', getDailyBreakdown);
 
 /**
  * DELETE /reports/:filename

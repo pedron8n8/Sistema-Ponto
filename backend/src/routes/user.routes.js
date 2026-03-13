@@ -8,6 +8,24 @@ const router = express.Router();
 router.use(authMiddleware);
 
 /**
+ * GET /api/v1/users/me/face
+ * Status do cadastro facial do usuário logado
+ */
+router.get('/me/face', userController.getMyFaceStatus);
+
+/**
+ * POST /api/v1/users/me/face/enroll
+ * Cadastra/atualiza reconhecimento facial do usuário logado
+ */
+router.post('/me/face/enroll', userController.enrollMyFace);
+
+/**
+ * DELETE /api/v1/users/me/face
+ * Remove reconhecimento facial do usuário logado
+ */
+router.delete('/me/face', userController.deleteMyFace);
+
+/**
  * GET /api/v1/users
  * Lista usuários (Admin vê todos, Supervisor vê subordinados)
  */

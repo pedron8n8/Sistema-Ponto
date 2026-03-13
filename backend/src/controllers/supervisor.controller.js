@@ -1,4 +1,6 @@
 const prisma = require('../config/database');
+const { adjustBankHours, settleBankHoursAccruals } = require('../utils/bankHours');
+const { normalizeMinutes, normalizeTime, normalizeTimeZone } = require('../utils/workSettings');
 
 /**
  * Controller para workflow de aprovação do supervisor
@@ -175,7 +177,7 @@ const approveEntry = async (req, res) => {
     const supervisorId = req.user.id;
     const isAdmin = req.user.role === 'ADMIN';
     const { id } = req.params;
-    const { comment } = req.body;
+    const { comment } = req.body || {};
 
     // Busca o registro
     const entry = await prisma.timeEntry.findUnique({
@@ -274,7 +276,7 @@ const rejectEntry = async (req, res) => {
     const supervisorId = req.user.id;
     const isAdmin = req.user.role === 'ADMIN';
     const { id } = req.params;
-    const { comment } = req.body;
+    const { comment } = req.body || {};
 
     // Comentário obrigatório para rejeição
     if (!comment || comment.trim().length < 5) {
@@ -373,7 +375,7 @@ const requestEdit = async (req, res) => {
     const supervisorId = req.user.id;
     const isAdmin = req.user.role === 'ADMIN';
     const { id } = req.params;
-    const { comment } = req.body;
+    const { comment } = req.body || {};
 
     // Comentário obrigatório para solicitação de edição
     if (!comment || comment.trim().length < 5) {
@@ -550,6 +552,10 @@ const getTeamMembers = async (req, res) => {
         name: true,
         email: true,
         role: true,
+        contractDailyMinutes: true,
+        workdayStartTime: true,
+        workdayEndTime: true,
+        timeZone: true,
         createdAt: true,
         _count: {
           select: {
@@ -595,6 +601,364 @@ const getTeamMembers = async (req, res) => {
   }
 };
 
+/**
+ * PATCH /supervisor/team/:userId/bank-hours
+ * Ajusta/zera banco de horas de membro da equipe (gestor)
+ */
+const adjustTeamMemberBankHours = async (req, res) => {
+  try {
+    const supervisorId = req.user.id;
+    const isAdmin = req.user.role === 'ADMIN';
+    const { userId } = req.params;
+    const { minutesDelta, reason, resetToZero } = req.body;
+
+    const shouldReset = Boolean(resetToZero);
+    const parsedDelta = Math.trunc(Number(minutesDelta) || 0);
+
+    if (!shouldReset && parsedDelta === 0) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Informe minutesDelta diferente de zero ou use resetToZero=true.',
+      });
+    }
+
+    if (!reason || String(reason).trim().length < 5) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Motivo do ajuste é obrigatório (mínimo 5 caracteres).',
+      });
+    }
+
+    const member = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        supervisorId: true,
+      },
+    });
+
+    if (!member) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Colaborador não encontrado',
+      });
+    }
+
+    if (!isAdmin && member.supervisorId !== supervisorId) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você só pode ajustar banco de horas de seus subordinados',
+      });
+    }
+
+    const result = await adjustBankHours({
+      userId,
+      actorId: supervisorId,
+      minutesDelta: parsedDelta,
+      reason: String(reason).trim(),
+      resetToZero: shouldReset,
+    });
+
+    res.json({
+      message: shouldReset ? 'Saldo do banco de horas zerado com sucesso' : 'Banco de horas ajustado com sucesso',
+      member: {
+        id: member.id,
+        name: member.name,
+        email: member.email,
+        role: member.role,
+      },
+      adjustment: {
+        previousBalanceMinutes: result.previousBalance,
+        appliedDeltaMinutes: result.appliedDelta,
+        currentBalanceMinutes: result.balanceMinutes,
+        maxLimitMinutes: result.maxLimit ?? null,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Erro ao ajustar banco de horas do membro da equipe:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao ajustar banco de horas',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
+/**
+ * PATCH /supervisor/team/:userId/work-settings
+ * Define jornada do colaborador da equipe (gestor)
+ */
+const updateTeamMemberWorkSettings = async (req, res) => {
+  try {
+    const supervisorId = req.user.id;
+    const isAdmin = req.user.role === 'ADMIN';
+    const { userId } = req.params;
+    const { contractDailyMinutes, workdayStartTime, workdayEndTime, timeZone } = req.body;
+
+    const member = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        supervisorId: true,
+      },
+    });
+
+    if (!member) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Colaborador não encontrado',
+      });
+    }
+
+    if (!isAdmin && member.supervisorId !== supervisorId) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você só pode ajustar jornada de seus subordinados',
+      });
+    }
+
+    const updateData = {};
+
+    if (contractDailyMinutes !== undefined) {
+      const normalizedMinutes = normalizeMinutes(contractDailyMinutes);
+      if (normalizedMinutes === null) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'contractDailyMinutes inválido. Use um valor entre 60 e 1440.',
+        });
+      }
+      updateData.contractDailyMinutes = normalizedMinutes;
+    }
+
+    if (workdayStartTime !== undefined) {
+      const normalizedStart = normalizeTime(workdayStartTime);
+      if (normalizedStart === null) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'workdayStartTime inválido. Use o formato HH:mm.',
+        });
+      }
+      updateData.workdayStartTime = normalizedStart;
+    }
+
+    if (workdayEndTime !== undefined) {
+      const normalizedEnd = normalizeTime(workdayEndTime);
+      if (normalizedEnd === null) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'workdayEndTime inválido. Use o formato HH:mm.',
+        });
+      }
+      updateData.workdayEndTime = normalizedEnd;
+    }
+
+    if (timeZone !== undefined) {
+      const normalizedTimeZone = normalizeTimeZone(timeZone);
+      if (normalizedTimeZone === null) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'timeZone inválido. Use um timezone IANA válido (ex.: America/New_York).',
+        });
+      }
+      updateData.timeZone = normalizedTimeZone;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Informe ao menos um campo para atualização.',
+      });
+    }
+
+    const updatedMember = await prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        contractDailyMinutes: true,
+        workdayStartTime: true,
+        workdayEndTime: true,
+        timeZone: true,
+      },
+    });
+
+    res.json({
+      message: 'Jornada do colaborador atualizada com sucesso',
+      member: updatedMember,
+    });
+  } catch (error) {
+    console.error('❌ Erro ao atualizar jornada do colaborador:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao atualizar jornada do colaborador',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
+/**
+ * GET /supervisor/team/bank-hours/overview
+ * Lista overview de banco de horas da equipe
+ */
+const getTeamBankHoursOverview = async (req, res) => {
+  try {
+    const supervisorId = req.user.id;
+    const isAdmin = req.user.role === 'ADMIN';
+
+    const team = await prisma.user.findMany({
+      where: isAdmin
+        ? { role: { not: 'ADMIN' } }
+        : { supervisorId: supervisorId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        bankHoursBalanceMinutes: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    const ids = team.map((u) => u.id);
+
+    const [pendingAccruals, paidAccruals] = await Promise.all([
+      prisma.bankHoursEntry.groupBy({
+        by: ['userId'],
+        where: {
+          userId: { in: ids },
+          type: 'ACCRUAL',
+          paymentStatus: 'PENDING',
+          minutes: { gt: 0 },
+          expiredAt: null,
+        },
+        _sum: { minutes: true },
+      }),
+      prisma.bankHoursEntry.groupBy({
+        by: ['userId'],
+        where: {
+          userId: { in: ids },
+          type: 'ACCRUAL',
+          paymentStatus: 'PAID',
+          minutes: { gt: 0 },
+        },
+        _sum: { minutes: true },
+      }),
+    ]);
+
+    const pendingMap = Object.fromEntries(
+      pendingAccruals.map((row) => [row.userId, row._sum.minutes || 0])
+    );
+    const paidMap = Object.fromEntries(
+      paidAccruals.map((row) => [row.userId, row._sum.minutes || 0])
+    );
+
+    const overview = team.map((member) => {
+      const balance = member.bankHoursBalanceMinutes || 0;
+      return {
+        member: {
+          id: member.id,
+          name: member.name,
+          email: member.email,
+          role: member.role,
+        },
+        bankHours: {
+          balanceMinutes: balance,
+          creditMinutes: Math.max(0, balance),
+          debtMinutes: Math.max(0, -balance),
+          pendingMinutes: pendingMap[member.id] || 0,
+          paidMinutes: paidMap[member.id] || 0,
+        },
+      };
+    });
+
+    res.json({ overview });
+  } catch (error) {
+    console.error('❌ Erro ao buscar overview de banco de horas da equipe:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao buscar overview de banco de horas da equipe',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
+/**
+ * PATCH /supervisor/team/:userId/bank-hours/pay
+ * Dá baixa (paga) banco de horas pendente de membro da equipe
+ */
+const payTeamMemberBankHours = async (req, res) => {
+  try {
+    const supervisorId = req.user.id;
+    const isAdmin = req.user.role === 'ADMIN';
+    const { userId } = req.params;
+    const { entryIds, payAllPending = true, paymentNote } = req.body;
+
+    const member = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        supervisorId: true,
+      },
+    });
+
+    if (!member) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Colaborador não encontrado',
+      });
+    }
+
+    if (!isAdmin && member.supervisorId !== supervisorId) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você só pode dar baixa no banco de horas de seus subordinados',
+      });
+    }
+
+    const result = await settleBankHoursAccruals({
+      userId,
+      actorId: supervisorId,
+      entryIds: Array.isArray(entryIds) ? entryIds : [],
+      payAllPending: Boolean(payAllPending),
+      paymentNote: paymentNote ? String(paymentNote).trim() : null,
+    });
+
+    res.json({
+      message: result.paidMinutes > 0 ? 'Baixa de banco de horas realizada com sucesso' : 'Nenhum saldo pendente para baixa',
+      member: {
+        id: member.id,
+        name: member.name,
+        email: member.email,
+        role: member.role,
+      },
+      payment: {
+        paidMinutes: result.paidMinutes,
+        paidEntries: result.paidEntries,
+        currentBalanceMinutes: result.balanceMinutes,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Erro ao dar baixa no banco de horas do membro:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao dar baixa no banco de horas',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
 module.exports = {
   getTeamPendingEntries,
   approveEntry,
@@ -602,4 +966,8 @@ module.exports = {
   requestEdit,
   getEntryDetails,
   getTeamMembers,
+  adjustTeamMemberBankHours,
+  updateTeamMemberWorkSettings,
+  getTeamBankHoursOverview,
+  payTeamMemberBankHours,
 };

@@ -1,6 +1,8 @@
 // Testes para time.controller
 
 const mockPrisma = require('../mocks/prisma.mock');
+const { captureRequestMetadata } = require('../../src/utils/requestMetadata');
+const { evaluateGeofence } = require('../../src/utils/geofence');
 
 // Mock dos módulos
 jest.mock('../../src/config/database', () => mockPrisma);
@@ -20,6 +22,27 @@ jest.mock('../../src/utils/timeCalculations', () => ({
   getStartOfDay: jest.fn(() => new Date('2026-03-12T00:00:00.000Z')),
   getEndOfDay: jest.fn(() => new Date('2026-03-12T23:59:59.999Z')),
 }));
+jest.mock('../../src/utils/geofence', () => ({
+  evaluateGeofence: jest.fn(() => ({
+    enabled: true,
+    allowed: true,
+    inside: true,
+    hasCoordinates: false,
+    distanceMeters: null,
+    exceededByMeters: null,
+    mode: 'ALERT',
+    reason: 'LOCATION_MISSING_BUT_OPTIONAL',
+    center: { lat: -23.55052, lng: -46.63331 },
+    radiusMeters: 200,
+  })),
+  getGeofencePublicConfig: jest.fn(() => ({
+    enabled: true,
+    mode: 'ALERT',
+    requireLocation: false,
+    center: { lat: -23.55052, lng: -46.63331 },
+    radiusMeters: 200,
+  })),
+}));
 
 const {
   clockIn,
@@ -28,6 +51,16 @@ const {
   getCurrentEntry,
   getTodayEntries,
 } = require('../../src/controllers/time.controller');
+
+const FACE_VECTOR = Array.from({ length: 64 }, () => 0.1);
+const LIVENESS_DATA = {
+  blinkDetected: true,
+  headMovementDetected: true,
+  blinkCount: 1,
+  headMovementDelta: 0.11,
+  frameCount: 12,
+  capturedAt: '2026-03-13T10:00:00.000Z',
+};
 
 describe('Time Controller', () => {
   let mockReq;
@@ -50,6 +83,43 @@ describe('Time Controller', () => {
       json: jest.fn().mockReturnThis(),
     };
     jest.clearAllMocks();
+
+    captureRequestMetadata.mockReturnValue({
+      ip: '127.0.0.1',
+      device: 'Chrome on Windows',
+      location: null,
+    });
+
+    evaluateGeofence.mockReturnValue({
+      enabled: true,
+      allowed: true,
+      inside: true,
+      hasCoordinates: false,
+      distanceMeters: null,
+      exceededByMeters: null,
+      mode: 'ALERT',
+      reason: 'LOCATION_MISSING_BUT_OPTIONAL',
+      center: { lat: -23.55052, lng: -46.63331 },
+      radiusMeters: 200,
+    });
+
+    mockPrisma.user.findUnique.mockResolvedValue({
+      facialEmbedding: FACE_VECTOR,
+      facialThreshold: 0.45,
+      pinHash: null,
+      pinSalt: null,
+      pinFailedAttempts: 0,
+      pinLockedUntil: null,
+      contractDailyMinutes: 480,
+      bankHoursBalanceMinutes: 0,
+      bankHoursLimitMinutes: null,
+      bankHoursExpiryMonths: 6,
+      bankHoursPolicyCode: null,
+    });
+
+    mockPrisma.bankHoursEntry.findMany.mockResolvedValue([]);
+    mockPrisma.bankHoursEntry.updateMany.mockResolvedValue({ count: 0 });
+    mockPrisma.bankHoursEntry.create.mockResolvedValue({ id: 'bhe-1' });
   });
 
   describe('clockIn', () => {
@@ -92,7 +162,11 @@ describe('Time Controller', () => {
 
       mockPrisma.timeEntry.findFirst.mockResolvedValue(null);
       mockPrisma.timeEntry.create.mockResolvedValue(mockEntry);
-      mockReq.body = { notes: 'Test notes' };
+      mockReq.body = {
+        notes: 'Test notes',
+        faceDescriptor: FACE_VECTOR,
+        livenessData: { ...LIVENESS_DATA, capturedAt: new Date().toISOString() },
+      };
 
       await clockIn(mockReq, mockRes);
 
@@ -108,6 +182,10 @@ describe('Time Controller', () => {
         device: 'Chrome on Windows',
         user: {},
       });
+      mockReq.body = {
+        faceDescriptor: FACE_VECTOR,
+        livenessData: { ...LIVENESS_DATA, capturedAt: new Date().toISOString() },
+      };
 
       await clockIn(mockReq, mockRes);
 
@@ -119,6 +197,10 @@ describe('Time Controller', () => {
   describe('clockOut', () => {
     it('should return 404 if no open entry exists', async () => {
       mockPrisma.timeEntry.findFirst.mockResolvedValue(null);
+      mockReq.body = {
+        faceDescriptor: FACE_VECTOR,
+        livenessData: { ...LIVENESS_DATA, capturedAt: new Date().toISOString() },
+      };
 
       await clockOut(mockReq, mockRes);
 
@@ -152,7 +234,11 @@ describe('Time Controller', () => {
 
       mockPrisma.timeEntry.findFirst.mockResolvedValue(openEntry);
       mockPrisma.timeEntry.update.mockResolvedValue(closedEntry);
-      mockReq.body = { notes: 'Finished work' };
+      mockReq.body = {
+        notes: 'Finished work',
+        faceDescriptor: FACE_VECTOR,
+        livenessData: { ...LIVENESS_DATA, capturedAt: new Date().toISOString() },
+      };
 
       await clockOut(mockReq, mockRes);
 

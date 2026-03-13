@@ -10,6 +10,7 @@ import AdminDashboard from './pages/AdminDashboard'
 import Reports from './pages/Reports'
 import NotFound from './pages/NotFound'
 import { hasSupabaseEnv } from './lib/supabase'
+import { TimezoneProvider } from './context/TimezoneContext'
 
 const MissingEnvScreen = () => {
   return (
@@ -38,8 +39,9 @@ const App = () => {
 
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
+      <TimezoneProvider>
+        <BrowserRouter>
+          <Routes>
           <Route path="/" element={<Navigate to="/app" replace />} />
           <Route path="/login" element={<Login />} />
           <Route
@@ -65,7 +67,7 @@ const App = () => {
           <Route
             path="/app/supervisor"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute allowedRoles={['SUPERVISOR', 'ADMIN']}>
                 <ShellLayout>
                   <SupervisorDashboard />
                 </ShellLayout>
@@ -75,7 +77,7 @@ const App = () => {
           <Route
             path="/app/admin"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute allowedRoles={['ADMIN']}>
                 <ShellLayout>
                   <AdminDashboard />
                 </ShellLayout>
@@ -93,8 +95,9 @@ const App = () => {
             }
           />
           <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
+          </Routes>
+        </BrowserRouter>
+      </TimezoneProvider>
     </AuthProvider>
   )
 }

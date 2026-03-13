@@ -1,6 +1,296 @@
 const prisma = require('../config/database');
 const { captureRequestMetadata } = require('../utils/requestMetadata');
 const { calculateDuration, getStartOfDay, getEndOfDay } = require('../utils/timeCalculations');
+const { evaluateGeofence, getGeofencePublicConfig } = require('../utils/geofence');
+const { verifyFaceMatch } = require('../utils/faceRecognition');
+const { validateLivenessEvidence } = require('../utils/liveness');
+const { calculateOvertimeSummary } = require('../utils/overtime');
+const { accrueBankHours, expireBankHoursIfNeeded } = require('../utils/bankHours');
+const {
+  verifyPin,
+  isPinLocked,
+  getPinLockExpiry,
+  PIN_MAX_ATTEMPTS,
+  PIN_LOCK_MINUTES,
+} = require('../utils/pinAuth');
+
+const buildLocationPayload = ({ existingLocation, currentLocation, eventType, geofenceResult }) => {
+  const isStructuredLocation =
+    existingLocation &&
+    typeof existingLocation === 'object' &&
+    ('clockIn' in existingLocation || 'clockOut' in existingLocation || 'geofence' in existingLocation);
+
+  const baseLocation = isStructuredLocation
+    ? existingLocation
+    : {
+        clockIn: existingLocation || null,
+        clockOut: null,
+        geofence: {
+          clockIn: null,
+          clockOut: null,
+        },
+      };
+
+  const nextLocation = {
+    ...baseLocation,
+    geofence: {
+      ...(baseLocation.geofence || {}),
+    },
+  };
+
+  if (eventType === 'clockIn') {
+    nextLocation.clockIn = currentLocation || null;
+    nextLocation.geofence.clockIn = geofenceResult;
+  }
+
+  if (eventType === 'clockOut') {
+    nextLocation.clockOut = currentLocation || null;
+    nextLocation.geofence.clockOut = geofenceResult;
+  }
+
+  return nextLocation;
+};
+
+const getGeofenceErrorMessage = (geofenceResult, eventName) => {
+  if (geofenceResult.reason === 'LOCATION_REQUIRED') {
+    return `Geolocalização obrigatória para ${eventName}. Ative o GPS e permita acesso à localização.`;
+  }
+
+  return `${eventName} fora da cerca virtual. Distância: ${geofenceResult.distanceMeters}m, limite: ${geofenceResult.radiusMeters}m.`;
+};
+
+const buildDefaultFaceAuth = () => ({
+  required: false,
+  verified: false,
+  reason: 'FACIAL_NOT_CONFIGURED',
+  distance: null,
+  threshold: null,
+  liveness: null,
+});
+
+const buildDefaultPinAuth = () => ({
+  required: false,
+  verified: false,
+  reason: 'PIN_NOT_CONFIGURED',
+  failedAttempts: 0,
+  maxAttempts: PIN_MAX_ATTEMPTS,
+  lockMinutes: PIN_LOCK_MINUTES,
+  lockedUntil: null,
+});
+
+const validateClockAuthFactors = async ({ userId, faceDescriptor, livenessData, pin, actionLabel }) => {
+  let faceAuth = buildDefaultFaceAuth();
+  let pinAuth = buildDefaultPinAuth();
+
+  const userAuthData = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      facialEmbedding: true,
+      facialThreshold: true,
+      pinHash: true,
+      pinSalt: true,
+      pinFailedAttempts: true,
+      pinLockedUntil: true,
+    },
+  });
+
+  const hasFaceEnrolled = Boolean(userAuthData?.facialEmbedding);
+  const hasPinConfigured = Boolean(userAuthData?.pinHash && userAuthData?.pinSalt);
+
+  if (!hasFaceEnrolled && !hasPinConfigured) {
+    return {
+      ok: false,
+      statusCode: 403,
+      payload: {
+        error: 'Forbidden',
+        message:
+          'Para registrar ponto, é obrigatório ter PIN ou facial previamente cadastrado. Procure o administrador.',
+      },
+      faceAuth,
+      pinAuth,
+    };
+  }
+
+  if (hasFaceEnrolled) {
+    faceAuth.required = true;
+    faceAuth.threshold = userAuthData.facialThreshold;
+
+    if (faceDescriptor) {
+      const liveness = validateLivenessEvidence(livenessData);
+
+      if (!liveness.valid) {
+        return {
+          ok: false,
+          statusCode: 401,
+          payload: {
+            error: 'Unauthorized',
+            message: 'Prova de vida facial inválida. Pisque e mova a cabeça para validar o rosto.',
+            liveness,
+          },
+          faceAuth: {
+            ...faceAuth,
+            reason: 'LIVENESS_FAILED',
+            liveness,
+          },
+          pinAuth,
+        };
+      }
+
+      const verification = verifyFaceMatch({
+        storedEmbedding: userAuthData.facialEmbedding,
+        candidateEmbedding: faceDescriptor,
+        threshold: userAuthData.facialThreshold,
+      });
+
+      if (!verification.valid) {
+        return {
+          ok: false,
+          statusCode: 400,
+          payload: {
+            error: 'Bad Request',
+            message: 'Dados faciais inválidos. Tente capturar novamente.',
+            faceAuth: verification,
+          },
+          faceAuth,
+          pinAuth,
+        };
+      }
+
+      faceAuth = {
+        required: true,
+        verified: verification.matched,
+        reason: verification.reason,
+        distance: verification.distance,
+        threshold: verification.threshold,
+        liveness,
+      };
+    } else {
+      faceAuth.reason = 'FACE_NOT_PROVIDED';
+    }
+  }
+
+  if (hasPinConfigured) {
+    pinAuth.required = true;
+    pinAuth.failedAttempts = userAuthData.pinFailedAttempts || 0;
+    pinAuth.lockedUntil = userAuthData.pinLockedUntil;
+
+    const pinCurrentlyLocked = isPinLocked(userAuthData.pinLockedUntil);
+
+    if (pin && !pinCurrentlyLocked) {
+      const pinMatched = verifyPin({
+        pin,
+        hash: userAuthData.pinHash,
+        salt: userAuthData.pinSalt,
+      });
+
+      if (pinMatched) {
+        pinAuth.verified = true;
+        pinAuth.reason = 'PIN_MATCHED';
+        pinAuth.failedAttempts = 0;
+
+        await prisma.user.update({
+          where: { id: userId },
+          data: {
+            pinFailedAttempts: 0,
+            pinLockedUntil: null,
+          },
+        });
+      } else {
+        const failedAttempts = (userAuthData.pinFailedAttempts || 0) + 1;
+        const shouldLock = failedAttempts >= PIN_MAX_ATTEMPTS;
+        const pinLockedUntil = shouldLock ? getPinLockExpiry() : null;
+
+        await prisma.user.update({
+          where: { id: userId },
+          data: {
+            pinFailedAttempts: failedAttempts,
+            pinLockedUntil,
+          },
+        });
+
+        pinAuth = {
+          ...pinAuth,
+          verified: false,
+          reason: shouldLock ? 'PIN_LOCKED' : 'PIN_NOT_MATCHED',
+          failedAttempts,
+          lockedUntil: pinLockedUntil,
+        };
+      }
+    } else if (pinCurrentlyLocked) {
+      pinAuth.reason = 'PIN_LOCKED';
+    } else {
+      pinAuth.reason = 'PIN_NOT_PROVIDED';
+    }
+  }
+
+  const hasAnySuccessfulAuth = faceAuth.verified || pinAuth.verified;
+
+  if (!hasAnySuccessfulAuth) {
+    if (pinAuth.reason === 'PIN_LOCKED' && !faceAuth.verified) {
+      return {
+        ok: false,
+        statusCode: 429,
+        payload: {
+          error: 'Too Many Requests',
+          message: 'PIN temporariamente bloqueado por excesso de tentativas incorretas.',
+          pinAuth,
+          faceAuth,
+        },
+        faceAuth,
+        pinAuth,
+      };
+    }
+
+    return {
+      ok: false,
+      statusCode: 401,
+      payload: {
+        error: 'Unauthorized',
+        message: `Nao foi possivel validar PIN ou facial para ${actionLabel}.`,
+        pinAuth,
+        faceAuth,
+      },
+      faceAuth,
+      pinAuth,
+    };
+  }
+
+  return {
+    ok: true,
+    faceAuth,
+    pinAuth,
+  };
+};
+
+const calculateFinancialSummary = ({ workedMinutes, overtimeMinutes50, overtimeMinutes100, hourlyRate }) => {
+  const rate = Number(hourlyRate || 0);
+  if (!Number.isFinite(rate) || rate <= 0) {
+    return {
+      hourlyRate: 0,
+      regularAmount: 0,
+      overtime50Amount: 0,
+      overtime100Amount: 0,
+      overtimeTotalAmount: 0,
+      totalAmount: 0,
+    };
+  }
+
+  const regularMinutes = Math.max(0, workedMinutes - overtimeMinutes50 - overtimeMinutes100);
+  const regularAmount = (regularMinutes / 60) * rate;
+  const overtime50Amount = (overtimeMinutes50 / 60) * rate * 1.5;
+  const overtime100Amount = (overtimeMinutes100 / 60) * rate * 2;
+  const overtimeTotalAmount = overtime50Amount + overtime100Amount;
+  const totalAmount = regularAmount + overtimeTotalAmount;
+
+  return {
+    hourlyRate: Number(rate.toFixed(2)),
+    regularAmount: Number(regularAmount.toFixed(2)),
+    overtime50Amount: Number(overtime50Amount.toFixed(2)),
+    overtime100Amount: Number(overtime100Amount.toFixed(2)),
+    overtimeTotalAmount: Number(overtimeTotalAmount.toFixed(2)),
+    totalAmount: Number(totalAmount.toFixed(2)),
+  };
+};
 
 /**
  * Controller para gerenciamento de registros de ponto
@@ -13,7 +303,7 @@ const { calculateDuration, getStartOfDay, getEndOfDay } = require('../utils/time
 const clockIn = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { notes } = req.body;
+    const { notes, faceDescriptor, livenessData, pin } = req.body;
 
     // Verifica se já existe um ponto aberto (sem clock-out) para o usuário
     const openEntry = await prisma.timeEntry.findFirst({
@@ -41,6 +331,42 @@ const clockIn = async (req, res) => {
     // Captura metadados da requisição
     const metadata = captureRequestMetadata(req);
 
+    const authResult = await validateClockAuthFactors({
+      userId,
+      faceDescriptor,
+      livenessData,
+      pin,
+      actionLabel: 'clock-in',
+    });
+
+    if (!authResult.ok) {
+      return res.status(authResult.statusCode).json(authResult.payload);
+    }
+
+    const { faceAuth, pinAuth } = authResult;
+
+    const geofenceResult = evaluateGeofence(metadata.location);
+
+    if (!geofenceResult.allowed) {
+      console.warn(`🚫 Clock-in bloqueado por geofence: ${req.user.email}`, geofenceResult);
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: getGeofenceErrorMessage(geofenceResult, 'clock-in'),
+        geofence: geofenceResult,
+      });
+    }
+
+    if (geofenceResult.enabled && geofenceResult.reason === 'OUTSIDE_GEOFENCE_ALERT') {
+      console.warn(`⚠️ Clock-in fora da cerca (modo alerta): ${req.user.email}`, geofenceResult);
+    }
+
+    const locationPayload = buildLocationPayload({
+      existingLocation: null,
+      currentLocation: metadata.location,
+      eventType: 'clockIn',
+      geofenceResult,
+    });
+
     // Cria novo registro de ponto
     const timeEntry = await prisma.timeEntry.create({
       data: {
@@ -49,7 +375,7 @@ const clockIn = async (req, res) => {
         notes: notes || null,
         ipAddress: metadata.ip,
         device: metadata.device,
-        location: metadata.location,
+        location: locationPayload,
         status: 'PENDING',
       },
       include: {
@@ -76,9 +402,15 @@ const clockIn = async (req, res) => {
         ipAddress: timeEntry.ipAddress,
         device: timeEntry.device,
         location: timeEntry.location,
+        geofence: geofenceResult,
+        faceAuth,
+        pinAuth,
         status: timeEntry.status,
         user: timeEntry.user,
       },
+      ...(geofenceResult.reason === 'OUTSIDE_GEOFENCE_ALERT' && {
+        warning: 'Registro fora da cerca virtual. Evidência salva para auditoria.',
+      }),
     });
   } catch (error) {
     console.error('❌ Erro ao registrar clock-in:', error);
@@ -97,7 +429,38 @@ const clockIn = async (req, res) => {
 const clockOut = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { notes } = req.body;
+    const { notes, faceDescriptor, livenessData, pin } = req.body;
+
+    const authResult = await validateClockAuthFactors({
+      userId,
+      faceDescriptor,
+      livenessData,
+      pin,
+      actionLabel: 'clock-out',
+    });
+
+    if (!authResult.ok) {
+      return res.status(authResult.statusCode).json(authResult.payload);
+    }
+
+    const { faceAuth, pinAuth } = authResult;
+
+    // Captura metadados da requisição
+    const metadata = captureRequestMetadata(req);
+    const geofenceResult = evaluateGeofence(metadata.location);
+
+    if (!geofenceResult.allowed) {
+      console.warn(`🚫 Clock-out bloqueado por geofence: ${req.user.email}`, geofenceResult);
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: getGeofenceErrorMessage(geofenceResult, 'clock-out'),
+        geofence: geofenceResult,
+      });
+    }
+
+    if (geofenceResult.enabled && geofenceResult.reason === 'OUTSIDE_GEOFENCE_ALERT') {
+      console.warn(`⚠️ Clock-out fora da cerca (modo alerta): ${req.user.email}`, geofenceResult);
+    }
 
     // Busca o último registro aberto (sem clock-out)
     const openEntry = await prisma.timeEntry.findFirst({
@@ -119,12 +482,20 @@ const clockOut = async (req, res) => {
 
     const clockOutTime = new Date();
 
+    const locationPayload = buildLocationPayload({
+      existingLocation: openEntry.location,
+      currentLocation: metadata.location,
+      eventType: 'clockOut',
+      geofenceResult,
+    });
+
     // Atualiza o registro com clock-out
     const updatedEntry = await prisma.timeEntry.update({
       where: { id: openEntry.id },
       data: {
         clockOut: clockOutTime,
         notes: notes || openEntry.notes,
+        location: locationPayload,
       },
       include: {
         user: {
@@ -141,6 +512,55 @@ const clockOut = async (req, res) => {
     // Calcula duração
     const duration = calculateDuration(updatedEntry.clockIn, updatedEntry.clockOut);
 
+    const userConfig = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        contractDailyMinutes: true,
+        hourlyRate: true,
+      },
+    });
+
+    const overtime = calculateOvertimeSummary({
+      clockIn: updatedEntry.clockIn,
+      clockOut: updatedEntry.clockOut,
+      contractDailyMinutes: userConfig?.contractDailyMinutes,
+    });
+
+    const bankHoursResult = await accrueBankHours({
+      userId,
+      overtimeMinutes: overtime.overtimeMinutes,
+      timeEntryId: updatedEntry.id,
+    });
+
+    const financial = calculateFinancialSummary({
+      workedMinutes: overtime.workedMinutes,
+      overtimeMinutes50: overtime.overtimeMinutes50,
+      overtimeMinutes100: overtime.overtimeMinutes100,
+      hourlyRate: userConfig?.hourlyRate,
+    });
+
+    const enrichedEntry = await prisma.timeEntry.update({
+      where: { id: updatedEntry.id },
+      data: {
+        workedMinutes: overtime.workedMinutes,
+        overtimeMinutes: overtime.overtimeMinutes,
+        overtimeMinutes50: overtime.overtimeMinutes50,
+        overtimeMinutes100: overtime.overtimeMinutes100,
+        overtimePercent: overtime.overtimePercent,
+        bankHoursAccruedMinutes: bankHoursResult.accruedMinutes,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+          },
+        },
+      },
+    });
+
     console.log(
       `✅ Clock-out registrado: ${req.user.email} às ${clockOutTime} (Duração: ${duration.formatted})`
     );
@@ -149,23 +569,112 @@ const clockOut = async (req, res) => {
       message: 'Clock-out registrado com sucesso',
       timeEntry: {
         id: updatedEntry.id,
-        userId: updatedEntry.userId,
-        clockIn: updatedEntry.clockIn,
-        clockOut: updatedEntry.clockOut,
-        notes: updatedEntry.notes,
-        ipAddress: updatedEntry.ipAddress,
-        device: updatedEntry.device,
-        location: updatedEntry.location,
-        status: updatedEntry.status,
+        userId: enrichedEntry.userId,
+        clockIn: enrichedEntry.clockIn,
+        clockOut: enrichedEntry.clockOut,
+        notes: enrichedEntry.notes,
+        ipAddress: enrichedEntry.ipAddress,
+        device: enrichedEntry.device,
+        location: enrichedEntry.location,
+        geofence: geofenceResult,
+        faceAuth,
+        pinAuth,
+        status: enrichedEntry.status,
         duration,
-        user: updatedEntry.user,
+        overtime,
+        bankHours: {
+          accruedMinutes: bankHoursResult.accruedMinutes,
+          discardedMinutes: bankHoursResult.discardedMinutes,
+          expiredMinutes: bankHoursResult.expiredMinutes,
+          balanceMinutes: bankHoursResult.balanceMinutes,
+          limitMinutes: bankHoursResult.limitMinutes,
+          policyCode: bankHoursResult.policyCode,
+        },
+        financial,
+        user: enrichedEntry.user,
       },
+      ...(geofenceResult.reason === 'OUTSIDE_GEOFENCE_ALERT' && {
+        warning: 'Registro fora da cerca virtual. Evidência salva para auditoria.',
+      }),
     });
   } catch (error) {
     console.error('❌ Erro ao registrar clock-out:', error);
     res.status(500).json({
       error: 'Internal Server Error',
       message: 'Erro ao registrar saída',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
+/**
+ * GET /time/geofence
+ * Retorna configuração pública da cerca virtual
+ */
+const getGeofenceSettings = async (req, res) => {
+  try {
+    const config = getGeofencePublicConfig();
+    res.json({ geofence: config });
+  } catch (error) {
+    console.error('❌ Erro ao buscar configuração de geofence:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao buscar configuração de geofence',
+    });
+  }
+};
+
+/**
+ * GET /time/bank-hours/me
+ * Retorna saldo e histórico recente de banco de horas do usuário logado
+ */
+const getMyBankHours = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const { expiredMinutes } = await expireBankHoursIfNeeded(userId);
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        bankHoursBalanceMinutes: true,
+        bankHoursLimitMinutes: true,
+        bankHoursExpiryMonths: true,
+        bankHoursPolicyCode: true,
+      },
+    });
+
+    const entries = await prisma.bankHoursEntry.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+      include: {
+        timeEntry: {
+          select: {
+            id: true,
+            clockIn: true,
+            clockOut: true,
+          },
+        },
+      },
+    });
+
+    res.json({
+      bankHours: {
+        balanceMinutes: user?.bankHoursBalanceMinutes || 0,
+        limitMinutes: user?.bankHoursLimitMinutes ?? null,
+        expiryMonths: user?.bankHoursExpiryMonths ?? 6,
+        policyCode: user?.bankHoursPolicyCode || null,
+        expiredMinutes,
+      },
+      entries,
+    });
+  } catch (error) {
+    console.error('❌ Erro ao buscar banco de horas do usuário:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao buscar banco de horas',
       ...(process.env.NODE_ENV === 'development' && { details: error.message }),
     });
   }
@@ -457,11 +966,91 @@ const getTimeEntryById = async (req, res) => {
   }
 };
 
+/**
+ * PATCH /time/:id/notes
+ * Permite ao colaborador ajustar apenas as notas quando houver solicitação de edição
+ */
+const updateMyEntryNotes = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const notes = String(req.body?.notes || '').trim();
+
+    if (!notes) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Informe as notas ajustadas.',
+      });
+    }
+
+    const entry = await prisma.timeEntry.findFirst({
+      where: {
+        id,
+        userId,
+      },
+      include: {
+        logs: {
+          orderBy: { timestamp: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!entry) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Registro de ponto não encontrado.',
+      });
+    }
+
+    const latestAction = entry.logs?.[0]?.action || null;
+    if (latestAction !== 'EDIT_REQUESTED') {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Este registro não está com solicitação de ajuste pendente.',
+      });
+    }
+
+    const [updatedEntry] = await prisma.$transaction([
+      prisma.timeEntry.update({
+        where: { id: entry.id },
+        data: {
+          notes,
+          status: 'PENDING',
+        },
+      }),
+      prisma.approvalLog.create({
+        data: {
+          timeEntryId: entry.id,
+          reviewerId: userId,
+          action: 'EDIT_RESPONSE',
+          comment: 'Colaborador ajustou as notas após solicitação de edição.',
+        },
+      }),
+    ]);
+
+    res.json({
+      message: 'Notas ajustadas com sucesso. Registro enviado para nova revisão.',
+      entry: updatedEntry,
+    });
+  } catch (error) {
+    console.error('❌ Erro ao ajustar notas do registro:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao ajustar notas do registro',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
 module.exports = {
   clockIn,
   clockOut,
   getMyTimeEntries,
   getCurrentEntry,
+  getGeofenceSettings,
+  getMyBankHours,
   getTodayEntries,
   getTimeEntryById,
+  updateMyEntryNotes,
 };

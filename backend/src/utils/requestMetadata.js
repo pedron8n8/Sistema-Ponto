@@ -61,7 +61,7 @@ const getDeviceInfo = (req) => {
 const getLocation = (req) => {
   const { latitude, longitude } = req.body;
   
-  if (latitude && longitude) {
+  if (latitude !== undefined && longitude !== undefined) {
     // Valida coordenadas
     const lat = parseFloat(latitude);
     const lng = parseFloat(longitude);

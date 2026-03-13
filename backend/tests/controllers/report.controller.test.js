@@ -7,6 +7,7 @@ const { mockSupabaseAdmin } = require('../mocks/supabase.mock');
 const mockReportQueue = {
   add: jest.fn(),
   getJob: jest.fn(),
+  getCompleted: jest.fn(),
 };
 
 jest.mock('../../src/config/database', () => mockPrisma);
@@ -15,6 +16,7 @@ jest.mock('../../src/config/supabase', () => ({
 }));
 jest.mock('../../src/workers/reportWorker', () => ({
   reportQueue: mockReportQueue,
+  REPORTS_DIR: '/tmp/exports',
 }));
 jest.mock('fs', () => ({
   ...jest.requireActual('fs'),
@@ -22,6 +24,7 @@ jest.mock('fs', () => ({
   readdirSync: jest.fn(),
   statSync: jest.fn(),
   unlinkSync: jest.fn(),
+  createReadStream: jest.fn(),
 }));
 
 const fs = require('fs');
@@ -42,6 +45,7 @@ describe('Report Controller', () => {
       status: jest.fn().mockReturnThis(),
       json: jest.fn(),
       download: jest.fn(),
+      setHeader: jest.fn(),
     };
   });
 
@@ -99,8 +103,14 @@ describe('Report Controller', () => {
       mockReportQueue.getJob.mockResolvedValue({
         id: 'job-123',
         getState: jest.fn().mockResolvedValue('completed'),
-        progress: jest.fn().mockReturnValue(100),
-        returnvalue: { filePath: '/exports/report.csv' },
+        progress: 100,
+        timestamp: Date.now(),
+        returnvalue: {
+          filename: 'report.csv',
+          totalRecords: 10,
+          generatedAt: new Date().toISOString(),
+          downloadUrl: '/api/v1/reports/download/report.csv',
+        },
         failedReason: null,
       });
 
@@ -109,7 +119,7 @@ describe('Report Controller', () => {
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           jobId: 'job-123',
-          status: 'completed',
+          state: 'completed',
           progress: 100,
         })
       );
@@ -135,7 +145,8 @@ describe('Report Controller', () => {
       mockReportQueue.getJob.mockResolvedValue({
         id: 'job-failed',
         getState: jest.fn().mockResolvedValue('failed'),
-        progress: jest.fn().mockReturnValue(50),
+        progress: 50,
+        timestamp: Date.now(),
         returnvalue: null,
         failedReason: 'Database connection error',
       });
@@ -144,8 +155,8 @@ describe('Report Controller', () => {
 
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
-          status: 'failed',
-          failedReason: 'Database connection error',
+          state: 'failed',
+          error: 'Database connection error',
         })
       );
     });
@@ -155,10 +166,14 @@ describe('Report Controller', () => {
     it('deve fazer download do arquivo quando existe', async () => {
       req.params.filename = 'report-123.csv';
       fs.existsSync.mockReturnValue(true);
+      const pipe = jest.fn();
+      fs.createReadStream.mockReturnValue({ pipe });
 
       await reportController.downloadReport(req, res);
 
-      expect(res.download).toHaveBeenCalled();
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
+      expect(fs.createReadStream).toHaveBeenCalled();
+      expect(pipe).toHaveBeenCalledWith(res);
     });
 
     it('deve retornar 404 quando arquivo não existe', async () => {
@@ -170,25 +185,20 @@ describe('Report Controller', () => {
       expect(res.status).toHaveBeenCalledWith(404);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: 'Arquivo não encontrado',
+          message: 'Relatório não encontrado ou já expirado',
         })
       );
     });
 
-    it('deve prevenir path traversal', async () => {
+    it('deve rejeitar path traversal sem extensão permitida', async () => {
       req.params.filename = '../../../etc/passwd';
 
       await reportController.downloadReport(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: 'Nome de arquivo inválido',
-        })
-      );
     });
 
-    it('deve rejeitar arquivos sem extensão csv', async () => {
+    it('deve rejeitar arquivos sem extensão permitida', async () => {
       req.params.filename = 'malicious.exe';
 
       await reportController.downloadReport(req, res);
@@ -198,14 +208,22 @@ describe('Report Controller', () => {
   });
 
   describe('listReports', () => {
-    it('deve listar arquivos de relatório', async () => {
-      fs.existsSync.mockReturnValue(true);
-      fs.readdirSync.mockReturnValue(['report1.csv', 'report2.csv', 'other.txt']);
-      fs.statSync.mockReturnValue({
-        size: 1024,
-        mtime: new Date('2024-01-15'),
-        birthtime: new Date('2024-01-15'),
-      });
+    it('deve listar relatórios de jobs completados', async () => {
+      mockReportQueue.getCompleted.mockResolvedValue([
+        {
+          id: 'job-1',
+          returnvalue: {
+            filename: 'report1.csv',
+            totalRecords: 20,
+            generatedAt: '2024-01-10T12:00:00.000Z',
+            downloadUrl: '/api/v1/reports/download/report1.csv',
+          },
+          data: {
+            requestedBy: { email: 'admin@empresa.com' },
+            filters: { status: 'ALL' },
+          },
+        },
+      ]);
 
       await reportController.listReports(req, res);
 
@@ -220,8 +238,8 @@ describe('Report Controller', () => {
       );
     });
 
-    it('deve retornar lista vazia quando diretório não existe', async () => {
-      fs.existsSync.mockReturnValue(false);
+    it('deve retornar lista vazia quando não há jobs completados', async () => {
+      mockReportQueue.getCompleted.mockResolvedValue([]);
 
       await reportController.listReports(req, res);
 
@@ -232,14 +250,29 @@ describe('Report Controller', () => {
       );
     });
 
-    it('deve ordenar por data mais recente', async () => {
-      fs.existsSync.mockReturnValue(true);
-      fs.readdirSync.mockReturnValue(['old.csv', 'new.csv']);
-      fs.statSync.mockImplementation((path) => ({
-        size: 1024,
-        mtime: path.includes('new') ? new Date('2024-01-20') : new Date('2024-01-10'),
-        birthtime: path.includes('new') ? new Date('2024-01-20') : new Date('2024-01-10'),
-      }));
+    it('deve manter ordem retornada pela fila de jobs', async () => {
+      mockReportQueue.getCompleted.mockResolvedValue([
+        {
+          id: 'job-new',
+          returnvalue: {
+            filename: 'new.csv',
+            totalRecords: 2,
+            generatedAt: '2024-01-20T12:00:00.000Z',
+            downloadUrl: '/api/v1/reports/download/new.csv',
+          },
+          data: { requestedBy: { email: 'a@a.com' }, filters: {} },
+        },
+        {
+          id: 'job-old',
+          returnvalue: {
+            filename: 'old.csv',
+            totalRecords: 2,
+            generatedAt: '2024-01-10T12:00:00.000Z',
+            downloadUrl: '/api/v1/reports/download/old.csv',
+          },
+          data: { requestedBy: { email: 'b@b.com' }, filters: {} },
+        },
+      ]);
 
       await reportController.listReports(req, res);
 
@@ -259,7 +292,7 @@ describe('Report Controller', () => {
       expect(fs.unlinkSync).toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: 'Relatório deletado com sucesso',
+          message: 'Relatório removido com sucesso',
         })
       );
     });
@@ -273,13 +306,14 @@ describe('Report Controller', () => {
       expect(res.status).toHaveBeenCalledWith(404);
     });
 
-    it('deve prevenir path traversal na deleção', async () => {
+    it('deve sanitizar path traversal na deleção', async () => {
       req.params.filename = '../../config.json';
+      fs.existsSync.mockReturnValue(false);
 
       await reportController.deleteReport(req, res);
 
       expect(fs.unlinkSync).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.status).toHaveBeenCalledWith(404);
     });
 
     it('deve retornar erro quando falha ao deletar', async () => {

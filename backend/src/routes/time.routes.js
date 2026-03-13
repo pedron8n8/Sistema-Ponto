@@ -32,10 +32,28 @@ router.get('/current', timeController.getCurrentEntry);
 router.get('/today', timeController.getTodayEntries);
 
 /**
+ * GET /api/v1/time/geofence
+ * Retorna configuração pública da cerca virtual
+ */
+router.get('/geofence', timeController.getGeofenceSettings);
+
+/**
  * GET /api/v1/time/me
  * Retorna histórico de pontos do usuário logado (paginado)
  */
 router.get('/me', timeController.getMyTimeEntries);
+
+/**
+ * GET /api/v1/time/bank-hours/me
+ * Retorna saldo e histórico de banco de horas do usuário logado
+ */
+router.get('/bank-hours/me', timeController.getMyBankHours);
+
+/**
+ * PATCH /api/v1/time/:id/notes
+ * Colaborador ajusta apenas notas após solicitação de edição
+ */
+router.patch('/:id/notes', timeController.updateMyEntryNotes);
 
 /**
  * GET /api/v1/time/:id

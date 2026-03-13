@@ -20,15 +20,44 @@ enum EntryStatus {
   REJECTED
 }
 
+enum BankHoursEntryType {
+  ACCRUAL
+  ADJUSTMENT
+  EXPIRY
+}
+
+enum BankHoursPaymentStatus {
+  PENDING
+  PAID
+}
+
 model User {
   id              String        @id @default(uuid())
   email           String        @unique
   name            String?
   role            Role          @default(MEMBER)
+  facialEmbedding Json?
+  facialEmbeddingUpdatedAt DateTime?
+  facialThreshold Float     @default(0.45)
+  pinHash         String?
+  pinSalt         String?
+  pinUpdatedAt    DateTime?
+  pinFailedAttempts Int      @default(0)
+  pinLockedUntil  DateTime?
+  contractDailyMinutes Int      @default(480)
+  workdayStartTime String?
+  workdayEndTime   String?
+  hourlyRate       Decimal?      @db.Decimal(10, 2)
+  timeZone         String        @default("America/New_York")
+  bankHoursBalanceMinutes Int   @default(0)
+  bankHoursLimitMinutes Int?
+  bankHoursExpiryMonths Int     @default(6)
+  bankHoursPolicyCode String?
   supervisorId    String?
   supervisor      User?         @relation("TeamHierarchy", fields: [supervisorId], references: [id])
   subordinates    User[]        @relation("TeamHierarchy")
   timeEntries     TimeEntry[]
+  bankHoursEntries BankHoursEntry[]
   reviewedLogs    ApprovalLog[] @relation("ReviewerAction")
   createdAt       DateTime      @default(now())
 
@@ -47,8 +76,15 @@ model TimeEntry {
   ipAddress   String?
   location    Json?         // { lat: number, lng: number }
   device      String?
+  workedMinutes Int         @default(0)
+  overtimeMinutes Int       @default(0)
+  overtimeMinutes50 Int     @default(0)
+  overtimeMinutes100 Int    @default(0)
+  overtimePercent Int       @default(0)
+  bankHoursAccruedMinutes Int @default(0)
   status      EntryStatus   @default(PENDING)
   logs        ApprovalLog[]
+  bankHoursEntries BankHoursEntry[]
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
@@ -57,6 +93,31 @@ model TimeEntry {
   @@index([clockIn])
   @@index([userId, status])
   @@index([userId, clockIn])
+}
+
+model BankHoursEntry {
+  id            String            @id @default(uuid())
+  userId        String
+  user          User              @relation(fields: [userId], references: [id])
+  timeEntryId   String?
+  timeEntry     TimeEntry?        @relation(fields: [timeEntryId], references: [id])
+  type          BankHoursEntryType
+  paymentStatus BankHoursPaymentStatus @default(PENDING)
+  paidAt        DateTime?
+  paidById      String?
+  paymentNote   String?
+  minutes       Int
+  description   String?
+  expiresAt     DateTime?
+  expiredAt     DateTime?
+  createdById   String?
+  createdAt     DateTime          @default(now())
+
+  @@index([userId])
+  @@index([timeEntryId])
+  @@index([type])
+  @@index([expiresAt])
+  @@index([paymentStatus])
 }
 
 model ApprovalLog {

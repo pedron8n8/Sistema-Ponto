@@ -6,6 +6,12 @@ const {
   changeUserSupervisor,
   getSystemStats,
   getTeamOverview,
+  setUserPin,
+  resetUserPin,
+  adjustUserBankHours,
+  updateUserWorkSettings,
+  getBankHoursOverview,
+  payUserBankHours,
 } = require('../controllers/admin.controller');
 
 const router = express.Router();
@@ -46,5 +52,45 @@ router.get('/users/:userId/entries', getUserTimeEntries);
  * Body: { supervisorId: string | null }
  */
 router.patch('/users/:userId/supervisor', changeUserSupervisor);
+
+/**
+ * PATCH /admin/users/:userId/pin
+ * Define/altera PIN de um usuário (apenas ADMIN)
+ * Body: { pin: "1234" }
+ */
+router.patch('/users/:userId/pin', setUserPin);
+
+/**
+ * DELETE /admin/users/:userId/pin
+ * Reseta/remove PIN de um usuário (apenas ADMIN)
+ */
+router.delete('/users/:userId/pin', resetUserPin);
+
+/**
+ * PATCH /admin/users/:userId/bank-hours
+ * Ajusta ou zera saldo de banco de horas
+ * Body: { minutesDelta?: number, reason: string, resetToZero?: boolean }
+ */
+router.patch('/users/:userId/bank-hours', adjustUserBankHours);
+
+/**
+ * GET /admin/bank-hours/overview
+ * Lista saldo e pendências de banco de horas por colaborador
+ */
+router.get('/bank-hours/overview', getBankHoursOverview);
+
+/**
+ * PATCH /admin/users/:userId/bank-hours/pay
+ * Dá baixa (paga) banco de horas pendente
+ * Body: { payAllPending?: boolean, entryIds?: string[], paymentNote?: string }
+ */
+router.patch('/users/:userId/bank-hours/pay', payUserBankHours);
+
+/**
+ * PATCH /admin/users/:userId/work-settings
+ * Define jornada e valor-hora do colaborador
+ * Body: { contractDailyMinutes?: number, workdayStartTime?: "08:00", workdayEndTime?: "17:00", hourlyRate?: number }
+ */
+router.patch('/users/:userId/work-settings', updateUserWorkSettings);
 
 module.exports = router;

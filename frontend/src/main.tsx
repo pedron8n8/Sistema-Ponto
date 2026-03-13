@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import './style.css'
+import 'leaflet/dist/leaflet.css'
 
 const root = document.getElementById('app')
 

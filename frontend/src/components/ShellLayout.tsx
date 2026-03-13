@@ -1,5 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useTimeZone } from '../context/TimezoneContext'
+import { TIME_ZONE_OPTIONS } from '../lib/timezone'
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   `rounded-full px-4 py-2 text-sm font-medium transition ${
@@ -8,6 +10,9 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
 
 const ShellLayout = ({ children }: { children: React.ReactNode }) => {
   const { profile, profileError, signOut } = useAuth()
+  const { viewTimeZone, setViewTimeZone } = useTimeZone()
+  const isAdmin = profile?.role === 'ADMIN'
+  const isSupervisor = profile?.role === 'SUPERVISOR' || isAdmin
 
   return (
     <div className="min-h-screen bg-transparent px-6 py-8 text-slate-900">
@@ -20,6 +25,20 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
           </div>
         </div>
         <div className="flex items-center gap-4 text-sm text-slate-600">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Fuso</span>
+            <select
+              value={viewTimeZone}
+              onChange={(event) => setViewTimeZone(event.target.value)}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs"
+            >
+              {TIME_ZONE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
           <span>{profile?.name || profile?.email}</span>
           <button
             onClick={signOut}
@@ -41,14 +60,18 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
           Visao geral
         </NavLink>
         <NavLink to="/app/colaborador" className={navLinkClass}>
-          Colaborador
+          Ponto
         </NavLink>
-        <NavLink to="/app/supervisor" className={navLinkClass}>
-          Supervisor
-        </NavLink>
-        <NavLink to="/app/admin" className={navLinkClass}>
-          Admin
-        </NavLink>
+        {isSupervisor ? (
+          <NavLink to="/app/supervisor" className={navLinkClass}>
+            Supervisor
+          </NavLink>
+        ) : null}
+        {isAdmin ? (
+          <NavLink to="/app/admin" className={navLinkClass}>
+            Admin
+          </NavLink>
+        ) : null}
         <NavLink to="/app/relatorios" className={navLinkClass}>
           Relatorios
         </NavLink>

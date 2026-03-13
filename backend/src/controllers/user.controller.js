@@ -1,5 +1,7 @@
 const prisma = require('../config/database');
 const { supabaseAdmin } = require('../config/supabase');
+const { normalizeEmbedding, DEFAULT_THRESHOLD } = require('../utils/faceRecognition');
+const { validateLivenessEvidence } = require('../utils/liveness');
 
 /**
  * Controller para gerenciamento de usuários
@@ -321,6 +323,11 @@ const listUsers = async (req, res) => {
           email: true,
           name: true,
           role: true,
+          contractDailyMinutes: true,
+          workdayStartTime: true,
+          workdayEndTime: true,
+          hourlyRate: true,
+          timeZone: true,
           supervisor: {
             select: {
               id: true,
@@ -472,10 +479,151 @@ const deleteUser = async (req, res) => {
   }
 };
 
+/**
+ * GET /users/me/face
+ * Retorna status do cadastro facial do usuário logado
+ */
+const getMyFaceStatus = async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        id: true,
+        facialEmbedding: true,
+        facialEmbeddingUpdatedAt: true,
+        facialThreshold: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Usuário não encontrado',
+      });
+    }
+
+    res.json({
+      face: {
+        enrolled: Boolean(user.facialEmbedding),
+        updatedAt: user.facialEmbeddingUpdatedAt,
+        threshold: user.facialThreshold,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Erro ao buscar status facial:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao buscar status facial',
+    });
+  }
+};
+
+/**
+ * POST /users/me/face/enroll
+ * Cadastra/atualiza embedding facial do usuário logado
+ */
+const enrollMyFace = async (req, res) => {
+  try {
+    const { faceDescriptor, threshold, livenessData } = req.body;
+
+    const liveness = validateLivenessEvidence(livenessData);
+
+    if (!liveness.valid) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Prova de vida inválida para cadastro facial. Pisque e mova a cabeça durante a captura.',
+        liveness,
+      });
+    }
+
+    const normalizedEmbedding = normalizeEmbedding(faceDescriptor);
+
+    if (!normalizedEmbedding) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'faceDescriptor inválido. Envie um vetor numérico válido.',
+      });
+    }
+
+    let normalizedThreshold = DEFAULT_THRESHOLD;
+    if (threshold !== undefined) {
+      const parsedThreshold = Number(threshold);
+      if (!Number.isFinite(parsedThreshold) || parsedThreshold <= 0 || parsedThreshold >= 2) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'threshold inválido. Use um número entre 0 e 2.',
+        });
+      }
+      normalizedThreshold = parsedThreshold;
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        facialEmbedding: normalizedEmbedding,
+        facialEmbeddingUpdatedAt: new Date(),
+        facialThreshold: normalizedThreshold,
+      },
+      select: {
+        id: true,
+        facialEmbeddingUpdatedAt: true,
+        facialThreshold: true,
+      },
+    });
+
+    res.json({
+      message: 'Reconhecimento facial cadastrado com sucesso',
+      face: {
+        enrolled: true,
+        updatedAt: updatedUser.facialEmbeddingUpdatedAt,
+        threshold: updatedUser.facialThreshold,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Erro ao cadastrar facial:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao cadastrar reconhecimento facial',
+    });
+  }
+};
+
+/**
+ * DELETE /users/me/face
+ * Remove o cadastro facial do usuário logado
+ */
+const deleteMyFace = async (req, res) => {
+  try {
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        facialEmbedding: null,
+        facialEmbeddingUpdatedAt: null,
+      },
+    });
+
+    res.json({
+      message: 'Cadastro facial removido com sucesso',
+      face: {
+        enrolled: false,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Erro ao remover facial:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao remover reconhecimento facial',
+    });
+  }
+};
+
 module.exports = {
   createUser,
   updateUser,
   listUsers,
   getUserById,
   deleteUser,
+  getMyFaceStatus,
+  enrollMyFace,
+  deleteMyFace,
 };
