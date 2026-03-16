@@ -5,6 +5,7 @@ const timeRoutes = require('./time.routes');
 const supervisorRoutes = require('./supervisor.routes');
 const reportRoutes = require('./report.routes');
 const adminRoutes = require('./admin.routes');
+const vacationRoutes = require('./vacation.routes');
 
 const router = express.Router();
 
@@ -25,6 +26,9 @@ router.use('/reports', reportRoutes);
 
 // Rotas administrativas
 router.use('/admin', adminRoutes);
+
+// Rotas de férias
+router.use('/vacations', vacationRoutes);
 
 // Health check (sem autenticação)
 router.get('/health', (req, res) => {

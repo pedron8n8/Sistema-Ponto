@@ -8,6 +8,8 @@ import ColaboradorDashboard from './pages/ColaboradorDashboard'
 import SupervisorDashboard from './pages/SupervisorDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 import Reports from './pages/Reports'
+import VacationMemberPage from './pages/VacationMemberPage'
+import VacationSupervisorPage from './pages/VacationSupervisorPage'
 import NotFound from './pages/NotFound'
 import { hasSupabaseEnv } from './lib/supabase'
 import { TimezoneProvider } from './context/TimezoneContext'
@@ -67,7 +69,7 @@ const App = () => {
           <Route
             path="/app/supervisor"
             element={
-              <ProtectedRoute allowedRoles={['SUPERVISOR', 'ADMIN']}>
+              <ProtectedRoute allowedRoles={['SUPERVISOR', 'HR', 'ADMIN']}>
                 <ShellLayout>
                   <SupervisorDashboard />
                 </ShellLayout>
@@ -77,7 +79,7 @@ const App = () => {
           <Route
             path="/app/admin"
             element={
-              <ProtectedRoute allowedRoles={['ADMIN']}>
+              <ProtectedRoute allowedRoles={['ADMIN', 'HR']}>
                 <ShellLayout>
                   <AdminDashboard />
                 </ShellLayout>
@@ -90,6 +92,26 @@ const App = () => {
               <ProtectedRoute>
                 <ShellLayout>
                   <Reports />
+                </ShellLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/app/ferias"
+            element={
+              <ProtectedRoute>
+                <ShellLayout>
+                  <VacationMemberPage />
+                </ShellLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/app/ferias-equipe"
+            element={
+              <ProtectedRoute allowedRoles={['SUPERVISOR', 'HR', 'ADMIN']}>
+                <ShellLayout>
+                  <VacationSupervisorPage />
                 </ShellLayout>
               </ProtectedRoute>
             }

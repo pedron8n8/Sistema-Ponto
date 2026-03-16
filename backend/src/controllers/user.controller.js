@@ -37,7 +37,7 @@ const createUser = async (req, res) => {
       });
     }
 
-    const validRoles = ['ADMIN', 'SUPERVISOR', 'MEMBER'];
+    const validRoles = ['ADMIN', 'HR', 'SUPERVISOR', 'MEMBER'];
     if (role && !validRoles.includes(role)) {
       return res.status(400).json({
         error: 'Bad Request',
@@ -58,7 +58,7 @@ const createUser = async (req, res) => {
         });
       }
 
-      if (!['ADMIN', 'SUPERVISOR'].includes(supervisor.role)) {
+      if (!['ADMIN', 'HR', 'SUPERVISOR'].includes(supervisor.role)) {
         return res.status(400).json({
           error: 'Bad Request',
           message: 'Apenas Admin ou Supervisor podem ser atribuídos como supervisores',
@@ -181,7 +181,7 @@ const updateUser = async (req, res) => {
     }
 
     // Validações
-    const validRoles = ['ADMIN', 'SUPERVISOR', 'MEMBER'];
+    const validRoles = ['ADMIN', 'HR', 'SUPERVISOR', 'MEMBER'];
     if (role && !validRoles.includes(role)) {
       return res.status(400).json({
         error: 'Bad Request',
@@ -209,7 +209,7 @@ const updateUser = async (req, res) => {
         });
       }
 
-      if (!['ADMIN', 'SUPERVISOR'].includes(supervisor.role)) {
+      if (!['ADMIN', 'HR', 'SUPERVISOR'].includes(supervisor.role)) {
         return res.status(400).json({
           error: 'Bad Request',
           message: 'Apenas Admin ou Supervisor podem ser atribuídos como supervisores',
@@ -287,7 +287,7 @@ const updateUser = async (req, res) => {
 };
 
 /**
- * Listar todos os usuários (Admin/Supervisor)
+ * Listar todos os usuários (Admin/HR/Supervisor)
  */
 const listUsers = async (req, res) => {
   try {
@@ -298,7 +298,7 @@ const listUsers = async (req, res) => {
     const where = {};
 
     // Filtro por role
-    if (role && ['ADMIN', 'SUPERVISOR', 'MEMBER'].includes(role)) {
+    if (role && ['ADMIN', 'HR', 'SUPERVISOR', 'MEMBER'].includes(role)) {
       where.role = role;
     }
 
@@ -311,6 +311,7 @@ const listUsers = async (req, res) => {
     }
 
     // Se for supervisor, só mostra seus subordinados
+    // HR e ADMIN visualizam todos.
     if (req.user.role === 'SUPERVISOR') {
       where.supervisorId = req.user.id;
     }

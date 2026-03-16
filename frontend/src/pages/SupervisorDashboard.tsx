@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { apiFetch } from '../lib/api'
+import { useEffect, useMemo, useState } from 'react'
+import { API_BASE, apiFetch } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTimeZone } from '../context/TimezoneContext'
 import {
@@ -11,7 +11,7 @@ import {
 
 type Entry = {
   id: string
-  user: { name: string; email: string }
+  user: { id?: string; name: string; email: string }
   clockIn: string
   clockOut: string | null
   notes?: string | null
@@ -56,6 +56,116 @@ type TeamBankHoursOverviewItem = {
   }
 }
 
+type PresenceStatus = 'PRESENT' | 'ABSENT' | 'ON_BREAK' | 'OVERTIME_ACTIVE'
+
+type PresenceMember = {
+  member: {
+    id: string
+    name: string
+    email: string
+    role: string
+  }
+  status: PresenceStatus
+  since: string | null
+  metadata: {
+    branch: string
+    department: string
+    team: string
+  }
+}
+
+type PresenceSnapshot = {
+  generatedAt: string
+  summary: {
+    total: number
+    present: number
+    absent: number
+    onBreak: number
+    overtimeActive: number
+  }
+  filters: {
+    branch: string[]
+    department: string[]
+    team: string[]
+  }
+  members: PresenceMember[]
+}
+
+type HoursKpiItem = {
+  member: {
+    id: string
+    name: string
+    email: string
+  }
+  expectedMinutes: number
+  workedMinutes: number
+  overtimeMinutes: number
+}
+
+type HoursKpiTimelineItem = {
+  date: string
+  expectedMinutes: number
+  workedMinutes: number
+  overtimeMinutes: number
+}
+
+type HoursKpiResponse = {
+  summary: {
+    expectedMinutes: number
+    workedMinutes: number
+    overtimeMinutes: number
+  }
+  byCollaborator: HoursKpiItem[]
+  timeline: HoursKpiTimelineItem[]
+}
+
+type VacationRequest = {
+  id: string
+  startDate: string
+  endDate: string
+  status:
+    | 'REQUESTED'
+    | 'SUPERVISOR_APPROVED'
+    | 'SUPERVISOR_REJECTED'
+    | 'HR_CONFIRMED'
+    | 'HR_REJECTED'
+    | 'CANCELED'
+  reason?: string | null
+  user: {
+    id: string
+    name: string
+    email: string
+  }
+}
+
+type VacationCalendarDay = {
+  date: string
+  absentCount: number
+  availableCount: number
+  teamSize: number
+  presencePercent: number
+  belowThreshold: boolean
+  membersOnVacation: Array<{
+    id: string
+    name: string | null
+    email: string
+    status: string
+  }>
+}
+
+type VacationCalendar = {
+  month: { year: number; month: number }
+  minPresencePercent: number
+  teamSize: number
+  days: VacationCalendarDay[]
+  annual: Array<{
+    year: number
+    month: number
+    requestsCount: number
+    membersScheduled: number
+  }>
+}
+
 type Stats = {
   PENDING: number
   APPROVED: number
@@ -80,6 +190,40 @@ const formatMinutesLabel = (minutes: number) => {
   return `${sign}${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
 }
 
+const formatShortDuration = (minutes: number) => {
+  const safeMinutes = Math.max(0, minutes)
+  const hours = Math.floor(safeMinutes / 60)
+  const mins = safeMinutes % 60
+  return `${hours}h ${String(mins).padStart(2, '0')}m`
+}
+
+const getElapsedMinutes = (sinceIso: string, nowMs: number) => {
+  const since = new Date(sinceIso).getTime()
+  if (!Number.isFinite(since)) return 0
+  return Math.max(0, Math.floor((nowMs - since) / 60000))
+}
+
+const getTodayBucket = (nowMs: number) => {
+  const now = new Date(nowMs)
+  const day = String(now.getDate()).padStart(2, '0')
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  return `${day}/${month}`
+}
+
+const presenceStatusLabel: Record<PresenceStatus, string> = {
+  PRESENT: 'Presente',
+  ABSENT: 'Ausente',
+  ON_BREAK: 'Em intervalo',
+  OVERTIME_ACTIVE: 'HE ativa',
+}
+
+const presenceStatusClass: Record<PresenceStatus, string> = {
+  PRESENT: 'bg-emerald-100 text-emerald-800',
+  ABSENT: 'bg-slate-200 text-slate-700',
+  ON_BREAK: 'bg-amber-100 text-amber-800',
+  OVERTIME_ACTIVE: 'bg-rose-100 text-rose-700',
+}
+
 const SupervisorDashboard = () => {
   const { session } = useAuth()
   const { viewTimeZone } = useTimeZone()
@@ -95,6 +239,32 @@ const SupervisorDashboard = () => {
   const [teamBankLoading, setTeamBankLoading] = useState(false)
   const [teamBankPayLoadingByUser, setTeamBankPayLoadingByUser] = useState<Record<string, boolean>>({})
   const [teamBankNotice, setTeamBankNotice] = useState('')
+  const [presenceSnapshot, setPresenceSnapshot] = useState<PresenceSnapshot | null>(null)
+  const [presenceConnected, setPresenceConnected] = useState(false)
+  const [presenceError, setPresenceError] = useState('')
+  const [presenceFilters, setPresenceFilters] = useState({
+    branch: '',
+    department: '',
+    team: '',
+  })
+  const [hoursKpi, setHoursKpi] = useState<HoursKpiResponse | null>(null)
+  const [hoursKpiPeriod, setHoursKpiPeriod] = useState<'daily' | 'weekly' | 'monthly'>('weekly')
+  const [hoursKpiLoading, setHoursKpiLoading] = useState(false)
+  const [hoursKpiError, setHoursKpiError] = useState('')
+  const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([])
+  const [vacationRequestsLoading, setVacationRequestsLoading] = useState(false)
+  const [vacationReviewCommentById, setVacationReviewCommentById] = useState<Record<string, string>>({})
+  const [vacationNotice, setVacationNotice] = useState('')
+  const [vacationError, setVacationError] = useState('')
+  const [vacationActionLoadingById, setVacationActionLoadingById] = useState<Record<string, boolean>>({})
+  const [vacationCalendar, setVacationCalendar] = useState<VacationCalendar | null>(null)
+  const [vacationCalendarLoading, setVacationCalendarLoading] = useState(false)
+  const [vacationCalendarMonth, setVacationCalendarMonth] = useState(() => {
+    const now = new Date()
+    return { year: now.getFullYear(), month: now.getMonth() + 1 }
+  })
+  const [vacationMinPresencePercent, setVacationMinPresencePercent] = useState(70)
+  const [nowMs, setNowMs] = useState(Date.now())
   const [teamErrorByUser, setTeamErrorByUser] = useState<Record<string, string>>({})
   const [teamNoticeByUser, setTeamNoticeByUser] = useState<Record<string, string>>({})
   const [filters, setFilters] = useState({
@@ -106,6 +276,66 @@ const SupervisorDashboard = () => {
   const [entryDetail, setEntryDetail] = useState<EntryDetailState>({ entry: null })
   const [review, setReview] = useState<ReviewState>({ entry: null, action: 'APPROVE', comment: '' })
   const [error, setError] = useState('')
+
+  const openMinutesByUser = useMemo(() => {
+    const minutesByUser: Record<string, number> = {}
+
+    for (const member of presenceSnapshot?.members || []) {
+      if (!member.since) continue
+      if (member.status !== 'PRESENT' && member.status !== 'OVERTIME_ACTIVE') continue
+      minutesByUser[member.member.id] = getElapsedMinutes(member.since, nowMs)
+    }
+
+    return minutesByUser
+  }, [presenceSnapshot, nowMs])
+
+  const openMinutesTotal = useMemo(
+    () => Object.values(openMinutesByUser).reduce((acc, value) => acc + value, 0),
+    [openMinutesByUser]
+  )
+
+  const hoursKpiWithOpen = useMemo(() => {
+    if (!hoursKpi) return null
+
+    const byCollaborator = hoursKpi.byCollaborator.map((item) => {
+      const openMinutes = openMinutesByUser[item.member.id] || 0
+      return {
+        ...item,
+        workedMinutes: item.workedMinutes + openMinutes,
+        openMinutes,
+      }
+    })
+
+    const timeline = hoursKpi.timeline.map((item) => ({ ...item }))
+    const todayBucket = getTodayBucket(nowMs)
+    const currentDayIndex = timeline.findIndex((item) => item.date === todayBucket)
+    if (currentDayIndex >= 0 && openMinutesTotal > 0) {
+      timeline[currentDayIndex] = {
+        ...timeline[currentDayIndex],
+        workedMinutes: timeline[currentDayIndex].workedMinutes + openMinutesTotal,
+      }
+    }
+
+    return {
+      ...hoursKpi,
+      summary: {
+        ...hoursKpi.summary,
+        workedMinutes: hoursKpi.summary.workedMinutes + openMinutesTotal,
+      },
+      byCollaborator,
+      timeline,
+    }
+  }, [hoursKpi, openMinutesByUser, openMinutesTotal, nowMs])
+
+  const kpiChartMax = useMemo(() => {
+    if (!hoursKpiWithOpen?.timeline?.length) return 1
+    return Math.max(
+      ...hoursKpiWithOpen.timeline.map((item) =>
+        Math.max(item.expectedMinutes, item.workedMinutes, item.overtimeMinutes)
+      ),
+      1
+    )
+  }, [hoursKpiWithOpen])
 
   const defaultStats: Stats = { PENDING: 0, APPROVED: 0, REJECTED: 0 }
 
@@ -191,6 +421,156 @@ const SupervisorDashboard = () => {
     }
   }
 
+  const loadHoursKpi = async () => {
+    if (!token) return
+    setHoursKpiLoading(true)
+    setHoursKpiError('')
+
+    try {
+      const query = new URLSearchParams({
+        period: hoursKpiPeriod,
+        ...(presenceFilters.branch ? { branch: presenceFilters.branch } : {}),
+        ...(presenceFilters.department ? { department: presenceFilters.department } : {}),
+        ...(presenceFilters.team ? { team: presenceFilters.team } : {}),
+      })
+
+      const response = await apiFetch<HoursKpiResponse>(`/supervisor/kpis/hours?${query.toString()}`, {
+        token,
+      })
+      setHoursKpi(response)
+    } catch (err) {
+      setHoursKpiError(err instanceof Error ? err.message : 'Erro ao carregar KPIs de horas')
+      setHoursKpi(null)
+    } finally {
+      setHoursKpiLoading(false)
+    }
+  }
+
+  const loadPresenceSnapshot = async () => {
+    if (!token) return
+
+    const query = new URLSearchParams({
+      ...(presenceFilters.branch ? { branch: presenceFilters.branch } : {}),
+      ...(presenceFilters.department ? { department: presenceFilters.department } : {}),
+      ...(presenceFilters.team ? { team: presenceFilters.team } : {}),
+    })
+
+    const payload = await apiFetch<PresenceSnapshot>(`/supervisor/presence?${query.toString()}`, {
+      token,
+    })
+    setPresenceSnapshot(payload)
+  }
+
+  const loadVacationRequests = async () => {
+    if (!token) return
+    setVacationRequestsLoading(true)
+    try {
+      const response = await apiFetch<{ requests: VacationRequest[] }>('/vacations/team/requests?status=ALL', {
+        token,
+      })
+      setVacationRequests(response.requests || [])
+    } finally {
+      setVacationRequestsLoading(false)
+    }
+  }
+
+  const loadVacationCalendar = async () => {
+    if (!token) return
+    setVacationCalendarLoading(true)
+    try {
+      const query = new URLSearchParams({
+        year: String(vacationCalendarMonth.year),
+        month: String(vacationCalendarMonth.month),
+        minPresencePercent: String(vacationMinPresencePercent),
+      })
+
+      const response = await apiFetch<VacationCalendar>(`/vacations/team/calendar?${query.toString()}`, {
+        token,
+      })
+      setVacationCalendar(response)
+    } finally {
+      setVacationCalendarLoading(false)
+    }
+  }
+
+  const connectPresenceStream = async (abortSignal: AbortSignal) => {
+    if (!token) return
+
+    while (!abortSignal.aborted) {
+      try {
+        const query = new URLSearchParams({
+          ...(presenceFilters.branch ? { branch: presenceFilters.branch } : {}),
+          ...(presenceFilters.department ? { department: presenceFilters.department } : {}),
+          ...(presenceFilters.team ? { team: presenceFilters.team } : {}),
+        })
+
+        const response = await fetch(`${API_BASE}/supervisor/presence/stream?${query.toString()}`, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'text/event-stream',
+          },
+          signal: abortSignal,
+        })
+
+        if (!response.ok || !response.body) {
+          throw new Error('Falha ao conectar stream de presença')
+        }
+
+        setPresenceConnected(true)
+        setPresenceError('')
+
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder('utf-8')
+        let pendingChunk = ''
+
+        while (!abortSignal.aborted) {
+          const { value, done } = await reader.read()
+          if (done) {
+            setPresenceConnected(false)
+            break
+          }
+
+          pendingChunk += decoder.decode(value, { stream: true })
+          const events = pendingChunk.split(/\r?\n\r?\n/)
+          pendingChunk = events.pop() || ''
+
+          for (const rawEvent of events) {
+            const lines = rawEvent.split(/\r?\n/)
+            let eventName = 'message'
+            const dataLines: string[] = []
+
+            for (const line of lines) {
+              if (line.startsWith('event:')) {
+                eventName = line.slice(6).trim()
+              }
+              if (line.startsWith('data:')) {
+                dataLines.push(line.slice(5).trim())
+              }
+            }
+
+            if (eventName === 'presence' && dataLines.length > 0) {
+              const payload = JSON.parse(dataLines.join('\n')) as PresenceSnapshot
+              setPresenceSnapshot(payload)
+              setPresenceError('')
+            }
+
+            if (eventName === 'error' && dataLines.length > 0) {
+              const payload = JSON.parse(dataLines.join('\n')) as { message?: string }
+              setPresenceError(payload.message || 'Erro no stream de presença')
+            }
+          }
+        }
+      } catch (err) {
+        if (abortSignal.aborted) return
+        setPresenceConnected(false)
+        setPresenceError(err instanceof Error ? err.message : 'Erro ao conectar presença em tempo real')
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+    }
+  }
+
   useEffect(() => {
     loadEntries().catch((err) => {
       setError(err instanceof Error ? err.message : 'Erro ao carregar pendencias')
@@ -210,6 +590,46 @@ const SupervisorDashboard = () => {
   useEffect(() => {
     loadTeamBankOverview().catch(() => undefined)
   }, [token])
+
+  useEffect(() => {
+    loadHoursKpi().catch(() => undefined)
+  }, [token, hoursKpiPeriod, presenceFilters.branch, presenceFilters.department, presenceFilters.team])
+
+  useEffect(() => {
+    if (!token) return
+
+    const abortController = new AbortController()
+
+    loadPresenceSnapshot().catch(() => undefined)
+
+    const fallbackInterval = setInterval(() => {
+      loadPresenceSnapshot().catch(() => undefined)
+    }, 12000)
+
+    connectPresenceStream(abortController.signal).catch(() => undefined)
+
+    return () => {
+      abortController.abort()
+      clearInterval(fallbackInterval)
+      setPresenceConnected(false)
+    }
+  }, [token, presenceFilters.branch, presenceFilters.department, presenceFilters.team])
+
+  useEffect(() => {
+    loadVacationRequests().catch(() => undefined)
+  }, [token])
+
+  useEffect(() => {
+    loadVacationCalendar().catch(() => undefined)
+  }, [token, vacationCalendarMonth.year, vacationCalendarMonth.month, vacationMinPresencePercent])
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setNowMs(Date.now())
+    }, 30000)
+
+    return () => clearInterval(intervalId)
+  }, [])
 
   const openReview = (entry: Entry, action: ReviewState['action']) => {
     setReview({ entry, action, comment: '' })
@@ -334,6 +754,39 @@ const SupervisorDashboard = () => {
     }
   }
 
+  const handleReviewVacationBySupervisor = async (requestId: string, decision: 'APPROVE' | 'REJECT') => {
+    if (!token) return
+
+    const comment = vacationReviewCommentById[requestId] || ''
+    setVacationError('')
+    setVacationNotice('')
+    setVacationActionLoadingById((prev) => ({ ...prev, [requestId]: true }))
+
+    try {
+      await apiFetch(`/vacations/${requestId}/supervisor-review`, {
+        token,
+        method: 'PATCH',
+        body: {
+          decision,
+          comment: comment || undefined,
+        },
+      })
+
+      setVacationNotice(
+        decision === 'APPROVE'
+          ? 'Solicitação aprovada e encaminhada ao RH.'
+          : 'Solicitação rejeitada pelo supervisor.'
+      )
+      await loadVacationRequests()
+      await loadVacationCalendar()
+      setVacationReviewCommentById((prev) => ({ ...prev, [requestId]: '' }))
+    } catch (err) {
+      setVacationError(err instanceof Error ? err.message : 'Erro ao revisar solicitação de férias')
+    } finally {
+      setVacationActionLoadingById((prev) => ({ ...prev, [requestId]: false }))
+    }
+  }
+
   const canSubmit = review.action === 'APPROVE' || review.comment.trim().length >= 3
 
   return (
@@ -345,6 +798,344 @@ const SupervisorDashboard = () => {
           Revise as jornadas da equipe e registre comentarios sem sair do fluxo.
         </p>
       </div>
+
+      <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-lg font-semibold text-slate-900">Presença em tempo real</h3>
+          <span
+            className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${
+              presenceConnected ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+            }`}
+          >
+            {presenceConnected ? 'Online' : 'Reconectando'}
+          </span>
+        </div>
+
+        <p className="mt-2 text-xs text-slate-500">
+          Atualizacao continua via SSE sem recarregar a pagina.
+        </p>
+        {presenceError ? <p className="mt-2 text-xs text-rose-600">{presenceError}</p> : null}
+
+        <div className="mt-4 grid gap-2 text-xs text-slate-600 md:grid-cols-3">
+          <select
+            value={presenceFilters.branch}
+            onChange={(event) =>
+              setPresenceFilters((prev) => ({
+                ...prev,
+                branch: event.target.value,
+              }))
+            }
+            className="rounded-full border border-slate-200 bg-white px-3 py-2"
+          >
+            <option value="">Todas as filiais</option>
+            {(presenceSnapshot?.filters.branch || []).map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+          <select
+            value={presenceFilters.department}
+            onChange={(event) =>
+              setPresenceFilters((prev) => ({
+                ...prev,
+                department: event.target.value,
+              }))
+            }
+            className="rounded-full border border-slate-200 bg-white px-3 py-2"
+          >
+            <option value="">Todos os departamentos</option>
+            {(presenceSnapshot?.filters.department || []).map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+          <select
+            value={presenceFilters.team}
+            onChange={(event) =>
+              setPresenceFilters((prev) => ({
+                ...prev,
+                team: event.target.value,
+              }))
+            }
+            className="rounded-full border border-slate-200 bg-white px-3 py-2"
+          >
+            <option value="">Todas as equipes</option>
+            {(presenceSnapshot?.filters.team || []).map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="mt-4 grid gap-2 text-xs text-slate-600 md:grid-cols-4">
+          <span className="rounded-full bg-slate-100 px-3 py-1">Total {presenceSnapshot?.summary.total || 0}</span>
+          <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-800">
+            Presentes {presenceSnapshot?.summary.present || 0}
+          </span>
+          <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-800">
+            Em intervalo {presenceSnapshot?.summary.onBreak || 0}
+          </span>
+          <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-700">
+            HE ativa {presenceSnapshot?.summary.overtimeActive || 0}
+          </span>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {(presenceSnapshot?.members || []).map((row) => (
+            <div key={row.member.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">{row.member.name}</p>
+                  <p className="text-xs text-slate-500">{row.member.email}</p>
+                </div>
+                <span className={`rounded-full px-3 py-1 text-[11px] ${presenceStatusClass[row.status]}`}>
+                  {presenceStatusLabel[row.status]}
+                </span>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                <span className="rounded-full bg-white px-2 py-1">Filial: {row.metadata.branch}</span>
+                <span className="rounded-full bg-white px-2 py-1">Equipe: {row.metadata.team}</span>
+              </div>
+              {row.since ? (
+                <p className="mt-2 text-[11px] text-slate-500">
+                  Desde {formatDateTimeWithTimeZone(row.since, viewTimeZone)}
+                </p>
+              ) : null}
+            </div>
+          ))}
+          {presenceSnapshot && presenceSnapshot.members.length === 0 ? (
+            <p className="text-sm text-slate-500">Nenhum colaborador para os filtros atuais.</p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-lg font-semibold text-slate-900">KPIs de horas</h3>
+          <select
+            value={hoursKpiPeriod}
+            onChange={(event) =>
+              setHoursKpiPeriod(event.target.value as 'daily' | 'weekly' | 'monthly')
+            }
+            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
+          >
+            <option value="daily">Diario</option>
+            <option value="weekly">Semanal</option>
+            <option value="monthly">Mensal</option>
+          </select>
+        </div>
+
+        <div className="mt-4 grid gap-2 text-xs text-slate-600 md:grid-cols-3">
+          <span className="rounded-full bg-slate-100 px-3 py-1">
+            Previsto {formatShortDuration(hoursKpiWithOpen?.summary.expectedMinutes || 0)}
+          </span>
+          <span className="rounded-full bg-teal-100 px-3 py-1 text-teal-800">
+            Realizado {formatShortDuration(hoursKpiWithOpen?.summary.workedMinutes || 0)}
+          </span>
+          <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-700">
+            Extras {formatShortDuration(hoursKpiWithOpen?.summary.overtimeMinutes || 0)}
+          </span>
+        </div>
+
+        {hoursKpiError ? <p className="mt-2 text-xs text-rose-600">{hoursKpiError}</p> : null}
+        {hoursKpiLoading ? <p className="mt-3 text-sm text-slate-500">Carregando KPIs...</p> : null}
+
+        {!hoursKpiLoading && hoursKpiWithOpen?.timeline?.length ? (
+          <div className="mt-4 grid gap-3">
+            {hoursKpiWithOpen.timeline.map((bucket) => {
+              const expectedWidth = `${Math.max((bucket.expectedMinutes / kpiChartMax) * 100, 6)}%`
+              const workedWidth = `${Math.max((bucket.workedMinutes / kpiChartMax) * 100, 6)}%`
+              const overtimeWidth = `${Math.max((bucket.overtimeMinutes / kpiChartMax) * 100, 6)}%`
+
+              return (
+                <div key={bucket.date} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
+                  <div className="mb-2 flex items-center justify-between text-xs text-slate-600">
+                    <span>{bucket.date}</span>
+                    <span>
+                      {formatShortDuration(bucket.workedMinutes)} / {formatShortDuration(bucket.expectedMinutes)}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="h-2 rounded-full bg-slate-100">
+                      <div className="h-2 rounded-full bg-slate-400" style={{ width: expectedWidth }} />
+                    </div>
+                    <div className="h-2 rounded-full bg-teal-100">
+                      <div className="h-2 rounded-full bg-teal-600" style={{ width: workedWidth }} />
+                    </div>
+                    <div className="h-2 rounded-full bg-rose-100">
+                      <div className="h-2 rounded-full bg-rose-500" style={{ width: overtimeWidth }} />
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : null}
+
+        {!hoursKpiLoading && hoursKpiWithOpen?.byCollaborator?.length ? (
+          <div className="mt-4 grid gap-2 md:grid-cols-2">
+            {hoursKpiWithOpen.byCollaborator.map((item) => (
+              <div key={item.member.id} className="rounded-2xl border border-slate-100 bg-white p-3 text-xs text-slate-600">
+                <p className="font-semibold text-slate-800">{item.member.name}</p>
+                <p className="mt-1 text-slate-500">{item.member.email}</p>
+                <p className="mt-2">Previsto: {formatShortDuration(item.expectedMinutes)}</p>
+                <p>Realizado: {formatShortDuration(item.workedMinutes)}</p>
+                <p>Extras: {formatShortDuration(item.overtimeMinutes)}</p>
+                {'openMinutes' in item && Number(item.openMinutes || 0) > 0 ? (
+                  <p className="text-teal-700">Em aberto agora: {formatShortDuration(Number(item.openMinutes || 0))}</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      {/* <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-lg font-semibold text-slate-900">Férias da equipe</h3>
+          <button
+            onClick={() => {
+              loadVacationRequests().catch(() => undefined)
+              loadVacationCalendar().catch(() => undefined)
+            }}
+            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
+          >
+            Atualizar
+          </button>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <input
+            type="number"
+            min={2000}
+            value={vacationCalendarMonth.year}
+            onChange={(event) =>
+              setVacationCalendarMonth((prev) => ({
+                ...prev,
+                year: Number(event.target.value) || prev.year,
+              }))
+            }
+            className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
+            placeholder="Ano"
+          />
+          <input
+            type="number"
+            min={1}
+            max={12}
+            value={vacationCalendarMonth.month}
+            onChange={(event) =>
+              setVacationCalendarMonth((prev) => ({
+                ...prev,
+                month: Math.min(12, Math.max(1, Number(event.target.value) || prev.month)),
+              }))
+            }
+            className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
+            placeholder="Mês"
+          />
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={vacationMinPresencePercent}
+            onChange={(event) => setVacationMinPresencePercent(Math.min(100, Math.max(0, Number(event.target.value) || 0)))}
+            className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
+            placeholder="Min. presença (%)"
+          />
+        </div>
+
+        {vacationError ? <p className="mt-2 text-xs text-rose-600">{vacationError}</p> : null}
+        {vacationNotice ? <p className="mt-2 text-xs text-emerald-600">{vacationNotice}</p> : null}
+
+        <div className="mt-4 space-y-3">
+          {vacationRequestsLoading ? <p className="text-sm text-slate-500">Carregando solicitações...</p> : null}
+          {!vacationRequestsLoading && vacationRequests.filter((item) => item.status === 'REQUESTED').length === 0 ? (
+            <p className="text-sm text-slate-500">Nenhuma solicitação pendente de supervisor.</p>
+          ) : null}
+
+          {vacationRequests
+            .filter((item) => item.status === 'REQUESTED')
+            .map((request) => (
+              <div key={request.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+                <p className="text-sm font-semibold text-slate-800">{request.user.name}</p>
+                <p className="text-xs text-slate-500">{request.user.email}</p>
+                <p className="mt-2 text-xs text-slate-600">
+                  {formatDateWithTimeZone(request.startDate, viewTimeZone)} até{' '}
+                  {formatDateWithTimeZone(request.endDate, viewTimeZone)}
+                </p>
+                {request.reason ? <p className="mt-1 text-xs text-slate-600">Motivo: {request.reason}</p> : null}
+
+                <input
+                  value={vacationReviewCommentById[request.id] || ''}
+                  onChange={(event) =>
+                    setVacationReviewCommentById((prev) => ({
+                      ...prev,
+                      [request.id]: event.target.value,
+                    }))
+                  }
+                  placeholder="Comentário (obrigatório para rejeição)"
+                  className="mt-3 w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
+                />
+
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <button
+                    onClick={() => handleReviewVacationBySupervisor(request.id, 'APPROVE')}
+                    disabled={Boolean(vacationActionLoadingById[request.id])}
+                    className="rounded-full bg-teal-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                  >
+                    Aprovar
+                  </button>
+                  <button
+                    onClick={() => handleReviewVacationBySupervisor(request.id, 'REJECT')}
+                    disabled={Boolean(vacationActionLoadingById[request.id])}
+                    className="rounded-full border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
+                  >
+                    Rejeitar
+                  </button>
+                </div>
+              </div>
+            ))}
+        </div>
+
+        <div className="mt-6">
+          <h4 className="text-sm font-semibold text-slate-800">Calendário da equipe (mensal)</h4>
+          {vacationCalendarLoading ? <p className="mt-2 text-sm text-slate-500">Carregando calendário...</p> : null}
+          {!vacationCalendarLoading && vacationCalendar ? (
+            <div className="mt-3 space-y-2">
+              {vacationCalendar.days.map((day) => (
+                <div
+                  key={day.date}
+                  className={`rounded-2xl border p-3 text-xs ${
+                    day.belowThreshold
+                      ? 'border-rose-200 bg-rose-50 text-rose-700'
+                      : 'border-slate-100 bg-slate-50/70 text-slate-600'
+                  }`}
+                >
+                  <p className="font-semibold">{day.date}</p>
+                  <p>
+                    Ausentes: {day.absentCount} • Disponíveis: {day.availableCount} • Presença: {day.presencePercent}%
+                  </p>
+                  {day.belowThreshold ? <p>Alerta: equipe abaixo do limite mínimo configurado.</p> : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {!vacationCalendarLoading && vacationCalendar?.annual?.length ? (
+            <div className="mt-4 grid gap-2 md:grid-cols-3">
+              {vacationCalendar.annual.map((item) => (
+                <div key={`${item.year}-${item.month}`} className="rounded-2xl border border-slate-100 bg-white p-3 text-xs text-slate-600">
+                  <p className="font-semibold text-slate-800">{String(item.month).padStart(2, '0')}/{item.year}</p>
+                  <p>Solicitações: {item.requestsCount}</p>
+                  <p>Colaboradores em férias: {item.membersScheduled}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div> */}
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -426,6 +1217,11 @@ const SupervisorDashboard = () => {
                   </div>
                 </div>
                 {entry.notes ? <p className="mt-2 text-xs text-slate-600">Notas: {entry.notes}</p> : null}
+                {!entry.clockOut ? (
+                  <p className="mt-2 text-xs text-teal-700">
+                    Aberta ha {formatShortDuration(getElapsedMinutes(entry.clockIn, nowMs))}
+                  </p>
+                ) : null}
                 <p className="mt-2 text-[11px] uppercase tracking-[0.2em] text-teal-700">Clique para abrir em tela maior</p>
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   <button

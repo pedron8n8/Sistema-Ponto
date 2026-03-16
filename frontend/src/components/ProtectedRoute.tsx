@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 
 type Props = {
   children: React.ReactNode
-  allowedRoles?: Array<'ADMIN' | 'SUPERVISOR' | 'MEMBER'>
+  allowedRoles?: Array<'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'>
 }
 
 const ProtectedRoute = ({ children, allowedRoles }: Props) => {

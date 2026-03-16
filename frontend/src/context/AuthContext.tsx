@@ -3,7 +3,7 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase, hasSupabaseEnv } from '../lib/supabase'
 import { apiFetch } from '../lib/api'
 
-type Role = 'ADMIN' | 'SUPERVISOR' | 'MEMBER'
+type Role = 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'
 
 type UserProfile = {
   id: string
@@ -47,6 +47,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const response = await apiFetch<{ user: UserProfile }>('/auth/me', {
         token: activeSession.access_token,
+        timeoutMs: 8000,
       })
 
       setProfile(response.user)
@@ -70,8 +71,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const init = async () => {
       const { data } = await supabaseClient.auth.getSession()
       setSession(data.session ?? null)
-      await fetchProfile(data.session ?? null)
       setLoading(false)
+      fetchProfile(data.session ?? null).catch(() => undefined)
     }
 
     init()

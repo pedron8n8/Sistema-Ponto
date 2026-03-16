@@ -10,6 +10,7 @@ generator client {
 
 enum Role {
   ADMIN
+  HR
   SUPERVISOR
   MEMBER
 }
@@ -29,6 +30,15 @@ enum BankHoursEntryType {
 enum BankHoursPaymentStatus {
   PENDING
   PAID
+}
+
+enum VacationStatus {
+  REQUESTED
+  SUPERVISOR_APPROVED
+  SUPERVISOR_REJECTED
+  HR_CONFIRMED
+  HR_REJECTED
+  CANCELED
 }
 
 model User {
@@ -58,6 +68,10 @@ model User {
   subordinates    User[]        @relation("TeamHierarchy")
   timeEntries     TimeEntry[]
   bankHoursEntries BankHoursEntry[]
+  vacationRequests VacationRequest[] @relation("VacationRequester")
+  supervisorVacationReviews VacationRequest[] @relation("VacationSupervisor")
+  hrVacationReviews VacationRequest[] @relation("VacationHr")
+  vacationLogsAsActor VacationApprovalLog[] @relation("VacationActionActor")
   reviewedLogs    ApprovalLog[] @relation("ReviewerAction")
   createdAt       DateTime      @default(now())
 
@@ -133,4 +147,48 @@ model ApprovalLog {
   action      String    // ex: "APPROVED", "REJECTED", "EDIT_REQUESTED"
   comment     String?
   timestamp   DateTime  @default(now())
+}
+
+model VacationRequest {
+  id                    String           @id @default(uuid())
+  userId                String
+  user                  User             @relation("VacationRequester", fields: [userId], references: [id])
+  supervisorId          String?
+  supervisor            User?            @relation("VacationSupervisor", fields: [supervisorId], references: [id])
+  hrReviewerId          String?
+  hrReviewer            User?            @relation("VacationHr", fields: [hrReviewerId], references: [id])
+  startDate             DateTime
+  endDate               DateTime
+  reason                String?
+  status                VacationStatus   @default(REQUESTED)
+  requestedAt           DateTime         @default(now())
+  supervisorReviewedAt  DateTime?
+  hrReviewedAt          DateTime?
+  cancelledAt           DateTime?
+  logs                  VacationApprovalLog[]
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  @@index([userId])
+  @@index([supervisorId])
+  @@index([status])
+  @@index([startDate])
+  @@index([endDate])
+}
+
+model VacationApprovalLog {
+  id                String           @id @default(uuid())
+  vacationRequestId String
+  vacationRequest   VacationRequest  @relation(fields: [vacationRequestId], references: [id])
+  actorId           String?
+  actor             User?            @relation("VacationActionActor", fields: [actorId], references: [id])
+  action            String
+  comment           String?
+  fromStatus        VacationStatus?
+  toStatus          VacationStatus?
+  timestamp         DateTime         @default(now())
+
+  @@index([vacationRequestId])
+  @@index([actorId])
+  @@index([timestamp])
 }

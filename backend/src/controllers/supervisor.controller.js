@@ -2,6 +2,536 @@ const prisma = require('../config/database');
 const { adjustBankHours, settleBankHoursAccruals } = require('../utils/bankHours');
 const { normalizeMinutes, normalizeTime, normalizeTimeZone } = require('../utils/workSettings');
 
+const PRESENCE_REFRESH_MS = 15000;
+
+const PRESENCE_STATUS = {
+  PRESENT: 'PRESENT',
+  ABSENT: 'ABSENT',
+  ON_BREAK: 'ON_BREAK',
+  OVERTIME_ACTIVE: 'OVERTIME_ACTIVE',
+};
+
+const KPI_PERIODS = new Set(['daily', 'weekly', 'monthly']);
+
+const isElevatedRole = (role) => ['ADMIN', 'HR'].includes(role);
+
+const buildSupervisorScopeWhere = ({ supervisorId, isAdmin }) =>
+  isAdmin ? { role: { notIn: ['ADMIN', 'HR'] } } : { supervisorId };
+
+const normalizeFilterValue = (value) => {
+  if (value === undefined || value === null) return null;
+  const normalized = String(value).trim();
+  return normalized ? normalized.toLowerCase() : null;
+};
+
+const parseTimeToMinutes = (time) => {
+  if (!time) return null;
+  const match = String(time).trim().match(/^(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return hours * 60 + minutes;
+};
+
+const getNowMinutesForTimeZone = (timeZone) => {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timeZone || 'UTC',
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+    }).formatToParts(new Date());
+
+    const hour = Number(parts.find((part) => part.type === 'hour')?.value || 0);
+    const minute = Number(parts.find((part) => part.type === 'minute')?.value || 0);
+    return hour * 60 + minute;
+  } catch (_error) {
+    const now = new Date();
+    return now.getHours() * 60 + now.getMinutes();
+  }
+};
+
+const isWithinConfiguredWorkday = ({ nowMinutes, startTime, endTime }) => {
+  const startMinutes = parseTimeToMinutes(startTime);
+  const endMinutes = parseTimeToMinutes(endTime);
+
+  if (startMinutes === null || endMinutes === null) {
+    return true;
+  }
+
+  if (startMinutes <= endMinutes) {
+    return nowMinutes >= startMinutes && nowMinutes <= endMinutes;
+  }
+
+  return nowMinutes >= startMinutes || nowMinutes <= endMinutes;
+};
+
+const getDateRangeFromPeriod = ({ period, startDate, endDate }) => {
+  if (startDate || endDate) {
+    const start = startDate ? new Date(startDate) : new Date('1970-01-01T00:00:00.000Z');
+    const end = endDate ? new Date(endDate) : new Date();
+    end.setHours(23, 59, 59, 999);
+    return { start, end, period: startDate || endDate ? 'custom' : period };
+  }
+
+  const now = new Date();
+  const selectedPeriod = KPI_PERIODS.has(period) ? period : 'weekly';
+  const start = new Date(now);
+  const end = new Date(now);
+
+  if (selectedPeriod === 'daily') {
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+  }
+
+  if (selectedPeriod === 'weekly') {
+    const day = now.getDay();
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    start.setDate(now.getDate() + mondayOffset);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+  }
+
+  if (selectedPeriod === 'monthly') {
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+  }
+
+  return { start, end, period: selectedPeriod };
+};
+
+const enumerateDates = (start, end) => {
+  const dates = [];
+  const cursor = new Date(start);
+  cursor.setHours(0, 0, 0, 0);
+
+  const endDate = new Date(end);
+  endDate.setHours(0, 0, 0, 0);
+
+  while (cursor <= endDate) {
+    dates.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return dates;
+};
+
+const isWeekday = (date) => {
+  const day = date.getDay();
+  return day >= 1 && day <= 5;
+};
+
+const formatDateBucket = (date) => {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${day}/${month}`;
+};
+
+const resolveVirtualOrgLabels = (member) => ({
+  branch: member.timeZone || 'Global',
+  department: member.role === 'SUPERVISOR' ? 'Lideranca' : 'Operacao',
+  team: member.supervisor?.name || 'Sem equipe',
+});
+
+const applyVirtualOrgFilters = (members, filters) => {
+  const branchFilter = normalizeFilterValue(filters.branch);
+  const departmentFilter = normalizeFilterValue(filters.department);
+  const teamFilter = normalizeFilterValue(filters.team);
+
+  return members.filter((member) => {
+    const labels = resolveVirtualOrgLabels(member);
+    const branch = labels.branch.toLowerCase();
+    const department = labels.department.toLowerCase();
+    const team = labels.team.toLowerCase();
+
+    const branchMatches = !branchFilter || branch === branchFilter;
+    const departmentMatches = !departmentFilter || department === departmentFilter;
+    const teamMatches = !teamFilter || team === teamFilter;
+
+    return branchMatches && departmentMatches && teamMatches;
+  });
+};
+
+const buildFilterOptions = (members) => {
+  const branch = new Set();
+  const department = new Set();
+  const team = new Set();
+
+  for (const member of members) {
+    const labels = resolveVirtualOrgLabels(member);
+    branch.add(labels.branch);
+    department.add(labels.department);
+    team.add(labels.team);
+  }
+
+  return {
+    branch: Array.from(branch).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    department: Array.from(department).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    team: Array.from(team).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+  };
+};
+
+const buildTeamPresenceSnapshot = async ({ supervisorId, isAdmin, filters }) => {
+  const teamMembersRaw = await prisma.user.findMany({
+    where: buildSupervisorScopeWhere({ supervisorId, isAdmin }),
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      timeZone: true,
+      contractDailyMinutes: true,
+      workdayStartTime: true,
+      workdayEndTime: true,
+      supervisor: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+    orderBy: { name: 'asc' },
+  });
+
+  const filterOptions = buildFilterOptions(teamMembersRaw);
+  const teamMembers = applyVirtualOrgFilters(teamMembersRaw, filters);
+
+  if (teamMembers.length === 0) {
+    return {
+      generatedAt: new Date().toISOString(),
+      summary: {
+        total: 0,
+        present: 0,
+        absent: 0,
+        onBreak: 0,
+        overtimeActive: 0,
+      },
+      filters: filterOptions,
+      members: [],
+    };
+  }
+
+  const now = new Date();
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const teamIds = teamMembers.map((member) => member.id);
+
+  const [openEntries, todayEntries] = await Promise.all([
+    prisma.timeEntry.findMany({
+      where: {
+        userId: { in: teamIds },
+        clockOut: null,
+      },
+      select: {
+        id: true,
+        userId: true,
+        clockIn: true,
+      },
+      orderBy: { clockIn: 'desc' },
+    }),
+    prisma.timeEntry.findMany({
+      where: {
+        userId: { in: teamIds },
+        clockIn: { gte: startOfDay },
+      },
+      select: {
+        id: true,
+        userId: true,
+        clockIn: true,
+        clockOut: true,
+      },
+      orderBy: { clockIn: 'desc' },
+    }),
+  ]);
+
+  const openEntryMap = new Map(openEntries.map((entry) => [entry.userId, entry]));
+  const todayEntriesByUser = todayEntries.reduce((acc, entry) => {
+    if (!acc[entry.userId]) acc[entry.userId] = [];
+    acc[entry.userId].push(entry);
+    return acc;
+  }, {});
+
+  const members = teamMembers.map((member) => {
+    const labels = resolveVirtualOrgLabels(member);
+    const openEntry = openEntryMap.get(member.id);
+    const userTodayEntries = todayEntriesByUser[member.id] || [];
+    const nowMinutes = getNowMinutesForTimeZone(member.timeZone);
+    const withinConfiguredWorkday = isWithinConfiguredWorkday({
+      nowMinutes,
+      startTime: member.workdayStartTime,
+      endTime: member.workdayEndTime,
+    });
+
+    let status = PRESENCE_STATUS.ABSENT;
+    let since = null;
+
+    if (openEntry) {
+      const elapsedMinutes = Math.max(0, Math.floor((now - new Date(openEntry.clockIn)) / 60000));
+      status =
+        elapsedMinutes > Number(member.contractDailyMinutes || 480)
+          ? PRESENCE_STATUS.OVERTIME_ACTIVE
+          : PRESENCE_STATUS.PRESENT;
+      since = openEntry.clockIn;
+    } else if (userTodayEntries.length > 0 && withinConfiguredWorkday) {
+      status = PRESENCE_STATUS.ON_BREAK;
+      since = userTodayEntries[0].clockIn;
+    }
+
+    return {
+      member: {
+        id: member.id,
+        name: member.name,
+        email: member.email,
+        role: member.role,
+      },
+      status,
+      since,
+      metadata: {
+        branch: labels.branch,
+        department: labels.department,
+        team: labels.team,
+      },
+      schedule: {
+        contractDailyMinutes: member.contractDailyMinutes,
+        workdayStartTime: member.workdayStartTime,
+        workdayEndTime: member.workdayEndTime,
+      },
+    };
+  });
+
+  const summary = members.reduce(
+    (acc, item) => {
+      if (item.status === PRESENCE_STATUS.PRESENT) acc.present += 1;
+      if (item.status === PRESENCE_STATUS.ABSENT) acc.absent += 1;
+      if (item.status === PRESENCE_STATUS.ON_BREAK) acc.onBreak += 1;
+      if (item.status === PRESENCE_STATUS.OVERTIME_ACTIVE) acc.overtimeActive += 1;
+      return acc;
+    },
+    {
+      total: members.length,
+      present: 0,
+      absent: 0,
+      onBreak: 0,
+      overtimeActive: 0,
+    }
+  );
+
+  return {
+    generatedAt: new Date().toISOString(),
+    summary,
+    filters: filterOptions,
+    members,
+  };
+};
+
+const buildHoursKpisPayload = async ({ supervisorId, isAdmin, query }) => {
+  const { userId, period = 'weekly', startDate, endDate, branch, department, team } = query;
+
+  const teamMembersRaw = await prisma.user.findMany({
+    where: buildSupervisorScopeWhere({ supervisorId, isAdmin }),
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      timeZone: true,
+      contractDailyMinutes: true,
+      supervisorId: true,
+      supervisor: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+    orderBy: { name: 'asc' },
+  });
+
+  const filterOptions = buildFilterOptions(teamMembersRaw);
+
+  let scopedMembers = applyVirtualOrgFilters(teamMembersRaw, { branch, department, team });
+
+  if (userId) {
+    scopedMembers = scopedMembers.filter((member) => member.id === userId);
+  }
+
+  if (scopedMembers.length === 0) {
+    const { start, end, period: resolvedPeriod } = getDateRangeFromPeriod({ period, startDate, endDate });
+    return {
+      generatedAt: new Date().toISOString(),
+      range: {
+        start: start.toISOString(),
+        end: end.toISOString(),
+        period: resolvedPeriod,
+      },
+      filters: filterOptions,
+      summary: {
+        expectedMinutes: 0,
+        workedMinutes: 0,
+        overtimeMinutes: 0,
+      },
+      byCollaborator: [],
+      byTeam: [],
+      timeline: [],
+    };
+  }
+
+  const { start, end, period: resolvedPeriod } = getDateRangeFromPeriod({ period, startDate, endDate });
+  const scopedIds = scopedMembers.map((member) => member.id);
+  const entries = await prisma.timeEntry.findMany({
+    where: {
+      userId: { in: scopedIds },
+      clockIn: {
+        gte: start,
+        lte: end,
+      },
+    },
+    select: {
+      userId: true,
+      clockIn: true,
+      clockOut: true,
+      workedMinutes: true,
+      overtimeMinutes: true,
+    },
+    orderBy: { clockIn: 'asc' },
+  });
+
+  const memberMap = new Map(scopedMembers.map((member) => [member.id, member]));
+  const byCollaboratorMap = new Map();
+
+  for (const member of scopedMembers) {
+    byCollaboratorMap.set(member.id, {
+      member: {
+        id: member.id,
+        name: member.name,
+        email: member.email,
+      },
+      metadata: resolveVirtualOrgLabels(member),
+      expectedMinutes: 0,
+      workedMinutes: 0,
+      overtimeMinutes: 0,
+    });
+  }
+
+  const dates = enumerateDates(start, end);
+
+  for (const member of scopedMembers) {
+    const snapshot = byCollaboratorMap.get(member.id);
+    const weekdayCount = dates.reduce((acc, date) => acc + (isWeekday(date) ? 1 : 0), 0);
+    snapshot.expectedMinutes = weekdayCount * Number(member.contractDailyMinutes || 480);
+  }
+
+  for (const entry of entries) {
+    const snapshot = byCollaboratorMap.get(entry.userId);
+    if (!snapshot) continue;
+
+    const fallbackWorkedMinutes =
+      entry.clockOut && entry.clockIn
+        ? Math.max(0, Math.floor((new Date(entry.clockOut) - new Date(entry.clockIn)) / 60000))
+        : 0;
+
+    snapshot.workedMinutes += Number(entry.workedMinutes || fallbackWorkedMinutes || 0);
+    snapshot.overtimeMinutes += Number(entry.overtimeMinutes || 0);
+  }
+
+  const byCollaborator = Array.from(byCollaboratorMap.values()).sort((a, b) =>
+    a.member.name.localeCompare(b.member.name, 'pt-BR')
+  );
+
+  const byTeamMap = new Map();
+
+  for (const item of byCollaborator) {
+    const key = item.metadata.team;
+    if (!byTeamMap.has(key)) {
+      byTeamMap.set(key, {
+        team: key,
+        expectedMinutes: 0,
+        workedMinutes: 0,
+        overtimeMinutes: 0,
+      });
+    }
+
+    const aggregate = byTeamMap.get(key);
+    aggregate.expectedMinutes += item.expectedMinutes;
+    aggregate.workedMinutes += item.workedMinutes;
+    aggregate.overtimeMinutes += item.overtimeMinutes;
+  }
+
+  const timelineMap = new Map();
+
+  for (const date of dates) {
+    const key = formatDateBucket(date);
+    timelineMap.set(key, {
+      date: key,
+      expectedMinutes: 0,
+      workedMinutes: 0,
+      overtimeMinutes: 0,
+    });
+  }
+
+  for (const date of dates) {
+    const key = formatDateBucket(date);
+    const bucket = timelineMap.get(key);
+    if (!bucket || !isWeekday(date)) continue;
+    const dayExpected = scopedMembers.reduce(
+      (acc, member) => acc + Number(member.contractDailyMinutes || 480),
+      0
+    );
+    bucket.expectedMinutes += dayExpected;
+  }
+
+  for (const entry of entries) {
+    const key = formatDateBucket(new Date(entry.clockIn));
+    const bucket = timelineMap.get(key);
+    if (!bucket) continue;
+
+    const fallbackWorkedMinutes =
+      entry.clockOut && entry.clockIn
+        ? Math.max(0, Math.floor((new Date(entry.clockOut) - new Date(entry.clockIn)) / 60000))
+        : 0;
+
+    bucket.workedMinutes += Number(entry.workedMinutes || fallbackWorkedMinutes || 0);
+    bucket.overtimeMinutes += Number(entry.overtimeMinutes || 0);
+  }
+
+  const summary = byCollaborator.reduce(
+    (acc, item) => {
+      acc.expectedMinutes += item.expectedMinutes;
+      acc.workedMinutes += item.workedMinutes;
+      acc.overtimeMinutes += item.overtimeMinutes;
+      return acc;
+    },
+    {
+      expectedMinutes: 0,
+      workedMinutes: 0,
+      overtimeMinutes: 0,
+    }
+  );
+
+  return {
+    generatedAt: new Date().toISOString(),
+    range: {
+      start: start.toISOString(),
+      end: end.toISOString(),
+      period: resolvedPeriod,
+    },
+    filters: filterOptions,
+    summary,
+    byCollaborator,
+    byTeam: Array.from(byTeamMap.values()),
+    timeline: Array.from(timelineMap.values()),
+  };
+};
+
+const sendSseEvent = (res, eventName, payload) => {
+  res.write(`event: ${eventName}\n`);
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+};
+
 /**
  * Controller para workflow de aprovação do supervisor
  */
@@ -13,7 +543,7 @@ const { normalizeMinutes, normalizeTime, normalizeTimeZone } = require('../utils
 const getTeamPendingEntries = async (req, res) => {
   try {
     const supervisorId = req.user.id;
-    const isAdmin = req.user.role === 'ADMIN';
+    const isAdmin = isElevatedRole(req.user.role);
     const { status = 'PENDING', page = 1, limit = 20, userId, startDate, endDate } = req.query;
 
     const pageNum = parseInt(page);
@@ -175,7 +705,7 @@ const getTeamPendingEntries = async (req, res) => {
 const approveEntry = async (req, res) => {
   try {
     const supervisorId = req.user.id;
-    const isAdmin = req.user.role === 'ADMIN';
+    const isAdmin = isElevatedRole(req.user.role);
     const { id } = req.params;
     const { comment } = req.body || {};
 
@@ -274,7 +804,7 @@ const approveEntry = async (req, res) => {
 const rejectEntry = async (req, res) => {
   try {
     const supervisorId = req.user.id;
-    const isAdmin = req.user.role === 'ADMIN';
+    const isAdmin = isElevatedRole(req.user.role);
     const { id } = req.params;
     const { comment } = req.body || {};
 
@@ -373,7 +903,7 @@ const rejectEntry = async (req, res) => {
 const requestEdit = async (req, res) => {
   try {
     const supervisorId = req.user.id;
-    const isAdmin = req.user.role === 'ADMIN';
+    const isAdmin = isElevatedRole(req.user.role);
     const { id } = req.params;
     const { comment } = req.body || {};
 
@@ -464,7 +994,7 @@ const requestEdit = async (req, res) => {
 const getEntryDetails = async (req, res) => {
   try {
     const supervisorId = req.user.id;
-    const isAdmin = req.user.role === 'ADMIN';
+    const isAdmin = isElevatedRole(req.user.role);
     const { id } = req.params;
 
     const entry = await prisma.timeEntry.findUnique({
@@ -541,7 +1071,7 @@ const getEntryDetails = async (req, res) => {
 const getTeamMembers = async (req, res) => {
   try {
     const supervisorId = req.user.id;
-    const isAdmin = req.user.role === 'ADMIN';
+    const isAdmin = isElevatedRole(req.user.role);
 
     const subordinates = await prisma.user.findMany({
       where: {
@@ -602,13 +1132,110 @@ const getTeamMembers = async (req, res) => {
 };
 
 /**
+ * GET /supervisor/presence
+ * Snapshot de presença em tempo real da equipe
+ */
+const getTeamPresenceSnapshot = async (req, res) => {
+  try {
+    const snapshot = await buildTeamPresenceSnapshot({
+      supervisorId: req.user.id,
+      isAdmin: isElevatedRole(req.user.role),
+      filters: req.query,
+    });
+
+    res.json(snapshot);
+  } catch (error) {
+    console.error('❌ Erro ao buscar snapshot de presença da equipe:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao buscar presença da equipe',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
+/**
+ * GET /supervisor/presence/stream
+ * Stream SSE com atualização contínua de presença
+ */
+const streamTeamPresence = async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  let closed = false;
+
+  const pushSnapshot = async () => {
+    if (closed) return;
+
+    try {
+      const snapshot = await buildTeamPresenceSnapshot({
+        supervisorId: req.user.id,
+        isAdmin: isElevatedRole(req.user.role),
+        filters: req.query,
+      });
+      sendSseEvent(res, 'presence', snapshot);
+    } catch (error) {
+      sendSseEvent(res, 'error', {
+        message: 'Falha ao atualizar presença em tempo real',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      });
+    }
+  };
+
+  await pushSnapshot();
+
+  const refreshInterval = setInterval(() => {
+    pushSnapshot().catch(() => undefined);
+  }, PRESENCE_REFRESH_MS);
+
+  const keepAliveInterval = setInterval(() => {
+    if (!closed) {
+      res.write(': keep-alive\n\n');
+    }
+  }, 25000);
+
+  req.on('close', () => {
+    closed = true;
+    clearInterval(refreshInterval);
+    clearInterval(keepAliveInterval);
+    res.end();
+  });
+};
+
+/**
+ * GET /supervisor/kpis/hours
+ * KPIs de horas: previsto x realizado x extras
+ */
+const getTeamHoursKpis = async (req, res) => {
+  try {
+    const payload = await buildHoursKpisPayload({
+      supervisorId: req.user.id,
+      isAdmin: isElevatedRole(req.user.role),
+      query: req.query,
+    });
+
+    res.json(payload);
+  } catch (error) {
+    console.error('❌ Erro ao buscar KPIs de horas da equipe:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao buscar KPIs de horas da equipe',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
+/**
  * PATCH /supervisor/team/:userId/bank-hours
  * Ajusta/zera banco de horas de membro da equipe (gestor)
  */
 const adjustTeamMemberBankHours = async (req, res) => {
   try {
     const supervisorId = req.user.id;
-    const isAdmin = req.user.role === 'ADMIN';
+    const isAdmin = isElevatedRole(req.user.role);
     const { userId } = req.params;
     const { minutesDelta, reason, resetToZero } = req.body;
 
@@ -694,7 +1321,7 @@ const adjustTeamMemberBankHours = async (req, res) => {
 const updateTeamMemberWorkSettings = async (req, res) => {
   try {
     const supervisorId = req.user.id;
-    const isAdmin = req.user.role === 'ADMIN';
+    const isAdmin = isElevatedRole(req.user.role);
     const { userId } = req.params;
     const { contractDailyMinutes, workdayStartTime, workdayEndTime, timeZone } = req.body;
 
@@ -812,7 +1439,7 @@ const updateTeamMemberWorkSettings = async (req, res) => {
 const getTeamBankHoursOverview = async (req, res) => {
   try {
     const supervisorId = req.user.id;
-    const isAdmin = req.user.role === 'ADMIN';
+    const isAdmin = isElevatedRole(req.user.role);
 
     const team = await prisma.user.findMany({
       where: isAdmin
@@ -898,7 +1525,7 @@ const getTeamBankHoursOverview = async (req, res) => {
 const payTeamMemberBankHours = async (req, res) => {
   try {
     const supervisorId = req.user.id;
-    const isAdmin = req.user.role === 'ADMIN';
+    const isAdmin = isElevatedRole(req.user.role);
     const { userId } = req.params;
     const { entryIds, payAllPending = true, paymentNote } = req.body;
 
@@ -966,6 +1593,9 @@ module.exports = {
   requestEdit,
   getEntryDetails,
   getTeamMembers,
+  getTeamPresenceSnapshot,
+  streamTeamPresence,
+  getTeamHoursKpis,
   adjustTeamMemberBankHours,
   updateTeamMemberWorkSettings,
   getTeamBankHoursOverview,

@@ -5,17 +5,35 @@ type RequestOptions = {
   token?: string
   method?: string
   body?: unknown
+  timeoutMs?: number
 }
 
 export const apiFetch = async <T>(path: string, options: RequestOptions = {}): Promise<T> => {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: options.method ?? 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  })
+  const controller = new AbortController()
+  const timeoutMs = options.timeoutMs ?? 15000
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+  let res: Response
+
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method: options.method ?? 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal,
+    })
+  } catch (error) {
+    clearTimeout(timeoutId)
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Tempo de resposta excedido. Verifique se o backend está ativo.')
+    }
+    throw error
+  }
+
+  clearTimeout(timeoutId)
 
   if (!res.ok) {
     const payload = await res.json().catch(() => ({}))

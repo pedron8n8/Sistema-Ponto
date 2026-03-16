@@ -16,9 +16,9 @@ const {
 
 const router = express.Router();
 
-// Todas as rotas requerem autenticação e role ADMIN
+// Todas as rotas requerem autenticação e role ADMIN ou HR
 router.use(authMiddleware);
-router.use(roleCheck(['ADMIN']));
+router.use(roleCheck(['ADMIN', 'HR']));
 
 /**
  * GET /admin/stats

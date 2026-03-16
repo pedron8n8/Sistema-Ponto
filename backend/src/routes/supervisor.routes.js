@@ -7,6 +7,9 @@ const {
   requestEdit,
   getEntryDetails,
   getTeamMembers,
+  getTeamPresenceSnapshot,
+  streamTeamPresence,
+  getTeamHoursKpis,
   adjustTeamMemberBankHours,
   updateTeamMemberWorkSettings,
   getTeamBankHoursOverview,
@@ -15,15 +18,33 @@ const {
 
 const router = express.Router();
 
-// Todas as rotas requerem autenticação e role SUPERVISOR ou ADMIN
+// Todas as rotas requerem autenticação e role SUPERVISOR, HR ou ADMIN
 router.use(authMiddleware);
-router.use(roleCheck(['SUPERVISOR', 'ADMIN']));
+router.use(roleCheck(['SUPERVISOR', 'HR', 'ADMIN']));
 
 /**
  * GET /supervisor/team
  * Lista membros da equipe do supervisor
  */
 router.get('/team', getTeamMembers);
+
+/**
+ * GET /supervisor/presence
+ * Snapshot de presença em tempo real
+ */
+router.get('/presence', getTeamPresenceSnapshot);
+
+/**
+ * GET /supervisor/presence/stream
+ * Stream SSE de presença em tempo real
+ */
+router.get('/presence/stream', streamTeamPresence);
+
+/**
+ * GET /supervisor/kpis/hours
+ * KPIs: previsto x realizado x extras
+ */
+router.get('/kpis/hours', getTeamHoursKpis);
 
 /**
  * GET /supervisor/entries
@@ -64,26 +85,26 @@ router.patch('/request-edit/:id', requestEdit);
  * Ajusta ou zera banco de horas de um membro da equipe
  * Body: { minutesDelta?: number, reason: string, resetToZero?: boolean }
  */
-router.patch('/team/:userId/bank-hours', adjustTeamMemberBankHours);
+router.patch('/team/:userId/bank-hours', roleCheck(['HR', 'ADMIN']), adjustTeamMemberBankHours);
 
 /**
  * GET /supervisor/team/bank-hours/overview
  * Lista saldo e pendências de banco de horas da equipe
  */
-router.get('/team/bank-hours/overview', getTeamBankHoursOverview);
+router.get('/team/bank-hours/overview', roleCheck(['HR', 'ADMIN']), getTeamBankHoursOverview);
 
 /**
  * PATCH /supervisor/team/:userId/bank-hours/pay
  * Dá baixa (paga) banco de horas pendente do membro
  * Body: { payAllPending?: boolean, entryIds?: string[], paymentNote?: string }
  */
-router.patch('/team/:userId/bank-hours/pay', payTeamMemberBankHours);
+router.patch('/team/:userId/bank-hours/pay', roleCheck(['HR', 'ADMIN']), payTeamMemberBankHours);
 
 /**
  * PATCH /supervisor/team/:userId/work-settings
  * Ajusta jornada de um membro da equipe
  * Body: { contractDailyMinutes?: number, workdayStartTime?: "08:00", workdayEndTime?: "17:00" }
  */
-router.patch('/team/:userId/work-settings', updateTeamMemberWorkSettings);
+router.patch('/team/:userId/work-settings', roleCheck(['HR', 'ADMIN']), updateTeamMemberWorkSettings);
 
 module.exports = router;

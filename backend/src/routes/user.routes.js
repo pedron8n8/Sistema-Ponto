@@ -27,15 +27,15 @@ router.delete('/me/face', userController.deleteMyFace);
 
 /**
  * GET /api/v1/users
- * Lista usuários (Admin vê todos, Supervisor vê subordinados)
+ * Lista usuários (Admin/HR vê todos, Supervisor vê subordinados)
  */
-router.get('/', roleCheck(['ADMIN', 'SUPERVISOR']), userController.listUsers);
+router.get('/', roleCheck(['ADMIN', 'HR', 'SUPERVISOR']), userController.listUsers);
 
 /**
  * GET /api/v1/users/:id
  * Obtém detalhes de um usuário específico
  */
-router.get('/:id', roleCheck(['ADMIN', 'SUPERVISOR']), userController.getUserById);
+router.get('/:id', roleCheck(['ADMIN', 'HR', 'SUPERVISOR']), userController.getUserById);
 
 /**
  * POST /api/v1/users

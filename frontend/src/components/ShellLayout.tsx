@@ -12,7 +12,8 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
   const { profile, profileError, signOut } = useAuth()
   const { viewTimeZone, setViewTimeZone } = useTimeZone()
   const isAdmin = profile?.role === 'ADMIN'
-  const isSupervisor = profile?.role === 'SUPERVISOR' || isAdmin
+  const isHr = profile?.role === 'HR'
+  const isSupervisor = profile?.role === 'SUPERVISOR' || profile?.role === 'HR' || isAdmin
 
   return (
     <div className="min-h-screen bg-transparent px-6 py-8 text-slate-900">
@@ -62,12 +63,20 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
         <NavLink to="/app/colaborador" className={navLinkClass}>
           Ponto
         </NavLink>
+        <NavLink to="/app/ferias" className={navLinkClass}>
+          Ferias
+        </NavLink>
         {isSupervisor ? (
           <NavLink to="/app/supervisor" className={navLinkClass}>
             Supervisor
           </NavLink>
         ) : null}
-        {isAdmin ? (
+        {isSupervisor ? (
+          <NavLink to="/app/ferias-equipe" className={navLinkClass}>
+            Ferias equipe
+          </NavLink>
+        ) : null}
+        {isAdmin || isHr ? (
           <NavLink to="/app/admin" className={navLinkClass}>
             Admin
           </NavLink>

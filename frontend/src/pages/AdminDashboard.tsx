@@ -3,7 +3,7 @@ import { apiFetch } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { TIME_ZONE_OPTIONS } from '../lib/timezone'
 
-type Role = 'ADMIN' | 'SUPERVISOR' | 'MEMBER'
+type Role = 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'
 
 type User = {
   id: string
@@ -46,7 +46,31 @@ type BankHoursOverviewItem = {
   }
 }
 
-const roles: Role[] = ['ADMIN', 'SUPERVISOR', 'MEMBER']
+type VacationRequest = {
+  id: string
+  startDate: string
+  endDate: string
+  status:
+    | 'REQUESTED'
+    | 'SUPERVISOR_APPROVED'
+    | 'SUPERVISOR_REJECTED'
+    | 'HR_CONFIRMED'
+    | 'HR_REJECTED'
+    | 'CANCELED'
+  reason?: string | null
+  user: {
+    id: string
+    name: string
+    email: string
+  }
+  supervisor?: {
+    id: string
+    name: string
+    email: string
+  } | null
+}
+
+const roles: Role[] = ['ADMIN', 'HR', 'SUPERVISOR', 'MEMBER']
 
 const formatMinutesToHours = (minutes?: number) => {
   if (!minutes || minutes <= 0) return ''
@@ -110,6 +134,12 @@ const AdminDashboard = () => {
   const [bankLoading, setBankLoading] = useState(false)
   const [bankPayLoadingByUser, setBankPayLoadingByUser] = useState<Record<string, boolean>>({})
   const [bankNotice, setBankNotice] = useState('')
+  const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([])
+  const [vacationLoading, setVacationLoading] = useState(false)
+  const [vacationReviewCommentById, setVacationReviewCommentById] = useState<Record<string, string>>({})
+  const [vacationActionLoadingById, setVacationActionLoadingById] = useState<Record<string, boolean>>({})
+  const [vacationNotice, setVacationNotice] = useState('')
+  const [vacationError, setVacationError] = useState('')
   const [errorByUser, setErrorByUser] = useState<Record<string, string>>({})
   const [noticeByUser, setNoticeByUser] = useState<Record<string, string>>({})
   const [form, setForm] = useState({
@@ -161,12 +191,30 @@ const AdminDashboard = () => {
     }
   }
 
+  const loadVacationRequests = async () => {
+    if (!token) return
+    setVacationLoading(true)
+    try {
+      const response = await apiFetch<{ requests: VacationRequest[] }>(
+        '/vacations/hr/requests?status=SUPERVISOR_APPROVED',
+        { token }
+      )
+      setVacationRequests(response.requests || [])
+    } finally {
+      setVacationLoading(false)
+    }
+  }
+
   useEffect(() => {
     loadUsers().catch(() => undefined)
   }, [token])
 
   useEffect(() => {
     loadBankOverview().catch(() => undefined)
+  }, [token])
+
+  useEffect(() => {
+    loadVacationRequests().catch(() => undefined)
   }, [token])
 
   const handleCreate = async () => {
@@ -369,6 +417,43 @@ const AdminDashboard = () => {
       setError(err instanceof Error ? err.message : 'Erro ao dar baixa no banco de horas')
     } finally {
       setBankPayLoadingByUser((prev) => ({ ...prev, [userId]: false }))
+    }
+  }
+
+  const handleReviewVacationByHr = async (requestId: string, decision: 'CONFIRM' | 'REJECT') => {
+    if (!token) return
+
+    const comment = vacationReviewCommentById[requestId] || ''
+    setVacationError('')
+    setVacationNotice('')
+
+    if (decision === 'REJECT' && comment.trim().length < 5) {
+      setVacationError('Comentário obrigatório para rejeição do RH (mínimo 5 caracteres).')
+      return
+    }
+
+    setVacationActionLoadingById((prev) => ({ ...prev, [requestId]: true }))
+    try {
+      await apiFetch(`/vacations/${requestId}/hr-review`, {
+        token,
+        method: 'PATCH',
+        body: {
+          decision,
+          comment: comment || undefined,
+        },
+      })
+
+      setVacationNotice(
+        decision === 'CONFIRM'
+          ? 'Solicitação confirmada pelo RH.'
+          : 'Solicitação rejeitada pelo RH.'
+      )
+      await loadVacationRequests()
+      setVacationReviewCommentById((prev) => ({ ...prev, [requestId]: '' }))
+    } catch (err) {
+      setVacationError(err instanceof Error ? err.message : 'Erro ao revisar solicitação')
+    } finally {
+      setVacationActionLoadingById((prev) => ({ ...prev, [requestId]: false }))
     }
   }
 
@@ -672,6 +757,74 @@ const AdminDashboard = () => {
             >
               Criar usuario
             </button>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-lg font-semibold text-slate-900">Férias (RH)</h3>
+            <button
+              onClick={() => loadVacationRequests().catch(() => undefined)}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
+            >
+              Atualizar
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Solicitações aprovadas pelo supervisor aguardando confirmação final do RH.
+          </p>
+          {vacationError ? <p className="mt-2 text-xs text-rose-600">{vacationError}</p> : null}
+          {vacationNotice ? <p className="mt-2 text-xs text-emerald-600">{vacationNotice}</p> : null}
+
+          <div className="mt-4 space-y-3">
+            {vacationLoading ? <p className="text-sm text-slate-500">Carregando solicitações de férias...</p> : null}
+            {!vacationLoading && vacationRequests.length === 0 ? (
+              <p className="text-sm text-slate-500">Nenhuma solicitação pendente de RH.</p>
+            ) : null}
+
+            {vacationRequests.map((request) => (
+              <div key={request.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+                <p className="text-sm font-semibold text-slate-800">{request.user.name}</p>
+                <p className="text-xs text-slate-500">{request.user.email}</p>
+                <p className="mt-2 text-xs text-slate-600">
+                  Periodo: {new Date(request.startDate).toLocaleDateString('pt-BR')} até{' '}
+                  {new Date(request.endDate).toLocaleDateString('pt-BR')}
+                </p>
+                {request.supervisor ? (
+                  <p className="mt-1 text-xs text-slate-600">Supervisor: {request.supervisor.name}</p>
+                ) : null}
+                {request.reason ? <p className="mt-1 text-xs text-slate-600">Motivo: {request.reason}</p> : null}
+
+                <input
+                  value={vacationReviewCommentById[request.id] || ''}
+                  onChange={(event) =>
+                    setVacationReviewCommentById((prev) => ({
+                      ...prev,
+                      [request.id]: event.target.value,
+                    }))
+                  }
+                  placeholder="Comentário (obrigatório para rejeição)"
+                  className="mt-3 w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
+                />
+
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <button
+                    onClick={() => handleReviewVacationByHr(request.id, 'CONFIRM')}
+                    disabled={Boolean(vacationActionLoadingById[request.id])}
+                    className="rounded-full bg-teal-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                  >
+                    Confirmar
+                  </button>
+                  <button
+                    onClick={() => handleReviewVacationByHr(request.id, 'REJECT')}
+                    disabled={Boolean(vacationActionLoadingById[request.id])}
+                    className="rounded-full border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
+                  >
+                    Rejeitar
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 

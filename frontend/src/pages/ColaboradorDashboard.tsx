@@ -45,6 +45,32 @@ type FaceStatusResponse = {
   }
 }
 
+type VacationRequest = {
+  id: string
+  startDate: string
+  endDate: string
+  status:
+    | 'REQUESTED'
+    | 'SUPERVISOR_APPROVED'
+    | 'SUPERVISOR_REJECTED'
+    | 'HR_CONFIRMED'
+    | 'HR_REJECTED'
+    | 'CANCELED'
+  reason?: string | null
+  logs: Array<{
+    id: string
+    action: string
+    comment?: string | null
+    timestamp: string
+    actor?: {
+      id: string
+      name?: string | null
+      email: string
+      role: string
+    } | null
+  }>
+}
+
 type LivenessData = {
   blinkDetected: boolean
   headMovementDetected: boolean
@@ -97,6 +123,15 @@ const ColaboradorDashboard = () => {
   const [faceModelsReady, setFaceModelsReady] = useState(false)
   const [faceModelSource, setFaceModelSource] = useState<string | null>(null)
   const [faceStatus, setFaceStatus] = useState<FaceStatusResponse['face'] | null>(null)
+  const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([])
+  const [vacationLoading, setVacationLoading] = useState(false)
+  const [vacationError, setVacationError] = useState('')
+  const [vacationNotice, setVacationNotice] = useState('')
+  const [vacationForm, setVacationForm] = useState({
+    startDate: '',
+    endDate: '',
+    reason: '',
+  })
   const [cameraActive, setCameraActive] = useState(false)
   const [enrollModalOpen, setEnrollModalOpen] = useState(false)
   const [enrollInstruction, setEnrollInstruction] = useState('Centralize seu rosto no quadro')
@@ -183,6 +218,12 @@ const ColaboradorDashboard = () => {
     if (!token) return
     const response = await apiFetch<FaceStatusResponse>('/users/me/face', { token })
     setFaceStatus(response.face)
+  }
+
+  const loadMyVacationRequests = async () => {
+    if (!token) return
+    const response = await apiFetch<{ requests: VacationRequest[] }>('/vacations/me', { token })
+    setVacationRequests(response.requests || [])
   }
 
   const loadFaceModels = async () => {
@@ -595,6 +636,7 @@ const ColaboradorDashboard = () => {
     loadCurrentEntry().catch(() => undefined)
     loadGeofence().catch(() => undefined)
     loadFaceStatus().catch(() => undefined)
+    loadMyVacationRequests().catch(() => undefined)
     loadFaceModels().catch(() => {
       setFaceModelsReady(false)
       setFaceError(
@@ -718,6 +760,47 @@ const ColaboradorDashboard = () => {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleCreateVacationRequest = async () => {
+    if (!token) return
+
+    setVacationLoading(true)
+    setVacationError('')
+    setVacationNotice('')
+
+    try {
+      await apiFetch('/vacations/request', {
+        token,
+        method: 'POST',
+        body: {
+          startDate: vacationForm.startDate,
+          endDate: vacationForm.endDate,
+          reason: vacationForm.reason,
+        },
+      })
+
+      setVacationForm({
+        startDate: '',
+        endDate: '',
+        reason: '',
+      })
+      await loadMyVacationRequests()
+      setVacationNotice('Solicitação de férias enviada com sucesso.')
+    } catch (err) {
+      setVacationError(err instanceof Error ? err.message : 'Erro ao solicitar férias')
+    } finally {
+      setVacationLoading(false)
+    }
+  }
+
+  const vacationStatusLabel: Record<string, string> = {
+    REQUESTED: 'Aguardando supervisor',
+    SUPERVISOR_APPROVED: 'Aguardando RH',
+    SUPERVISOR_REJECTED: 'Rejeitada pelo supervisor',
+    HR_CONFIRMED: 'Confirmada pelo RH',
+    HR_REJECTED: 'Rejeitada pelo RH',
+    CANCELED: 'Cancelada',
   }
 
   return (
@@ -867,6 +950,69 @@ const ColaboradorDashboard = () => {
             </div>
           </div>
         ) : null}
+
+        <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
+          <h3 className="text-lg font-semibold text-slate-900">Férias</h3>
+          <p className="mt-2 text-xs text-slate-600">
+            Solicite férias e acompanhe o histórico completo de aprovação.
+          </p>
+
+          <div className="mt-4 grid gap-2">
+            <input
+              type="date"
+              value={vacationForm.startDate}
+              onChange={(event) => setVacationForm((prev) => ({ ...prev, startDate: event.target.value }))}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+            />
+            <input
+              type="date"
+              value={vacationForm.endDate}
+              onChange={(event) => setVacationForm((prev) => ({ ...prev, endDate: event.target.value }))}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+            />
+            <textarea
+              value={vacationForm.reason}
+              onChange={(event) => setVacationForm((prev) => ({ ...prev, reason: event.target.value }))}
+              placeholder="Motivo da solicitação (opcional)"
+              className="h-20 w-full resize-none rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+            />
+            <button
+              onClick={handleCreateVacationRequest}
+              disabled={vacationLoading || !vacationForm.startDate || !vacationForm.endDate}
+              className="rounded-full bg-teal-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              {vacationLoading ? 'Enviando...' : 'Solicitar férias'}
+            </button>
+          </div>
+
+          {vacationError ? <p className="mt-2 text-xs text-rose-600">{vacationError}</p> : null}
+          {vacationNotice ? <p className="mt-2 text-xs text-emerald-600">{vacationNotice}</p> : null}
+
+          <div className="mt-4 space-y-2 text-xs text-slate-600">
+            {vacationRequests.length === 0 ? (
+              <p>Nenhuma solicitação de férias registrada.</p>
+            ) : (
+              vacationRequests.slice(0, 6).map((request) => (
+                <div key={request.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
+                  <p className="font-semibold text-slate-800">
+                    {formatDateWithTimeZone(request.startDate, viewTimeZone)} -{' '}
+                    {formatDateWithTimeZone(request.endDate, viewTimeZone)}
+                  </p>
+                  <p className="mt-1 text-[11px] uppercase tracking-[0.2em] text-slate-500">
+                    {vacationStatusLabel[request.status] || request.status}
+                  </p>
+                  {request.reason ? <p className="mt-1 text-xs text-slate-600">Motivo: {request.reason}</p> : null}
+                  {request.logs[0] ? (
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Última ação: {request.logs[0].action} em{' '}
+                      {formatDateTimeWithTimeZone(request.logs[0].timestamp, viewTimeZone)}
+                    </p>
+                  ) : null}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
 
         <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
           <h3 className="text-lg font-semibold text-slate-900">Status atual</h3>

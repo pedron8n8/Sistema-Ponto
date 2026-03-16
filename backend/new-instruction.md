@@ -120,13 +120,13 @@
 
 ## Fase D — Dashboard & Monitoramento em Tempo Real `ALTA`
 
-- [ ] **D-01** Dashboard de presença em tempo real
+- [X] **D-01** Dashboard de presença em tempo real
   - WebSocket ou SSE para atualização sem reload de página
   - Mostrar status de cada colaborador: presente, ausente, em intervalo, HE ativa
   - Filtros por filial, departamento e equipe
   - **Tags:** `backend` `frontend`
 
-- [ ] **D-02** KPIs de horas: previsto x realizado x extras
+- [X] **D-02** KPIs de horas: previsto x realizado x extras
   - Gráficos comparando jornada contratual vs horas efetivamente trabalhadas vs extras
   - Visão por colaborador, equipe e período (diário, semanal, mensal)
   - **Tags:** `frontend`
@@ -152,22 +152,11 @@
   - Histórico de todas as solicitações por colaborador
   - **Tags:** `backend`
 
-- [ ] **E-02** Validação automática de período aquisitivo e concessivo (CLT)
-  - Calcular período aquisitivo (12 meses de trabalho)
-  - Validar período concessivo (12 meses para gozar após aquisição)
-  - Suportar férias fracionadas em até 3 períodos — CLT art. 134-A
-  - Calcular abono de 1/3 constitucional
-  - **Tags:** `backend` `legal`
-
-- [ ] **E-03** Calendário de férias da equipe para o gestor
+- [ ] **E-02** Calendário de férias da equipe para o gestor
   - Visualização mensal/anual mostrando sobreposições
   - Alertar quando equipe ficaria abaixo de X% de presença
   - **Tags:** `frontend`
 
-- [ ] **E-04** Alerta de vencimento de férias
-  - Notificar RH e gestor 60, 30 e 15 dias antes do vencimento do período concessivo
-  - Listar colaboradores em risco de perder férias em relatório mensal automático
-  - **Tags:** `backend`
 
 ---
 
