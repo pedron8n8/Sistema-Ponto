@@ -1,0 +1,426 @@
+﻿{
+    "summary":  {
+                    "total":  64,
+                    "s2xx":  41,
+                    "s4xx":  22,
+                    "s5xx":  0,
+                    "s404":  4
+                },
+    "serverErrors":  {
+
+                     },
+    "notFound":  [
+                     {
+                         "name":  "DELETE /api/v1/users/:id",
+                         "method":  "DELETE",
+                         "role":  "admin",
+                         "status":  404
+                     },
+                     {
+                         "name":  "GET /api/v1/reports/status/:jobId",
+                         "method":  "GET",
+                         "role":  "member",
+                         "status":  404
+                     },
+                     {
+                         "name":  "GET /api/v1/reports/download/:filename",
+                         "method":  "GET",
+                         "role":  "member",
+                         "status":  404
+                     },
+                     {
+                         "name":  "DELETE /api/v1/reports/:filename",
+                         "method":  "DELETE",
+                         "role":  "admin",
+                         "status":  404
+                     }
+                 ],
+    "all":  [
+                {
+                    "name":  "GET /health",
+                    "method":  "GET",
+                    "role":  "none",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/health",
+                    "method":  "GET",
+                    "role":  "none",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/protected",
+                    "method":  "GET",
+                    "role":  "member",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/admin-only",
+                    "method":  "GET",
+                    "role":  "admin",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/supervisor-access",
+                    "method":  "GET",
+                    "role":  "supervisor",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/auth/me",
+                    "method":  "GET",
+                    "role":  "member",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/auth/profile",
+                    "method":  "GET",
+                    "role":  "member",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/users/me/face",
+                    "method":  "GET",
+                    "role":  "member",
+                    "status":  200
+                },
+                {
+                    "name":  "POST /api/v1/users/me/face/enroll",
+                    "method":  "POST",
+                    "role":  "member",
+                    "status":  400
+                },
+                {
+                    "name":  "DELETE /api/v1/users/me/face",
+                    "method":  "DELETE",
+                    "role":  "member",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/users",
+                    "method":  "GET",
+                    "role":  "supervisor",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/users/:id",
+                    "method":  "GET",
+                    "role":  "supervisor",
+                    "status":  403
+                },
+                {
+                    "name":  "POST /api/v1/users",
+                    "method":  "POST",
+                    "role":  "admin",
+                    "status":  400
+                },
+                {
+                    "name":  "PATCH /api/v1/users/:id",
+                    "method":  "PATCH",
+                    "role":  "admin",
+                    "status":  200
+                },
+                {
+                    "name":  "DELETE /api/v1/users/:id",
+                    "method":  "DELETE",
+                    "role":  "admin",
+                    "status":  404
+                },
+                {
+                    "name":  "POST /api/v1/time/terminal/qr",
+                    "method":  "POST",
+                    "role":  "admin",
+                    "status":  200
+                },
+                {
+                    "name":  "POST /api/v1/time/clock-in",
+                    "method":  "POST",
+                    "role":  "member",
+                    "status":  400
+                },
+                {
+                    "name":  "POST /api/v1/time/clock-out",
+                    "method":  "POST",
+                    "role":  "member",
+                    "status":  401
+                },
+                {
+                    "name":  "GET /api/v1/time/current",
+                    "method":  "GET",
+                    "role":  "member",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/time/today",
+                    "method":  "GET",
+                    "role":  "member",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/time/geofence",
+                    "method":  "GET",
+                    "role":  "member",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/time/me",
+                    "method":  "GET",
+                    "role":  "member",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/time/bank-hours/me",
+                    "method":  "GET",
+                    "role":  "member",
+                    "status":  200
+                },
+                {
+                    "name":  "PATCH /api/v1/time/:id/notes",
+                    "method":  "PATCH",
+                    "role":  "member",
+                    "status":  400
+                },
+                {
+                    "name":  "GET /api/v1/time/:id",
+                    "method":  "GET",
+                    "role":  "member",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/supervisor/team",
+                    "method":  "GET",
+                    "role":  "supervisor",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/supervisor/presence",
+                    "method":  "GET",
+                    "role":  "supervisor",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/supervisor/kpis/hours",
+                    "method":  "GET",
+                    "role":  "supervisor",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/supervisor/entries",
+                    "method":  "GET",
+                    "role":  "supervisor",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/supervisor/entries/:id",
+                    "method":  "GET",
+                    "role":  "supervisor",
+                    "status":  200
+                },
+                {
+                    "name":  "PATCH /api/v1/supervisor/approve/:id",
+                    "method":  "PATCH",
+                    "role":  "supervisor",
+                    "status":  400
+                },
+                {
+                    "name":  "PATCH /api/v1/supervisor/reject/:id",
+                    "method":  "PATCH",
+                    "role":  "supervisor",
+                    "status":  400
+                },
+                {
+                    "name":  "PATCH /api/v1/supervisor/request-edit/:id",
+                    "method":  "PATCH",
+                    "role":  "supervisor",
+                    "status":  400
+                },
+                {
+                    "name":  "PATCH /api/v1/supervisor/team/:userId/bank-hours",
+                    "method":  "PATCH",
+                    "role":  "hr",
+                    "status":  400
+                },
+                {
+                    "name":  "GET /api/v1/supervisor/team/bank-hours/overview",
+                    "method":  "GET",
+                    "role":  "hr",
+                    "status":  200
+                },
+                {
+                    "name":  "PATCH /api/v1/supervisor/team/:userId/bank-hours/pay",
+                    "method":  "PATCH",
+                    "role":  "hr",
+                    "status":  200
+                },
+                {
+                    "name":  "PATCH /api/v1/supervisor/team/:userId/work-settings",
+                    "method":  "PATCH",
+                    "role":  "hr",
+                    "status":  400
+                },
+                {
+                    "name":  "POST /api/v1/reports/export",
+                    "method":  "POST",
+                    "role":  "member",
+                    "status":  400
+                },
+                {
+                    "name":  "GET /api/v1/reports/status/:jobId",
+                    "method":  "GET",
+                    "role":  "member",
+                    "status":  404
+                },
+                {
+                    "name":  "GET /api/v1/reports/list",
+                    "method":  "GET",
+                    "role":  "member",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/reports/download/:filename",
+                    "method":  "GET",
+                    "role":  "member",
+                    "status":  404
+                },
+                {
+                    "name":  "GET /api/v1/reports/daily-breakdown",
+                    "method":  "GET",
+                    "role":  "member",
+                    "status":  400
+                },
+                {
+                    "name":  "DELETE /api/v1/reports/:filename",
+                    "method":  "DELETE",
+                    "role":  "admin",
+                    "status":  404
+                },
+                {
+                    "name":  "GET /api/v1/admin/stats",
+                    "method":  "GET",
+                    "role":  "admin",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/admin/team-overview",
+                    "method":  "GET",
+                    "role":  "admin",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/admin/audit/:timeEntryId",
+                    "method":  "GET",
+                    "role":  "admin",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/admin/users/:userId/entries",
+                    "method":  "GET",
+                    "role":  "admin",
+                    "status":  200
+                },
+                {
+                    "name":  "PATCH /api/v1/admin/users/:userId/supervisor",
+                    "method":  "PATCH",
+                    "role":  "admin",
+                    "status":  200
+                },
+                {
+                    "name":  "PATCH /api/v1/admin/users/:userId/pin",
+                    "method":  "PATCH",
+                    "role":  "admin",
+                    "status":  200
+                },
+                {
+                    "name":  "DELETE /api/v1/admin/users/:userId/pin",
+                    "method":  "DELETE",
+                    "role":  "admin",
+                    "status":  200
+                },
+                {
+                    "name":  "PATCH /api/v1/admin/users/:userId/bank-hours",
+                    "method":  "PATCH",
+                    "role":  "admin",
+                    "status":  400
+                },
+                {
+                    "name":  "GET /api/v1/admin/bank-hours/overview",
+                    "method":  "GET",
+                    "role":  "admin",
+                    "status":  200
+                },
+                {
+                    "name":  "PATCH /api/v1/admin/users/:userId/bank-hours/pay",
+                    "method":  "PATCH",
+                    "role":  "admin",
+                    "status":  200
+                },
+                {
+                    "name":  "PATCH /api/v1/admin/users/:userId/work-settings",
+                    "method":  "PATCH",
+                    "role":  "admin",
+                    "status":  400
+                },
+                {
+                    "name":  "GET /api/v1/admin/location-settings",
+                    "method":  "GET",
+                    "role":  "admin",
+                    "status":  200
+                },
+                {
+                    "name":  "PATCH /api/v1/admin/location-settings",
+                    "method":  "PATCH",
+                    "role":  "admin",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/vacations/me",
+                    "method":  "GET",
+                    "role":  "member",
+                    "status":  200
+                },
+                {
+                    "name":  "POST /api/v1/vacations/request",
+                    "method":  "POST",
+                    "role":  "member",
+                    "status":  400
+                },
+                {
+                    "name":  "GET /api/v1/vacations/team/requests",
+                    "method":  "GET",
+                    "role":  "supervisor",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/vacations/hr/requests",
+                    "method":  "GET",
+                    "role":  "hr",
+                    "status":  200
+                },
+                {
+                    "name":  "PATCH /api/v1/vacations/:id/supervisor-review",
+                    "method":  "PATCH",
+                    "role":  "supervisor",
+                    "status":  400
+                },
+                {
+                    "name":  "PATCH /api/v1/vacations/:id/hr-review",
+                    "method":  "PATCH",
+                    "role":  "hr",
+                    "status":  400
+                },
+                {
+                    "name":  "GET /api/v1/vacations/team/calendar",
+                    "method":  "GET",
+                    "role":  "supervisor",
+                    "status":  200
+                },
+                {
+                    "name":  "GET /api/v1/supervisor/presence/stream",
+                    "method":  "GET",
+                    "role":  "supervisor",
+                    "status":  {
+
+                               }
+                }
+            ]
+}

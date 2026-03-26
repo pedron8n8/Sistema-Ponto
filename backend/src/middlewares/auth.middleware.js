@@ -29,7 +29,6 @@ const authMiddleware = async (req, res, next) => {
       return res.status(401).json({
         error: 'Unauthorized',
         message: 'Token inválido ou expirado',
-        details: error?.message,
       });
     }
 
@@ -53,7 +52,6 @@ const authMiddleware = async (req, res, next) => {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Usuário não cadastrado no sistema. Contate o administrador.',
-        supabaseEmail: supabaseUser.email,
       });
     }
 
@@ -77,7 +75,6 @@ const authMiddleware = async (req, res, next) => {
     return res.status(500).json({
       error: 'Internal Server Error',
       message: 'Erro ao validar autenticação',
-      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
     });
   }
 };

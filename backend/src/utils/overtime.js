@@ -31,6 +31,19 @@ const resolveContractDailyMinutes = (userContractDailyMinutes) => {
   return DEFAULT_DAILY_WORK_MINUTES;
 };
 
+const resolveDayType = (date) => {
+  const targetDate = new Date(date);
+  const holidays = getHolidaySet();
+  const dateKey = formatDateKey(targetDate);
+  const isSunday = targetDate.getDay() === 0;
+  const isHoliday = holidays.has(dateKey);
+
+  return {
+    isSpecialDay: isSunday || isHoliday,
+    dayType: isHoliday ? 'HOLIDAY' : isSunday ? 'SUNDAY' : 'WEEKDAY',
+  };
+};
+
 const calculateOvertimeSummary = ({ clockIn, clockOut, contractDailyMinutes }) => {
   const start = new Date(clockIn);
   const end = new Date(clockOut);
@@ -50,12 +63,7 @@ const calculateOvertimeSummary = ({ clockIn, clockOut, contractDailyMinutes }) =
   const workedMinutes = Math.floor(diffMs / (1000 * 60));
   const effectiveContractMinutes = resolveContractDailyMinutes(contractDailyMinutes);
   const overtimeMinutes = Math.max(0, workedMinutes - effectiveContractMinutes);
-
-  const holidays = getHolidaySet();
-  const dateKey = formatDateKey(start);
-  const isSunday = start.getDay() === 0;
-  const isHoliday = holidays.has(dateKey);
-  const isSpecialDay = isSunday || isHoliday;
+  const { isSpecialDay, dayType } = resolveDayType(start);
 
   return {
     workedMinutes,
@@ -63,11 +71,97 @@ const calculateOvertimeSummary = ({ clockIn, clockOut, contractDailyMinutes }) =
     overtimeMinutes50: isSpecialDay ? 0 : overtimeMinutes,
     overtimeMinutes100: isSpecialDay ? overtimeMinutes : 0,
     overtimePercent: overtimeMinutes > 0 ? (isSpecialDay ? 100 : 50) : 0,
-    dayType: isHoliday ? 'HOLIDAY' : isSunday ? 'SUNDAY' : 'WEEKDAY',
+    dayType,
+  };
+};
+
+const calculateIncrementalOvertimeSummary = ({
+  clockIn,
+  clockOut,
+  contractDailyMinutes,
+  workedMinutesBeforeEntry,
+}) => {
+  const start = new Date(clockIn);
+  const end = new Date(clockOut);
+  const diffMs = end.getTime() - start.getTime();
+
+  if (!Number.isFinite(diffMs) || diffMs <= 0) {
+    return {
+      workedMinutes: 0,
+      overtimeMinutes: 0,
+      overtimeMinutes50: 0,
+      overtimeMinutes100: 0,
+      overtimePercent: 0,
+      dayType: 'WEEKDAY',
+      workedMinutesBeforeEntry: Math.max(0, Math.floor(Number(workedMinutesBeforeEntry) || 0)),
+      workedMinutesAfterEntry: Math.max(0, Math.floor(Number(workedMinutesBeforeEntry) || 0)),
+      contractDailyMinutes: resolveContractDailyMinutes(contractDailyMinutes),
+    };
+  }
+
+  const workedMinutes = Math.floor(diffMs / (1000 * 60));
+  const effectiveContractMinutes = resolveContractDailyMinutes(contractDailyMinutes);
+  const minutesBefore = Math.max(0, Math.floor(Number(workedMinutesBeforeEntry) || 0));
+  const totalAfterEntry = minutesBefore + workedMinutes;
+  const overtimeBefore = Math.max(0, minutesBefore - effectiveContractMinutes);
+  const overtimeAfter = Math.max(0, totalAfterEntry - effectiveContractMinutes);
+  const overtimeMinutes = Math.max(0, overtimeAfter - overtimeBefore);
+  const { isSpecialDay, dayType } = resolveDayType(start);
+
+  return {
+    workedMinutes,
+    overtimeMinutes,
+    overtimeMinutes50: isSpecialDay ? 0 : overtimeMinutes,
+    overtimeMinutes100: isSpecialDay ? overtimeMinutes : 0,
+    overtimePercent: overtimeMinutes > 0 ? (isSpecialDay ? 100 : 50) : 0,
+    dayType,
+    workedMinutesBeforeEntry: minutesBefore,
+    workedMinutesAfterEntry: totalAfterEntry,
+    contractDailyMinutes: effectiveContractMinutes,
+  };
+};
+
+const calculateCurrentDailyProgress = ({
+  clockIn,
+  now,
+  contractDailyMinutes,
+  workedMinutesBeforeEntry,
+}) => {
+  const start = new Date(clockIn);
+  const end = new Date(now || new Date());
+  const diffMs = end.getTime() - start.getTime();
+  const currentEntryWorkedMinutes = Math.max(0, Math.floor(diffMs / (1000 * 60)));
+  const effectiveContractMinutes = resolveContractDailyMinutes(contractDailyMinutes);
+  const minutesBefore = Math.max(0, Math.floor(Number(workedMinutesBeforeEntry) || 0));
+  const totalWorkedMinutes = minutesBefore + currentEntryWorkedMinutes;
+  const hasReachedDailyTarget = totalWorkedMinutes >= effectiveContractMinutes;
+  const overtimeMinutesSoFar = Math.max(0, totalWorkedMinutes - effectiveContractMinutes);
+
+  let reachedDailyTargetAt = null;
+  if (hasReachedDailyTarget) {
+    if (minutesBefore >= effectiveContractMinutes) {
+      reachedDailyTargetAt = new Date(start);
+    } else {
+      const remainingRegularMinutes = effectiveContractMinutes - minutesBefore;
+      reachedDailyTargetAt = new Date(start.getTime() + remainingRegularMinutes * 60 * 1000);
+    }
+  }
+
+  return {
+    contractDailyMinutes: effectiveContractMinutes,
+    workedMinutesBeforeEntry: minutesBefore,
+    currentEntryWorkedMinutes,
+    totalWorkedMinutes,
+    hasReachedDailyTarget,
+    reachedDailyTargetAt,
+    overtimeMinutesSoFar,
+    remainingRegularMinutes: Math.max(0, effectiveContractMinutes - totalWorkedMinutes),
   };
 };
 
 module.exports = {
   calculateOvertimeSummary,
+  calculateIncrementalOvertimeSummary,
+  calculateCurrentDailyProgress,
   resolveContractDailyMinutes,
 };

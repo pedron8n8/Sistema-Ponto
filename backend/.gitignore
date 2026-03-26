@@ -13,6 +13,7 @@ package-lock.json
 # Exports (relatórios gerados)
 exports/
 *.csv
+uploads/user-photos/
 
 # Logs
 logs
@@ -50,3 +51,7 @@ Thumbs.db
 prisma/.env
 
 /generated/prisma
+
+logins.md
+CREDENTIALS.md
+get-token.js

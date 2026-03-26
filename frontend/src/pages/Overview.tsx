@@ -4,6 +4,8 @@ import { useAuth } from '../context/AuthContext'
 import { apiFetch } from '../lib/api'
 import { useTimeZone } from '../context/TimezoneContext'
 import { formatDateTimeWithTimeZone } from '../lib/timezone'
+import { useLanguage } from '../context/LanguageContext'
+import UserAvatar from '../components/UserAvatar'
 
 type ApprovalLog = {
   id: string
@@ -22,6 +24,7 @@ type TimeEntry = {
 
 const Overview = () => {
   const { profile, session } = useAuth()
+  const { tr, language } = useLanguage()
   const { viewTimeZone } = useTimeZone()
   const token = session?.access_token
 
@@ -51,7 +54,7 @@ const Overview = () => {
         return next
       })
     } catch (err) {
-      setAdjustmentError(err instanceof Error ? err.message : 'Erro ao carregar solicitações de ajuste')
+      setAdjustmentError(err instanceof Error ? err.message : tr('Failed to load adjustment requests', 'Erro ao carregar solicitações de ajuste'))
     } finally {
       setLoadingAdjustments(false)
     }
@@ -70,7 +73,7 @@ const Overview = () => {
 
     const notes = (notesDraftByEntry[entryId] || '').trim()
     if (!notes) {
-      setAdjustmentError('Preencha as notas antes de salvar o ajuste.')
+      setAdjustmentError(tr('Fill notes before submitting the adjustment.', 'Preencha as notas antes de salvar o ajuste.'))
       return
     }
 
@@ -83,10 +86,10 @@ const Overview = () => {
         method: 'PATCH',
         body: { notes },
       })
-      setAdjustmentNotice(response.message || 'Notas ajustadas com sucesso.')
+      setAdjustmentNotice(response.message || tr('Notes updated successfully.', 'Notas ajustadas com sucesso.'))
       await loadAdjustmentRequests()
     } catch (err) {
-      setAdjustmentError(err instanceof Error ? err.message : 'Erro ao salvar ajuste de notas')
+      setAdjustmentError(err instanceof Error ? err.message : tr('Failed to update notes.', 'Erro ao salvar ajuste de notas'))
     } finally {
       setSavingByEntry((prev) => ({ ...prev, [entryId]: false }))
     }
@@ -95,18 +98,21 @@ const Overview = () => {
   return (
     <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
-        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">Visao geral</p>
-        <h2 className="mt-4 text-3xl font-semibold text-slate-900">Oi {profile?.name || 'time'}.</h2>
+        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">{tr('Overview', 'Visao geral')}</p>
+        <h2 className="mt-4 text-3xl font-semibold text-slate-900">{tr('Hi', 'Oi')} {profile?.name || tr('team', 'time')}.</h2>
         <p className="mt-4 text-sm text-slate-600">
-          Selecione a area que voce precisa hoje. Mantemos o foco no essencial para reduzir atrito no dia a dia.
+          {tr(
+            'Select the area you need today. We keep focus on essentials to reduce daily friction.',
+            'Selecione a area que voce precisa hoje. Mantemos o foco no essencial para reduzir atrito no dia a dia.'
+          )}
         </p>
 
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
           {[
-            { title: 'Colaborador', desc: 'Clock in/out e historico de jornadas.', to: '/app/colaborador' },
-            { title: 'Supervisor', desc: 'Aprovacoes pendentes e revisoes.', to: '/app/supervisor' },
-            { title: 'Admin', desc: 'Usuarios, roles e supervisores.', to: '/app/admin' },
-            { title: 'Relatorios', desc: 'Exportacoes semanais e timesheets.', to: '/app/relatorios' },
+            { title: tr('Member', 'Colaborador'), desc: tr('Clock in/out and work history.', 'Clock in/out e historico de jornadas.'), to: '/app/colaborador' },
+            { title: tr('Supervisor', 'Supervisor'), desc: tr('Pending approvals and reviews.', 'Aprovacoes pendentes e revisoes.'), to: '/app/supervisor' },
+            { title: tr('Admin', 'Admin'), desc: tr('Users, roles and supervisors.', 'Usuarios, roles e supervisores.'), to: '/app/admin' },
+            { title: tr('Reports', 'Relatorios'), desc: tr('Weekly exports and timesheets.', 'Exportacoes semanais e timesheets.'), to: '/app/relatorios' },
           ].map((item) => (
             <Link
               key={item.title}
@@ -124,33 +130,36 @@ const Overview = () => {
         {profile?.role === 'MEMBER' ? (
           <div className="rounded-3xl border border-amber-300 bg-amber-50/90 p-6 shadow-sm">
             <div className="flex items-center justify-between gap-2">
-              <h3 className="text-lg font-semibold text-amber-900">Solicitacoes de ajuste</h3>
+              <h3 className="text-lg font-semibold text-amber-900">{tr('Adjustment requests', 'Solicitacoes de ajuste')}</h3>
               <span className="rounded-full bg-amber-200 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-900">
                 {pendingAdjustments.length}
               </span>
             </div>
             <p className="mt-2 text-xs text-amber-800">
-              Quando houver ajuste solicitado por supervisor/admin, voce pode editar somente as notas.
+              {tr(
+                'When a supervisor/admin requests an edit, you can update notes only.',
+                'Quando houver ajuste solicitado por supervisor/admin, voce pode editar somente as notas.'
+              )}
             </p>
 
-            {loadingAdjustments ? <p className="mt-3 text-xs text-amber-800">Carregando...</p> : null}
+            {loadingAdjustments ? <p className="mt-3 text-xs text-amber-800">{tr('Loading...', 'Carregando...')}</p> : null}
             {adjustmentError ? <p className="mt-3 text-xs text-rose-700">{adjustmentError}</p> : null}
             {adjustmentNotice ? <p className="mt-3 text-xs text-emerald-700">{adjustmentNotice}</p> : null}
 
             <div className="mt-4 space-y-3">
               {pendingAdjustments.length === 0 ? (
-                <p className="text-xs text-amber-800">Nenhuma solicitacao de ajuste pendente.</p>
+                <p className="text-xs text-amber-800">{tr('No pending adjustment requests.', 'Nenhuma solicitacao de ajuste pendente.')}</p>
               ) : (
                 pendingAdjustments.map((entry) => (
                   <div key={entry.id} className="rounded-2xl border border-amber-200 bg-white p-3">
                     <p className="text-xs font-semibold text-slate-800">
-                      Registro: {formatDateTimeWithTimeZone(entry.clockIn, viewTimeZone)}
+                      {tr('Record', 'Registro')}: {formatDateTimeWithTimeZone(entry.clockIn, viewTimeZone, language === 'pt-BR' ? 'pt-BR' : 'en-US')}
                     </p>
                     <p className="mt-1 text-xs text-amber-900">
-                      Motivo: {entry.logs?.[0]?.comment || 'Sem comentario informado'}
+                      {tr('Reason', 'Motivo')}: {entry.logs?.[0]?.comment || tr('No comment provided', 'Sem comentario informado')}
                     </p>
                     <label className="mt-3 block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                      Ajustar notas
+                      {tr('Update notes', 'Ajustar notas')}
                     </label>
                     <textarea
                       value={notesDraftByEntry[entry.id] || ''}
@@ -167,7 +176,7 @@ const Overview = () => {
                       disabled={Boolean(savingByEntry[entry.id])}
                       className="mt-3 rounded-full bg-amber-500 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
                     >
-                      {savingByEntry[entry.id] ? 'Salvando...' : 'Enviar ajuste'}
+                      {savingByEntry[entry.id] ? tr('Saving...', 'Salvando...') : tr('Send adjustment', 'Enviar ajuste')}
                     </button>
                   </div>
                 ))
@@ -177,17 +186,23 @@ const Overview = () => {
         ) : null}
 
         <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900">Seu perfil</h3>
-          <p className="mt-2 text-sm text-slate-600">Role ativa: {profile?.role || '---'}</p>
+          <h3 className="text-lg font-semibold text-slate-900">{tr('Your profile', 'Seu perfil')}</h3>
+          <div className="mt-3 flex items-center gap-3">
+            <UserAvatar name={profile?.name} photoUrl={profile?.photoUrl} size="md" />
+            <div>
+              <p className="text-sm font-semibold text-slate-800">{profile?.name || '-'}</p>
+              <p className="text-xs text-slate-500">{profile?.email || '-'}</p>
+            </div>
+          </div>
+          <p className="mt-2 text-sm text-slate-600">{tr('Active role', 'Role ativa')}: {profile?.role || '---'}</p>
           <div className="mt-5 grid gap-2 text-xs text-slate-500">
-            <span>Email: {profile?.email || '-'}</span>
-            <span>Supervisor: {profile?.supervisor?.name || 'Nao informado'}</span>
+            <span>{tr('Supervisor', 'Supervisor')}: {profile?.supervisor?.name || tr('Not informed', 'Nao informado')}</span>
           </div>
         </div>
         <div className="rounded-3xl border border-slate-100 bg-slate-900 p-6 text-white shadow-sm">
-          <p className="text-xs uppercase tracking-[0.3em] text-teal-200">Experiencia</p>
+          <p className="text-xs uppercase tracking-[0.3em] text-teal-200">{tr('Experience', 'Experiencia')}</p>
           <p className="mt-3 text-sm text-slate-100">
-            Interfaces leves, com contraste suave e foco na acao principal.
+            {tr('Light interfaces with soft contrast and focus on the main action.', 'Interfaces leves, com contraste suave e foco na acao principal.')}
           </p>
         </div>
       </aside>

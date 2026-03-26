@@ -15,6 +15,10 @@ const roleCheck = (allowedRoles) => {
       });
     }
 
+    if (req.user.role === 'SUPERADMIN') {
+      return next();
+    }
+
     // Verifica se o usuário tem uma das roles permitidas
     if (!allowedRoles.includes(req.user.role)) {
       return res.status(403).json({

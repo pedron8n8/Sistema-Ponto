@@ -1,15 +1,17 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase, hasSupabaseEnv } from '../lib/supabase'
-import { apiFetch } from '../lib/api'
+import { apiFetch, resolveApiAssetUrl } from '../lib/api'
 
-type Role = 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'
+type Role = 'SUPERADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'
 
 type UserProfile = {
   id: string
   email: string
   name: string
   role: Role
+  photoUrl?: string | null
+  photoUpdatedAt?: string | null
   supervisor?: {
     id: string
     email: string
@@ -50,7 +52,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         timeoutMs: 8000,
       })
 
-      setProfile(response.user)
+      setProfile({
+        ...response.user,
+        photoUrl: resolveApiAssetUrl(response.user.photoUrl),
+      })
       setProfileError(null)
     } catch (err) {
       setProfile(null)

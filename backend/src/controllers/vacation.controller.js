@@ -1,7 +1,29 @@
 const prisma = require('../config/database');
+const { buildUserPhotoUrl } = require('../utils/userPhoto');
 
 const ACTIVE_VACATION_STATUSES = ['REQUESTED', 'SUPERVISOR_APPROVED', 'HR_CONFIRMED'];
-const isElevatedVacationViewer = (role) => ['ADMIN', 'HR'].includes(role);
+const isElevatedVacationViewer = (role) => ['SUPERADMIN', 'ADMIN', 'HR'].includes(role);
+
+const withUserPhoto = (req, user) => {
+  if (!user) return user;
+  return {
+    ...user,
+    photoUrl: buildUserPhotoUrl(req, user.photoPath),
+  };
+};
+
+const withRequestPhoto = (req, request) => ({
+  ...request,
+  user: withUserPhoto(req, request.user),
+  supervisor: withUserPhoto(req, request.supervisor),
+  hrReviewer: withUserPhoto(req, request.hrReviewer),
+  logs: Array.isArray(request.logs)
+    ? request.logs.map((log) => ({
+        ...log,
+        actor: withUserPhoto(req, log.actor),
+      }))
+    : request.logs,
+});
 
 const parseDate = (value) => {
   const date = new Date(value);
@@ -166,6 +188,7 @@ const getMyVacationRequests = async (req, res) => {
             id: true,
             name: true,
             email: true,
+            photoPath: true,
           },
         },
         hrReviewer: {
@@ -173,6 +196,7 @@ const getMyVacationRequests = async (req, res) => {
             id: true,
             name: true,
             email: true,
+            photoPath: true,
           },
         },
         logs: {
@@ -184,6 +208,7 @@ const getMyVacationRequests = async (req, res) => {
                 name: true,
                 email: true,
                 role: true,
+                photoPath: true,
               },
             },
           },
@@ -192,7 +217,7 @@ const getMyVacationRequests = async (req, res) => {
       orderBy: [{ createdAt: 'desc' }],
     });
 
-    return res.json({ requests });
+    return res.json({ requests: requests.map((request) => withRequestPhoto(req, request)) });
   } catch (error) {
     console.error('❌ Erro ao buscar minhas solicitações de férias:', error);
     return res.status(500).json({
@@ -477,6 +502,7 @@ const getTeamVacationRequests = async (req, res) => {
             id: true,
             name: true,
             email: true,
+            photoPath: true,
           },
         },
         supervisor: {
@@ -484,6 +510,7 @@ const getTeamVacationRequests = async (req, res) => {
             id: true,
             name: true,
             email: true,
+            photoPath: true,
           },
         },
         hrReviewer: {
@@ -491,6 +518,7 @@ const getTeamVacationRequests = async (req, res) => {
             id: true,
             name: true,
             email: true,
+            photoPath: true,
           },
         },
         logs: {
@@ -502,6 +530,7 @@ const getTeamVacationRequests = async (req, res) => {
                 name: true,
                 email: true,
                 role: true,
+                photoPath: true,
               },
             },
           },
@@ -510,7 +539,7 @@ const getTeamVacationRequests = async (req, res) => {
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
     });
 
-    return res.json({ requests });
+    return res.json({ requests: requests.map((request) => withRequestPhoto(req, request)) });
   } catch (error) {
     console.error('❌ Erro ao listar solicitações de férias da equipe:', error);
     return res.status(500).json({
@@ -535,6 +564,7 @@ const getHrVacationRequests = async (req, res) => {
             id: true,
             name: true,
             email: true,
+            photoPath: true,
           },
         },
         supervisor: {
@@ -542,6 +572,7 @@ const getHrVacationRequests = async (req, res) => {
             id: true,
             name: true,
             email: true,
+            photoPath: true,
           },
         },
         hrReviewer: {
@@ -549,6 +580,7 @@ const getHrVacationRequests = async (req, res) => {
             id: true,
             name: true,
             email: true,
+            photoPath: true,
           },
         },
         logs: {
@@ -560,6 +592,7 @@ const getHrVacationRequests = async (req, res) => {
                 name: true,
                 email: true,
                 role: true,
+                photoPath: true,
               },
             },
           },
@@ -568,7 +601,7 @@ const getHrVacationRequests = async (req, res) => {
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
     });
 
-    return res.json({ requests });
+    return res.json({ requests: requests.map((request) => withRequestPhoto(req, request)) });
   } catch (error) {
     console.error('❌ Erro ao listar solicitações de férias para RH:', error);
     return res.status(500).json({
@@ -637,6 +670,7 @@ const getTeamVacationCalendar = async (req, res) => {
             id: true,
             name: true,
             email: true,
+            photoPath: true,
           },
         },
       },
@@ -669,6 +703,7 @@ const getTeamVacationCalendar = async (req, res) => {
           id: item.user.id,
           name: item.user.name,
           email: item.user.email,
+          photoUrl: buildUserPhotoUrl(req, item.user.photoPath),
           status: item.status,
         })),
       });

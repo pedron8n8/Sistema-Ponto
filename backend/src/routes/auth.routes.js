@@ -1,5 +1,6 @@
 const express = require('express');
 const { authMiddleware, roleCheck } = require('../middlewares');
+const { buildUserPhotoUrl } = require('../utils/userPhoto');
 
 const router = express.Router();
 
@@ -8,6 +9,8 @@ const router = express.Router();
  * Retorna informações do usuário autenticado
  */
 router.get('/me', authMiddleware, (req, res) => {
+  const photoUrl = buildUserPhotoUrl(req, req.user.photoPath);
+
   res.json({
     user: {
       id: req.user.id,
@@ -15,6 +18,8 @@ router.get('/me', authMiddleware, (req, res) => {
       name: req.user.name,
       role: req.user.role,
       supervisor: req.user.supervisor,
+      photoUrl,
+      photoUpdatedAt: req.user.photoUpdatedAt,
       createdAt: req.user.createdAt,
     },
   });
@@ -25,8 +30,13 @@ router.get('/me', authMiddleware, (req, res) => {
  * Retorna perfil completo do usuário autenticado
  */
 router.get('/profile', authMiddleware, (req, res) => {
+  const photoUrl = buildUserPhotoUrl(req, req.user.photoPath);
+
   res.json({
-    user: req.user,
+    user: {
+      ...req.user,
+      photoUrl,
+    },
     supabase: {
       id: req.supabaseUser.id,
       email: req.supabaseUser.email,

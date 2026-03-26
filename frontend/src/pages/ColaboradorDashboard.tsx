@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTimeZone } from '../context/TimezoneContext'
+import { useLanguage } from '../context/LanguageContext'
 import { Circle, CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet'
 import * as faceapi from 'face-api.js'
-import { formatDateTimeWithTimeZone, formatDateWithTimeZone, formatTimeWithTimeZone } from '../lib/timezone'
+import { formatDateTimeWithTimeZone, formatTimeWithTimeZone } from '../lib/timezone'
 
 type TimeEntry = {
   id: string
@@ -19,12 +20,23 @@ type CurrentEntryResponse = {
   entry: {
     id: string
     clockIn: string
+    dailyProgress?: {
+      contractDailyMinutes: number
+      workedMinutesBeforeEntry: number
+      currentEntryWorkedMinutes: number
+      totalWorkedMinutes: number
+      hasReachedDailyTarget: boolean
+      reachedDailyTargetAt: string | null
+      overtimeMinutesSoFar: number
+      remainingRegularMinutes: number
+    }
   } | null
 }
 
 type GeofenceConfig = {
   enabled: boolean
   mode: 'ALERT' | 'REJECT' | string
+  locationValidationSource?: 'MOBILE' | 'TERMINAL_QR' | string
   requireLocation: boolean
   center: {
     lat: number
@@ -45,32 +57,6 @@ type FaceStatusResponse = {
   }
 }
 
-type VacationRequest = {
-  id: string
-  startDate: string
-  endDate: string
-  status:
-    | 'REQUESTED'
-    | 'SUPERVISOR_APPROVED'
-    | 'SUPERVISOR_REJECTED'
-    | 'HR_CONFIRMED'
-    | 'HR_REJECTED'
-    | 'CANCELED'
-  reason?: string | null
-  logs: Array<{
-    id: string
-    action: string
-    comment?: string | null
-    timestamp: string
-    actor?: {
-      id: string
-      name?: string | null
-      email: string
-      role: string
-    } | null
-  }>
-}
-
 type LivenessData = {
   blinkDetected: boolean
   headMovementDetected: boolean
@@ -82,6 +68,26 @@ type LivenessData = {
   headMovementDelta: number
   frameCount: number
   capturedAt: string
+}
+
+type OfflineClockAction = {
+  id: string
+  path: '/time/clock-in' | '/time/clock-out'
+  body: Record<string, unknown>
+  createdAt: string
+}
+
+type BarcodeDetectorCode = {
+  rawValue?: string
+}
+
+type BarcodeDetectorInstance = {
+  detect: (source: ImageBitmapSource) => Promise<BarcodeDetectorCode[]>
+}
+
+type BarcodeDetectorStatic = {
+  new (options?: { formats?: string[] }): BarcodeDetectorInstance
+  getSupportedFormats?: () => Promise<string[]>
 }
 
 const FACE_MODEL_SOURCES = [
@@ -100,20 +106,33 @@ const FACE_TURN_DELTA = 0.08
 const FACE_VERTICAL_CENTER_MIN = 0.44
 const FACE_VERTICAL_CENTER_MAX = 0.56
 const FACE_VERTICAL_TURN_DELTA = 0.06
+const OFFLINE_CLOCK_QUEUE_KEY = 'systemaponto.offlineClockQueue'
+
+const getBarcodeDetector = () =>
+  (window as Window & { BarcodeDetector?: BarcodeDetectorStatic }).BarcodeDetector
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 
 const ColaboradorDashboard = () => {
   const { session } = useAuth()
+  const { tr } = useLanguage()
   const { viewTimeZone } = useTimeZone()
   const [entries, setEntries] = useState<TimeEntry[]>([])
   const [currentEntry, setCurrentEntry] = useState<CurrentEntryResponse['entry'] | null>(null)
   const [elapsedMs, setElapsedMs] = useState<number | null>(null)
   const [notes, setNotes] = useState('')
   const [pin, setPin] = useState('')
+  const [scannedQrToken, setScannedQrToken] = useState('')
+  const [scannedQrSummary, setScannedQrSummary] = useState('')
+  const [qrScannerOpen, setQrScannerOpen] = useState(false)
+  const [qrScanLoading, setQrScanLoading] = useState(false)
+  const [qrScanError, setQrScanError] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine)
+  const [pendingSyncCount, setPendingSyncCount] = useState(0)
+  const [syncingOfflineQueue, setSyncingOfflineQueue] = useState(false)
   const [geoLoading, setGeoLoading] = useState(false)
   const [geoError, setGeoError] = useState('')
   const [currentPosition, setCurrentPosition] = useState<{ lat: number; lng: number } | null>(null)
@@ -123,15 +142,6 @@ const ColaboradorDashboard = () => {
   const [faceModelsReady, setFaceModelsReady] = useState(false)
   const [faceModelSource, setFaceModelSource] = useState<string | null>(null)
   const [faceStatus, setFaceStatus] = useState<FaceStatusResponse['face'] | null>(null)
-  const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([])
-  const [vacationLoading, setVacationLoading] = useState(false)
-  const [vacationError, setVacationError] = useState('')
-  const [vacationNotice, setVacationNotice] = useState('')
-  const [vacationForm, setVacationForm] = useState({
-    startDate: '',
-    endDate: '',
-    reason: '',
-  })
   const [cameraActive, setCameraActive] = useState(false)
   const [enrollModalOpen, setEnrollModalOpen] = useState(false)
   const [enrollInstruction, setEnrollInstruction] = useState('Centralize seu rosto no quadro')
@@ -139,6 +149,11 @@ const ColaboradorDashboard = () => {
   const [enrollStep, setEnrollStep] = useState<'CENTER' | 'LEFT' | 'RIGHT' | 'UP' | 'DOWN'>('CENTER')
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const qrVideoRef = useRef<HTMLVideoElement | null>(null)
+  const qrStreamRef = useRef<MediaStream | null>(null)
+  const qrScanAnimationRef = useRef<number | null>(null)
+  const qrScannerActiveRef = useRef(false)
+  const dailyTargetNotifiedRef = useRef(false)
 
   const token = session?.access_token
 
@@ -196,10 +211,97 @@ const ColaboradorDashboard = () => {
     setEntries(response.entries)
   }
 
+  const readOfflineQueue = (): OfflineClockAction[] => {
+    try {
+      const raw = window.localStorage.getItem(OFFLINE_CLOCK_QUEUE_KEY)
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed)) return []
+      return parsed.filter((item) => item?.id && item?.path && item?.body)
+    } catch (_error) {
+      return []
+    }
+  }
+
+  const writeOfflineQueue = (queue: OfflineClockAction[]) => {
+    window.localStorage.setItem(OFFLINE_CLOCK_QUEUE_KEY, JSON.stringify(queue))
+    setPendingSyncCount(queue.length)
+  }
+
+  const enqueueOfflineClockAction = (action: Omit<OfflineClockAction, 'id' | 'createdAt'>) => {
+    const currentQueue = readOfflineQueue()
+    const nextQueue = [
+      ...currentQueue,
+      {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        createdAt: new Date().toISOString(),
+        ...action,
+      },
+    ]
+    writeOfflineQueue(nextQueue)
+  }
+
+  const isLikelyNetworkError = (error: unknown) => {
+    if (!error) return false
+    const message = error instanceof Error ? error.message : String(error)
+    return (
+      !navigator.onLine ||
+      /failed to fetch|network|tempo de resposta excedido|networkerror/i.test(message)
+    )
+  }
+
+  const syncOfflineClockQueue = async () => {
+    if (!token || syncingOfflineQueue) return
+    const currentQueue = readOfflineQueue()
+    if (currentQueue.length === 0) {
+      setPendingSyncCount(0)
+      return
+    }
+
+    setSyncingOfflineQueue(true)
+    const remaining: OfflineClockAction[] = []
+
+    for (const action of currentQueue) {
+      try {
+        await apiFetch(action.path, {
+          token,
+          method: 'POST',
+          body: action.body,
+        })
+      } catch (err) {
+        remaining.push(action)
+        if (isLikelyNetworkError(err)) {
+          remaining.push(...currentQueue.slice(currentQueue.indexOf(action) + 1))
+          break
+        }
+      }
+    }
+
+    writeOfflineQueue(remaining)
+    if (remaining.length === 0) {
+      setSuccess('Pendencias offline sincronizadas com sucesso.')
+      await loadEntries()
+      await loadCurrentEntry()
+    }
+
+    setSyncingOfflineQueue(false)
+  }
+
   const loadCurrentEntry = async () => {
     if (!token) return
     const response = await apiFetch<CurrentEntryResponse>('/time/current', { token })
     setCurrentEntry(response.entry)
+
+    const reachedDailyTarget = Boolean(response.entry?.dailyProgress?.hasReachedDailyTarget)
+    if (reachedDailyTarget && !dailyTargetNotifiedRef.current) {
+      setSuccess('Voce atingiu a carga horaria do dia. A partir de agora o tempo sera contabilizado como hora extra.')
+      dailyTargetNotifiedRef.current = true
+    }
+
+    if (!response.entry || !reachedDailyTarget) {
+      dailyTargetNotifiedRef.current = false
+    }
+
     if (response.entry?.clockIn) {
       const startedAt = new Date(response.entry.clockIn).getTime()
       setElapsedMs(Date.now() - startedAt)
@@ -218,12 +320,6 @@ const ColaboradorDashboard = () => {
     if (!token) return
     const response = await apiFetch<FaceStatusResponse>('/users/me/face', { token })
     setFaceStatus(response.face)
-  }
-
-  const loadMyVacationRequests = async () => {
-    if (!token) return
-    const response = await apiFetch<{ requests: VacationRequest[] }>('/vacations/me', { token })
-    setVacationRequests(response.requests || [])
   }
 
   const loadFaceModels = async () => {
@@ -636,7 +732,6 @@ const ColaboradorDashboard = () => {
     loadCurrentEntry().catch(() => undefined)
     loadGeofence().catch(() => undefined)
     loadFaceStatus().catch(() => undefined)
-    loadMyVacationRequests().catch(() => undefined)
     loadFaceModels().catch(() => {
       setFaceModelsReady(false)
       setFaceError(
@@ -644,11 +739,32 @@ const ColaboradorDashboard = () => {
       )
     })
     refreshLocation().catch(() => undefined)
+    setPendingSyncCount(readOfflineQueue().length)
   }, [token])
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true)
+      syncOfflineClockQueue().catch(() => undefined)
+    }
+
+    const handleOffline = () => {
+      setIsOnline(false)
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [token, syncingOfflineQueue])
 
   useEffect(() => {
     return () => {
       stopCamera()
+      stopQrScanner()
     }
   }, [])
 
@@ -657,6 +773,7 @@ const ColaboradorDashboard = () => {
     const interval = window.setInterval(() => {
       loadEntries().catch(() => undefined)
       loadCurrentEntry().catch(() => undefined)
+      syncOfflineClockQueue().catch(() => undefined)
     }, 15000)
 
     return () => window.clearInterval(interval)
@@ -680,12 +797,133 @@ const ColaboradorDashboard = () => {
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
   }
 
+  const formatMinutesLabel = (minutes: number) => {
+    const safeMinutes = Math.max(0, Math.floor(minutes))
+    const hoursPart = Math.floor(safeMinutes / 60)
+    const minutesPart = safeMinutes % 60
+    return `${String(hoursPart).padStart(2, '0')}h ${String(minutesPart).padStart(2, '0')}m`
+  }
+
+  const decodeTokenSummary = (token: string) => {
+    const [encodedPayload] = String(token || '').split('.')
+    if (!encodedPayload) return ''
+
+    try {
+      const normalized = encodedPayload.replace(/-/g, '+').replace(/_/g, '/')
+      const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4))
+      const payload = JSON.parse(window.atob(`${normalized}${padding}`)) as {
+        terminalName?: string | null
+        terminalId?: string | null
+        branch?: string | null
+      }
+
+      const terminalLabel = payload.terminalName || payload.terminalId || 'Terminal'
+      const branchLabel = payload.branch || 'N/A'
+      return `${terminalLabel} (${branchLabel})`
+    } catch (_error) {
+      return ''
+    }
+  }
+
+  const stopQrScanner = () => {
+    qrScannerActiveRef.current = false
+
+    if (qrScanAnimationRef.current) {
+      window.cancelAnimationFrame(qrScanAnimationRef.current)
+      qrScanAnimationRef.current = null
+    }
+
+    if (qrStreamRef.current) {
+      qrStreamRef.current.getTracks().forEach((track) => track.stop())
+      qrStreamRef.current = null
+    }
+
+    if (qrVideoRef.current) {
+      qrVideoRef.current.srcObject = null
+    }
+  }
+
+  const startQrScanner = async () => {
+    const BarcodeDetectorCtor = getBarcodeDetector()
+    if (!BarcodeDetectorCtor) {
+      setQrScanError('Leitura de QR por câmera não suportada neste navegador. Use Chrome/Edge recente.')
+      return
+    }
+
+    setQrScanLoading(true)
+    setQrScanError('')
+    setQrScannerOpen(true)
+    qrScannerActiveRef.current = true
+
+    try {
+      if (cameraActive) {
+        stopCamera()
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      })
+
+      qrStreamRef.current = stream
+      if (!qrVideoRef.current) {
+        throw new Error('Falha ao inicializar câmera para QR')
+      }
+
+      qrVideoRef.current.srcObject = stream
+      await qrVideoRef.current.play()
+
+      const detector = new BarcodeDetectorCtor({ formats: ['qr_code'] })
+
+      const loop = async () => {
+        if (!qrVideoRef.current || !qrScannerActiveRef.current) return
+
+        try {
+          const detections = await detector.detect(qrVideoRef.current)
+          const rawValue = detections.find((item) => item?.rawValue)?.rawValue
+
+          if (rawValue) {
+            setScannedQrToken(rawValue)
+            const summary = decodeTokenSummary(rawValue)
+            setScannedQrSummary(summary)
+            setQrScannerOpen(false)
+            stopQrScanner()
+            setSuccess(summary ? `QR lido: ${summary}` : 'QR lido com sucesso.')
+            setQrScanLoading(false)
+            return
+          }
+        } catch (_error) {
+          // Ignora frames inválidos e continua o loop.
+        }
+
+        qrScanAnimationRef.current = window.requestAnimationFrame(() => {
+          loop().catch(() => undefined)
+        })
+      }
+
+      loop().catch(() => undefined)
+    } catch (err) {
+      setQrScanError(err instanceof Error ? err.message : 'Não foi possível abrir a câmera para leitura do QR')
+      setQrScannerOpen(false)
+      stopQrScanner()
+      setQrScanLoading(false)
+    }
+  }
+
   const handleClockIn = async () => {
     if (!token) return
     setLoading(true)
     setError('')
     setSuccess('')
     try {
+      if (geofence?.locationValidationSource === 'TERMINAL_QR' && !scannedQrToken.trim()) {
+        throw new Error('Leia o QR do terminal pela câmera antes de registrar o ponto.')
+      }
+
       const location = await refreshLocation()
 
       let faceDescriptor: number[] | undefined
@@ -697,25 +935,44 @@ const ColaboradorDashboard = () => {
         livenessData = faceVerification.livenessData
       }
 
+      const payload = {
+        notes,
+        latitude: location.lat,
+        longitude: location.lng,
+        ...(pinValue ? { pin: pinValue } : {}),
+        ...(faceDescriptor ? { faceDescriptor } : {}),
+        ...(livenessData ? { livenessData } : {}),
+        ...(scannedQrToken.trim() ? { qrToken: scannedQrToken.trim() } : {}),
+      }
+
       await apiFetch('/time/clock-in', {
         token,
         method: 'POST',
-        body: {
-          notes,
-          latitude: location.lat,
-          longitude: location.lng,
-          ...(pinValue ? { pin: pinValue } : {}),
-          ...(faceDescriptor ? { faceDescriptor } : {}),
-          ...(livenessData ? { livenessData } : {}),
-        },
+        body: payload,
       })
       setNotes('')
       setPin('')
+      setScannedQrToken('')
+      setScannedQrSummary('')
       await loadEntries()
       await loadCurrentEntry()
       setSuccess('Clock-in registrado com sucesso.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao registrar entrada')
+      if (isLikelyNetworkError(err)) {
+        enqueueOfflineClockAction({
+          path: '/time/clock-in',
+          body: {
+            notes,
+            latitude: currentPosition?.lat,
+            longitude: currentPosition?.lng,
+            ...(pin.trim() ? { pin: pin.trim() } : {}),
+            ...(scannedQrToken.trim() ? { qrToken: scannedQrToken.trim() } : {}),
+          },
+        })
+        setSuccess('Sem conexão. Clock-in salvo localmente e pendente de sincronização.')
+      } else {
+        setError(err instanceof Error ? err.message : 'Erro ao registrar entrada')
+      }
     } finally {
       setLoading(false)
     }
@@ -727,6 +984,10 @@ const ColaboradorDashboard = () => {
     setError('')
     setSuccess('')
     try {
+      if (geofence?.locationValidationSource === 'TERMINAL_QR' && !scannedQrToken.trim()) {
+        throw new Error('Leia o QR do terminal pela câmera antes de registrar o ponto.')
+      }
+
       const location = await refreshLocation()
 
       let faceDescriptor: number[] | undefined
@@ -738,70 +999,63 @@ const ColaboradorDashboard = () => {
         livenessData = faceVerification.livenessData
       }
 
+      const payload = {
+        notes,
+        latitude: location.lat,
+        longitude: location.lng,
+        ...(pinValue ? { pin: pinValue } : {}),
+        ...(faceDescriptor ? { faceDescriptor } : {}),
+        ...(livenessData ? { livenessData } : {}),
+        ...(scannedQrToken.trim() ? { qrToken: scannedQrToken.trim() } : {}),
+      }
+
       await apiFetch('/time/clock-out', {
         token,
         method: 'POST',
-        body: {
-          notes,
-          latitude: location.lat,
-          longitude: location.lng,
-          ...(pinValue ? { pin: pinValue } : {}),
-          ...(faceDescriptor ? { faceDescriptor } : {}),
-          ...(livenessData ? { livenessData } : {}),
-        },
+        body: payload,
       })
       setNotes('')
       setPin('')
+      setScannedQrToken('')
+      setScannedQrSummary('')
       await loadEntries()
       await loadCurrentEntry()
       setSuccess('Clock-out registrado com sucesso.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao registrar saida')
+      if (isLikelyNetworkError(err)) {
+        enqueueOfflineClockAction({
+          path: '/time/clock-out',
+          body: {
+            notes,
+            latitude: currentPosition?.lat,
+            longitude: currentPosition?.lng,
+            ...(pin.trim() ? { pin: pin.trim() } : {}),
+            ...(scannedQrToken.trim() ? { qrToken: scannedQrToken.trim() } : {}),
+          },
+        })
+        setSuccess('Sem conexão. Clock-out salvo localmente e pendente de sincronização.')
+      } else {
+        setError(err instanceof Error ? err.message : 'Erro ao registrar saida')
+      }
     } finally {
       setLoading(false)
     }
   }
 
-  const handleCreateVacationRequest = async () => {
-    if (!token) return
-
-    setVacationLoading(true)
-    setVacationError('')
-    setVacationNotice('')
-
-    try {
-      await apiFetch('/vacations/request', {
-        token,
-        method: 'POST',
-        body: {
-          startDate: vacationForm.startDate,
-          endDate: vacationForm.endDate,
-          reason: vacationForm.reason,
-        },
-      })
-
-      setVacationForm({
-        startDate: '',
-        endDate: '',
-        reason: '',
-      })
-      await loadMyVacationRequests()
-      setVacationNotice('Solicitação de férias enviada com sucesso.')
-    } catch (err) {
-      setVacationError(err instanceof Error ? err.message : 'Erro ao solicitar férias')
-    } finally {
-      setVacationLoading(false)
-    }
-  }
-
-  const vacationStatusLabel: Record<string, string> = {
-    REQUESTED: 'Aguardando supervisor',
-    SUPERVISOR_APPROVED: 'Aguardando RH',
-    SUPERVISOR_REJECTED: 'Rejeitada pelo supervisor',
-    HR_CONFIRMED: 'Confirmada pelo RH',
-    HR_REJECTED: 'Rejeitada pelo RH',
-    CANCELED: 'Cancelada',
-  }
+  const liveCurrentEntryMinutes = currentEntry?.clockIn
+    ? Math.max(0, Math.floor((elapsedMs || 0) / 60000))
+    : 0
+  const dailyProgress = currentEntry?.dailyProgress
+  const workedBeforeMinutes = dailyProgress?.workedMinutesBeforeEntry || 0
+  const liveTotalWorkedMinutes = dailyProgress
+    ? workedBeforeMinutes + liveCurrentEntryMinutes
+    : liveCurrentEntryMinutes
+  const contractDailyMinutes = dailyProgress?.contractDailyMinutes || 0
+  const liveRegularMinutes = contractDailyMinutes > 0
+    ? Math.min(liveTotalWorkedMinutes, contractDailyMinutes)
+    : liveTotalWorkedMinutes
+  const liveOvertimeMinutes = Math.max(0, liveTotalWorkedMinutes - Math.max(contractDailyMinutes, 0))
+  const statusChartMax = Math.max(contractDailyMinutes, liveTotalWorkedMinutes, 1)
 
   return (
     <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
@@ -840,6 +1094,31 @@ const ColaboradorDashboard = () => {
             </p>
           </div>
 
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                QR do terminal (leitura por câmera)
+              </label>
+              <button
+                onClick={() => {
+                  setError('')
+                  setSuccess('')
+                  startQrScanner().catch(() => undefined)
+                }}
+                disabled={qrScanLoading}
+                className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-50"
+              >
+                {qrScanLoading ? 'Abrindo câmera...' : 'Ler QR'}
+              </button>
+            </div>
+            <p className="mt-2 text-[11px] text-slate-500">
+              {scannedQrToken
+                ? `QR validado${scannedQrSummary ? `: ${scannedQrSummary}` : ''}`
+                : 'Nenhum QR lido ainda.'}
+            </p>
+            {qrScanError ? <p className="mt-2 text-xs text-rose-600">{qrScanError}</p> : null}
+          </div>
+
           {error ? <p className="mt-3 text-xs text-rose-600">{error}</p> : null}
           {success ? <p className="mt-3 text-xs text-emerald-600">{success}</p> : null}
 
@@ -858,6 +1137,95 @@ const ColaboradorDashboard = () => {
             >
               Clock out
             </button>
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-slate-100 bg-white px-4 py-4">
+            <h3 className="text-base font-semibold text-slate-900">{tr('Current status', 'Status atual')}</h3>
+            <p className="mt-1 text-sm text-slate-600">
+              {activeEntry ? tr('Workday in progress', 'Jornada em andamento') : tr('No open workday', 'Nenhuma jornada aberta')}
+            </p>
+
+            <div className="mt-3 flex items-center gap-2 text-xs">
+              <span
+                className={`rounded-full px-3 py-1 ${
+                  isOnline ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                {isOnline ? 'Online' : 'Offline'}
+              </span>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">Pendentes: {pendingSyncCount}</span>
+              <button
+                onClick={() => {
+                  syncOfflineClockQueue().catch(() => undefined)
+                }}
+                disabled={!isOnline || pendingSyncCount === 0 || syncingOfflineQueue}
+                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-600 disabled:opacity-50"
+              >
+                {syncingOfflineQueue ? 'Sincronizando...' : 'Sincronizar pendências'}
+              </button>
+            </div>
+
+            {dailyProgress?.hasReachedDailyTarget ? (
+              <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Jornada diaria concluida. Tempo atual marcado como hora extra ({formatMinutesLabel(liveOvertimeMinutes)}).
+              </div>
+            ) : dailyProgress ? (
+              <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                Faltam {formatMinutesLabel(Math.max(0, contractDailyMinutes - liveRegularMinutes))} para atingir a carga diaria.
+              </div>
+            ) : null}
+
+            <div className="mt-4 grid gap-2">
+              <div>
+                <div className="mb-1 flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                  <span>Regular</span>
+                  <span>{formatMinutesLabel(liveRegularMinutes)}</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className="h-full rounded-full bg-emerald-500 transition-all"
+                    style={{ width: `${Math.max((liveRegularMinutes / statusChartMax) * 100, liveRegularMinutes > 0 ? 6 : 0)}%` }}
+                  />
+                </div>
+              </div>
+              <div>
+                <div className="mb-1 flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                  <span>Hora extra</span>
+                  <span>{formatMinutesLabel(liveOvertimeMinutes)}</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className="h-full rounded-full bg-rose-500 transition-all"
+                    style={{ width: `${Math.max((liveOvertimeMinutes / statusChartMax) * 100, liveOvertimeMinutes > 0 ? 6 : 0)}%` }}
+                  />
+                </div>
+              </div>
+              <div>
+                <div className="mb-1 flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                  <span>Meta diária</span>
+                  <span>{formatMinutesLabel(contractDailyMinutes)}</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className="h-full rounded-full bg-slate-700 transition-all"
+                    style={{ width: `${Math.max((contractDailyMinutes / statusChartMax) * 100, contractDailyMinutes > 0 ? 6 : 0)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{tr('Active time', 'Tempo ativo')}</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-900">{formatElapsed(elapsedMs)}</p>
+              <p className="mt-2 text-xs text-slate-500">
+                {currentEntry?.clockIn
+                  ? `${tr('Started', 'Inicio')}: ${formatTimeWithTimeZone(currentEntry.clockIn, viewTimeZone)}`
+                  : tr('No workday in progress', 'Sem jornada em andamento')}
+              </p>
+            </div>
+            <p className="mt-3 text-xs text-slate-500">
+              {tr('Last record', 'Ultimo registro')}: {entries[0]?.clockIn ? formatDateTimeWithTimeZone(entries[0].clockIn, viewTimeZone) : '--'}
+            </p>
           </div>
         </div>
       </div>
@@ -951,89 +1319,42 @@ const ColaboradorDashboard = () => {
           </div>
         ) : null}
 
-        <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900">Férias</h3>
-          <p className="mt-2 text-xs text-slate-600">
-            Solicite férias e acompanhe o histórico completo de aprovação.
-          </p>
+        {qrScannerOpen ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 px-4">
+            <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-slate-700 bg-slate-900 shadow-2xl">
+              <div className="border-b border-slate-700 p-5">
+                <p className="text-xs uppercase tracking-[0.25em] text-teal-300">Leitura de QR</p>
+                <h4 className="mt-2 text-xl font-semibold text-slate-100">Aponte a câmera para o QR do terminal</h4>
+                <p className="mt-2 text-sm text-slate-300">Mantenha o código centralizado até a validação.</p>
+              </div>
 
-          <div className="mt-4 grid gap-2">
-            <input
-              type="date"
-              value={vacationForm.startDate}
-              onChange={(event) => setVacationForm((prev) => ({ ...prev, startDate: event.target.value }))}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-            />
-            <input
-              type="date"
-              value={vacationForm.endDate}
-              onChange={(event) => setVacationForm((prev) => ({ ...prev, endDate: event.target.value }))}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-            />
-            <textarea
-              value={vacationForm.reason}
-              onChange={(event) => setVacationForm((prev) => ({ ...prev, reason: event.target.value }))}
-              placeholder="Motivo da solicitação (opcional)"
-              className="h-20 w-full resize-none rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-            />
-            <button
-              onClick={handleCreateVacationRequest}
-              disabled={vacationLoading || !vacationForm.startDate || !vacationForm.endDate}
-              className="rounded-full bg-teal-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
-            >
-              {vacationLoading ? 'Enviando...' : 'Solicitar férias'}
-            </button>
-          </div>
-
-          {vacationError ? <p className="mt-2 text-xs text-rose-600">{vacationError}</p> : null}
-          {vacationNotice ? <p className="mt-2 text-xs text-emerald-600">{vacationNotice}</p> : null}
-
-          <div className="mt-4 space-y-2 text-xs text-slate-600">
-            {vacationRequests.length === 0 ? (
-              <p>Nenhuma solicitação de férias registrada.</p>
-            ) : (
-              vacationRequests.slice(0, 6).map((request) => (
-                <div key={request.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
-                  <p className="font-semibold text-slate-800">
-                    {formatDateWithTimeZone(request.startDate, viewTimeZone)} -{' '}
-                    {formatDateWithTimeZone(request.endDate, viewTimeZone)}
-                  </p>
-                  <p className="mt-1 text-[11px] uppercase tracking-[0.2em] text-slate-500">
-                    {vacationStatusLabel[request.status] || request.status}
-                  </p>
-                  {request.reason ? <p className="mt-1 text-xs text-slate-600">Motivo: {request.reason}</p> : null}
-                  {request.logs[0] ? (
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Última ação: {request.logs[0].action} em{' '}
-                      {formatDateTimeWithTimeZone(request.logs[0].timestamp, viewTimeZone)}
-                    </p>
-                  ) : null}
+              <div className="p-5">
+                <div className="relative overflow-hidden rounded-2xl border border-slate-700 bg-black">
+                  <video ref={qrVideoRef} autoPlay muted playsInline className="h-[360px] w-full object-cover" />
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                    <div className="h-64 w-64 rounded-2xl border-2 border-teal-300/80" />
+                  </div>
                 </div>
-              ))
-            )}
-          </div>
-        </div>
 
-        <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900">Status atual</h3>
-          <p className="mt-2 text-sm text-slate-600">
-            {activeEntry ? 'Jornada em andamento' : 'Nenhuma jornada aberta'}
-          </p>
-          <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Tempo ativo</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">
-              {formatElapsed(elapsedMs)}
-            </p>
-            <p className="mt-2 text-xs text-slate-500">
-              {currentEntry?.clockIn
-                ? `Inicio: ${formatTimeWithTimeZone(currentEntry.clockIn, viewTimeZone)}`
-                : 'Sem jornada em andamento'}
-            </p>
+                {qrScanError ? <p className="mt-3 text-xs text-rose-300">{qrScanError}</p> : null}
+
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    onClick={() => {
+                      setQrScannerOpen(false)
+                      setQrScanLoading(false)
+                      stopQrScanner()
+                    }}
+                    className="rounded-full border border-slate-600 bg-slate-800 px-4 py-2 text-xs font-semibold text-slate-200"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-          <p className="mt-3 text-xs text-slate-500">
-            Ultimo registro: {entries[0]?.clockIn ? formatDateTimeWithTimeZone(entries[0].clockIn, viewTimeZone) : '--'}
-          </p>
-        </div>
+        ) : null}
+
 
         <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
           <div className="flex items-center justify-between gap-2">
@@ -1099,40 +1420,6 @@ const ColaboradorDashboard = () => {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-slate-900">Historico de pontos</h3>
-            <button
-              onClick={() => {
-                loadEntries().catch(() => undefined)
-                loadCurrentEntry().catch(() => undefined)
-              }}
-              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600"
-            >
-              Atualizar
-            </button>
-          </div>
-          <div className="mt-4 space-y-3 text-xs text-slate-600">
-            {entries.length === 0 ? (
-              <p>Sem registros ainda.</p>
-            ) : (
-              entries.map((entry) => (
-                <div key={entry.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
-                  <div className="flex items-center justify-between">
-                    <span>{formatDateWithTimeZone(entry.clockIn, viewTimeZone)}</span>
-                    <span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-600">
-                      {entry.status}
-                    </span>
-                  </div>
-                  <p className="mt-2">
-                    {entry.clockIn ? formatTimeWithTimeZone(entry.clockIn, viewTimeZone) : '--'} -{' '}
-                    {entry.clockOut ? formatTimeWithTimeZone(entry.clockOut, viewTimeZone) : 'Em aberto'}
-                  </p>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
       </aside>
     </section>
   )

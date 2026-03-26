@@ -1,0 +1,578 @@
+﻿[
+    {
+        "Endpoint":  "GET /health",
+        "Method":  "GET",
+        "none":  "PERMITIDO (200)",
+        "member":  "PERMITIDO (200)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/health",
+        "Method":  "GET",
+        "none":  "PERMITIDO (200)",
+        "member":  "PERMITIDO (200)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/protected",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (200)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/admin-only",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "BLOQUEADO (403)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/supervisor-access",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "BLOQUEADO (403)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/auth/me",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (200)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/auth/profile",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (200)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/users/me/face",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (200)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "POST /api/v1/users/me/face/enroll",
+        "Method":  "POST",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (400)",
+        "supervisor":  "PERMITIDO (400)",
+        "hr":  "PERMITIDO (400)",
+        "admin":  "PERMITIDO (400)"
+    },
+    {
+        "Endpoint":  "DELETE /api/v1/users/me/face",
+        "Method":  "DELETE",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (200)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/users",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/users/:id",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "POST /api/v1/users",
+        "Method":  "POST",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "BLOQUEADO (403)",
+        "admin":  "PERMITIDO (400)"
+    },
+    {
+        "Endpoint":  "PATCH /api/v1/users/:id",
+        "Method":  "PATCH",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "BLOQUEADO (403)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "DELETE /api/v1/users/:id",
+        "Method":  "DELETE",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "BLOQUEADO (403)",
+        "admin":  "PERMITIDO (404)"
+    },
+    {
+        "Endpoint":  "POST /api/v1/time/terminal/qr",
+        "Method":  "POST",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "BLOQUEADO (403)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "POST /api/v1/time/clock-in",
+        "Method":  "POST",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (400)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "BLOQUEADO (403)",
+        "admin":  "BLOQUEADO (403)"
+    },
+    {
+        "Endpoint":  "POST /api/v1/time/clock-out",
+        "Method":  "POST",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (401)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "BLOQUEADO (403)",
+        "admin":  "BLOQUEADO (403)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/time/current",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (200)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/time/today",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (200)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/time/geofence",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (200)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/time/me",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (200)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/time/bank-hours/me",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (200)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "PATCH /api/v1/time/:id/notes",
+        "Method":  "PATCH",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (400)",
+        "supervisor":  "PERMITIDO (404)",
+        "hr":  "PERMITIDO (404)",
+        "admin":  "PERMITIDO (404)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/time/:id",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (200)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "BLOQUEADO (403)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/supervisor/team",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/supervisor/presence",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/supervisor/kpis/hours",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/supervisor/entries",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/supervisor/entries/:id",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "PATCH /api/v1/supervisor/approve/:id",
+        "Method":  "PATCH",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "PERMITIDO (400)",
+        "hr":  "PERMITIDO (400)",
+        "admin":  "PERMITIDO (400)"
+    },
+    {
+        "Endpoint":  "PATCH /api/v1/supervisor/reject/:id",
+        "Method":  "PATCH",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "PERMITIDO (400)",
+        "hr":  "PERMITIDO (400)",
+        "admin":  "PERMITIDO (400)"
+    },
+    {
+        "Endpoint":  "PATCH /api/v1/supervisor/request-edit/:id",
+        "Method":  "PATCH",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "PERMITIDO (400)",
+        "hr":  "PERMITIDO (400)",
+        "admin":  "PERMITIDO (400)"
+    },
+    {
+        "Endpoint":  "PATCH /api/v1/supervisor/team/:userId/bank-hours",
+        "Method":  "PATCH",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (400)",
+        "admin":  "PERMITIDO (400)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/supervisor/team/bank-hours/overview",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "PATCH /api/v1/supervisor/team/:userId/bank-hours/pay",
+        "Method":  "PATCH",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "PATCH /api/v1/supervisor/team/:userId/work-settings",
+        "Method":  "PATCH",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (400)",
+        "admin":  "PERMITIDO (400)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/supervisor/presence/stream",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "ERRO_CLIENTE (-1)",
+        "hr":  "ERRO_CLIENTE (-1)",
+        "admin":  "ERRO_CLIENTE (-1)"
+    },
+    {
+        "Endpoint":  "POST /api/v1/reports/export",
+        "Method":  "POST",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (400)",
+        "supervisor":  "PERMITIDO (400)",
+        "hr":  "PERMITIDO (400)",
+        "admin":  "PERMITIDO (400)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/reports/status/:jobId",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (404)",
+        "supervisor":  "PERMITIDO (404)",
+        "hr":  "PERMITIDO (404)",
+        "admin":  "PERMITIDO (404)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/reports/list",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (200)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/reports/download/:filename",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (404)",
+        "supervisor":  "PERMITIDO (404)",
+        "hr":  "PERMITIDO (404)",
+        "admin":  "PERMITIDO (404)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/reports/daily-breakdown",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (400)",
+        "supervisor":  "PERMITIDO (400)",
+        "hr":  "PERMITIDO (400)",
+        "admin":  "PERMITIDO (400)"
+    },
+    {
+        "Endpoint":  "DELETE /api/v1/reports/:filename",
+        "Method":  "DELETE",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "BLOQUEADO (403)",
+        "admin":  "PERMITIDO (404)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/admin/stats",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/admin/team-overview",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/admin/audit/:timeEntryId",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/admin/users/:userId/entries",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "PATCH /api/v1/admin/users/:userId/supervisor",
+        "Method":  "PATCH",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "PATCH /api/v1/admin/users/:userId/pin",
+        "Method":  "PATCH",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "DELETE /api/v1/admin/users/:userId/pin",
+        "Method":  "DELETE",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "PATCH /api/v1/admin/users/:userId/bank-hours",
+        "Method":  "PATCH",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (400)",
+        "admin":  "PERMITIDO (400)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/admin/bank-hours/overview",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "PATCH /api/v1/admin/users/:userId/bank-hours/pay",
+        "Method":  "PATCH",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "PATCH /api/v1/admin/users/:userId/work-settings",
+        "Method":  "PATCH",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (400)",
+        "admin":  "PERMITIDO (400)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/admin/location-settings",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "PATCH /api/v1/admin/location-settings",
+        "Method":  "PATCH",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/vacations/me",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (200)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "POST /api/v1/vacations/request",
+        "Method":  "POST",
+        "none":  "BLOQUEADO (401)",
+        "member":  "PERMITIDO (400)",
+        "supervisor":  "PERMITIDO (400)",
+        "hr":  "PERMITIDO (400)",
+        "admin":  "PERMITIDO (400)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/vacations/team/requests",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "BLOQUEADO (403)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/vacations/hr/requests",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    },
+    {
+        "Endpoint":  "PATCH /api/v1/vacations/:id/supervisor-review",
+        "Method":  "PATCH",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "PERMITIDO (400)",
+        "hr":  "BLOQUEADO (403)",
+        "admin":  "PERMITIDO (400)"
+    },
+    {
+        "Endpoint":  "PATCH /api/v1/vacations/:id/hr-review",
+        "Method":  "PATCH",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "BLOQUEADO (403)",
+        "hr":  "PERMITIDO (400)",
+        "admin":  "PERMITIDO (400)"
+    },
+    {
+        "Endpoint":  "GET /api/v1/vacations/team/calendar",
+        "Method":  "GET",
+        "none":  "BLOQUEADO (401)",
+        "member":  "BLOQUEADO (403)",
+        "supervisor":  "PERMITIDO (200)",
+        "hr":  "PERMITIDO (200)",
+        "admin":  "PERMITIDO (200)"
+    }
+]

@@ -1,18 +1,20 @@
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useLanguage } from '../context/LanguageContext'
 
 type Props = {
   children: React.ReactNode
-  allowedRoles?: Array<'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'>
+  allowedRoles?: Array<'SUPERADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'>
 }
 
 const ProtectedRoute = ({ children, allowedRoles }: Props) => {
   const { session, loading, profile } = useAuth()
+  const { tr } = useLanguage()
 
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">
-        Carregando...
+        {tr('Loading...', 'Carregando...')}
       </div>
     )
   }

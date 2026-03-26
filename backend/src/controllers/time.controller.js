@@ -1,11 +1,23 @@
 const prisma = require('../config/database');
 const { captureRequestMetadata } = require('../utils/requestMetadata');
 const { calculateDuration, getStartOfDay, getEndOfDay } = require('../utils/timeCalculations');
-const { evaluateGeofence, getGeofencePublicConfig } = require('../utils/geofence');
+const {
+  evaluateGeofence,
+  getGeofencePublicConfig,
+  getGeofenceConfig,
+  LOCATION_VALIDATION_SOURCES,
+} = require('../utils/geofence');
 const { verifyFaceMatch } = require('../utils/faceRecognition');
 const { validateLivenessEvidence } = require('../utils/liveness');
-const { calculateOvertimeSummary } = require('../utils/overtime');
+const {
+  calculateIncrementalOvertimeSummary,
+  calculateCurrentDailyProgress,
+} = require('../utils/overtime');
 const { accrueBankHours, expireBankHoursIfNeeded } = require('../utils/bankHours');
+const {
+  issueTerminalQrToken,
+  consumeTerminalQrToken,
+} = require('../utils/terminalQr');
 const {
   verifyPin,
   isPinLocked,
@@ -292,6 +304,97 @@ const calculateFinancialSummary = ({ workedMinutes, overtimeMinutes50, overtimeM
   };
 };
 
+const resolveWorkedMinutes = (entry) => {
+  if (!entry || !entry.clockIn || !entry.clockOut) {
+    return 0;
+  }
+
+  const storedWorkedMinutes = Number(entry.workedMinutes);
+  if (Number.isFinite(storedWorkedMinutes) && storedWorkedMinutes > 0) {
+    return Math.floor(storedWorkedMinutes);
+  }
+
+  const calculatedDuration = calculateDuration(entry.clockIn, entry.clockOut);
+  return Math.max(0, Math.floor(Number(calculatedDuration?.totalMinutes) || 0));
+};
+
+const LOCATION_SOURCE_TERMINAL_QR =
+  LOCATION_VALIDATION_SOURCES?.TERMINAL_QR || 'TERMINAL_QR';
+
+const resolveLocationValidationSource = () => {
+  if (typeof getGeofenceConfig !== 'function') {
+    return 'MOBILE';
+  }
+
+  const geofencePolicy = getGeofenceConfig();
+  const source = String(geofencePolicy?.locationValidationSource || 'MOBILE').toUpperCase();
+  return source;
+};
+
+const getQrErrorMessage = (reason) => {
+  const reasonMap = {
+    MISSING_QR_TOKEN: 'Token QR não informado.',
+    INVALID_QR_TOKEN: 'Token QR inválido.',
+    INVALID_QR_SIGNATURE: 'Assinatura do QR inválida.',
+    INVALID_QR_PAYLOAD: 'Payload do QR inválido.',
+    INVALID_QR_CLAIMS: 'Campos obrigatórios do QR ausentes.',
+    QR_TOKEN_EXPIRED: 'QR expirado. Gere um novo código.',
+    QR_TOKEN_ALREADY_USED: 'QR já utilizado. Gere um novo código.',
+  };
+
+  return reasonMap[reason] || 'Falha ao validar QR Code.';
+};
+
+/**
+ * POST /time/terminal/qr
+ * Emite QR de curta duração para terminal físico
+ */
+const issueTerminalQr = async (req, res) => {
+  try {
+    const { terminalId } = req.body || {};
+
+    if (!String(terminalId || '').trim()) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Informe terminalId para gerar o QR.',
+      });
+    }
+
+    const qrPayload = issueTerminalQrToken({ terminalId: String(terminalId).trim() });
+    if (!qrPayload.ok) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Não foi possível gerar QR para o terminal informado.',
+        reason: qrPayload.reason,
+      });
+    }
+
+    res.json({
+      message: 'QR dinâmico gerado com sucesso.',
+      issuedBy: {
+        id: req.user.id,
+        email: req.user.email,
+        role: req.user.role,
+      },
+      terminal: qrPayload.terminal,
+      qr: {
+        token: qrPayload.token,
+        expiresAt: qrPayload.expiresAt,
+        ttlSeconds: qrPayload.ttlSeconds,
+        singleUse: Boolean(qrPayload.singleUse),
+        reusable: !Boolean(qrPayload.singleUse),
+      },
+    });
+  } catch (error) {
+    console.error('❌ Erro ao emitir QR de terminal:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao emitir QR de terminal',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
 /**
  * Controller para gerenciamento de registros de ponto
  */
@@ -303,7 +406,8 @@ const calculateFinancialSummary = ({ workedMinutes, overtimeMinutes50, overtimeM
 const clockIn = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { notes, faceDescriptor, livenessData, pin } = req.body;
+    const { notes, faceDescriptor, livenessData, pin, qrToken } = req.body;
+    const requiresTerminalQr = resolveLocationValidationSource() === LOCATION_SOURCE_TERMINAL_QR;
 
     // Verifica se já existe um ponto aberto (sem clock-out) para o usuário
     const openEntry = await prisma.timeEntry.findFirst({
@@ -345,6 +449,21 @@ const clockIn = async (req, res) => {
 
     const { faceAuth, pinAuth } = authResult;
 
+    let terminalAuth = null;
+    if (requiresTerminalQr) {
+      terminalAuth = await consumeTerminalQrToken({ token: qrToken });
+      if (!terminalAuth.ok) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message:
+            terminalAuth.reason === 'MISSING_QR_TOKEN'
+              ? 'Neste estabelecimento o registro exige QR Code do terminal.'
+              : getQrErrorMessage(terminalAuth.reason),
+          reason: terminalAuth.reason,
+        });
+      }
+    }
+
     const geofenceResult = evaluateGeofence(metadata.location);
 
     if (!geofenceResult.allowed) {
@@ -366,6 +485,35 @@ const clockIn = async (req, res) => {
       eventType: 'clockIn',
       geofenceResult,
     });
+
+    if (!requiresTerminalQr && qrToken) {
+      terminalAuth = await consumeTerminalQrToken({ token: qrToken });
+      if (!terminalAuth.ok) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: getQrErrorMessage(terminalAuth.reason),
+          reason: terminalAuth.reason,
+        });
+      }
+
+      locationPayload.terminal = {
+        id: terminalAuth.terminal.id,
+        name: terminalAuth.terminal.name,
+        branch: terminalAuth.terminal.branch,
+        qrTokenId: terminalAuth.tokenId,
+        validatedAt: new Date().toISOString(),
+      };
+    }
+
+    if (requiresTerminalQr && terminalAuth?.ok) {
+      locationPayload.terminal = {
+        id: terminalAuth.terminal.id,
+        name: terminalAuth.terminal.name,
+        branch: terminalAuth.terminal.branch,
+        qrTokenId: terminalAuth.tokenId,
+        validatedAt: new Date().toISOString(),
+      };
+    }
 
     // Cria novo registro de ponto
     const timeEntry = await prisma.timeEntry.create({
@@ -402,6 +550,7 @@ const clockIn = async (req, res) => {
         ipAddress: timeEntry.ipAddress,
         device: timeEntry.device,
         location: timeEntry.location,
+        terminal: terminalAuth?.terminal || null,
         geofence: geofenceResult,
         faceAuth,
         pinAuth,
@@ -429,7 +578,8 @@ const clockIn = async (req, res) => {
 const clockOut = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { notes, faceDescriptor, livenessData, pin } = req.body;
+    const { notes, faceDescriptor, livenessData, pin, qrToken } = req.body;
+    const requiresTerminalQr = resolveLocationValidationSource() === LOCATION_SOURCE_TERMINAL_QR;
 
     const authResult = await validateClockAuthFactors({
       userId,
@@ -447,6 +597,21 @@ const clockOut = async (req, res) => {
 
     // Captura metadados da requisição
     const metadata = captureRequestMetadata(req);
+    let terminalAuth = null;
+    if (requiresTerminalQr) {
+      terminalAuth = await consumeTerminalQrToken({ token: qrToken });
+      if (!terminalAuth.ok) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message:
+            terminalAuth.reason === 'MISSING_QR_TOKEN'
+              ? 'Neste estabelecimento o registro exige QR Code do terminal.'
+              : getQrErrorMessage(terminalAuth.reason),
+          reason: terminalAuth.reason,
+        });
+      }
+    }
+
     const geofenceResult = evaluateGeofence(metadata.location);
 
     if (!geofenceResult.allowed) {
@@ -489,6 +654,28 @@ const clockOut = async (req, res) => {
       geofenceResult,
     });
 
+    if (!requiresTerminalQr && qrToken) {
+      terminalAuth = await consumeTerminalQrToken({ token: qrToken });
+      if (!terminalAuth.ok) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: getQrErrorMessage(terminalAuth.reason),
+          reason: terminalAuth.reason,
+        });
+      }
+    }
+
+    if (terminalAuth?.ok) {
+      locationPayload.terminal = {
+        ...(locationPayload.terminal || {}),
+        id: terminalAuth.terminal.id,
+        name: terminalAuth.terminal.name,
+        branch: terminalAuth.terminal.branch,
+        qrTokenId: terminalAuth.tokenId,
+        validatedAt: new Date().toISOString(),
+      };
+    }
+
     // Atualiza o registro com clock-out
     const updatedEntry = await prisma.timeEntry.update({
       where: { id: openEntry.id },
@@ -520,10 +707,40 @@ const clockOut = async (req, res) => {
       },
     });
 
-    const overtime = calculateOvertimeSummary({
+    const dayStart = getStartOfDay(clockOutTime);
+    const dayEnd = getEndOfDay(clockOutTime);
+
+    const priorEntriesToday = await prisma.timeEntry.findMany({
+      where: {
+        userId,
+        clockIn: {
+          gte: dayStart,
+          lte: dayEnd,
+          lt: updatedEntry.clockIn,
+        },
+        clockOut: {
+          not: null,
+        },
+      },
+      select: {
+        clockIn: true,
+        clockOut: true,
+        workedMinutes: true,
+      },
+    });
+
+    const normalizedPriorEntriesToday = Array.isArray(priorEntriesToday) ? priorEntriesToday : [];
+
+    const workedMinutesBeforeEntry = normalizedPriorEntriesToday.reduce(
+      (sum, entry) => sum + resolveWorkedMinutes(entry),
+      0
+    );
+
+    const overtime = calculateIncrementalOvertimeSummary({
       clockIn: updatedEntry.clockIn,
       clockOut: updatedEntry.clockOut,
       contractDailyMinutes: userConfig?.contractDailyMinutes,
+      workedMinutesBeforeEntry,
     });
 
     const bankHoursResult = await accrueBankHours({
@@ -687,6 +904,7 @@ const getMyBankHours = async (req, res) => {
 const getMyTimeEntries = async (req, res) => {
   try {
     const userId = req.user.id;
+    const allowedStatus = ['PENDING', 'APPROVED', 'REJECTED'];
     const { 
       page = 1, 
       limit = 20, 
@@ -701,7 +919,14 @@ const getMyTimeEntries = async (req, res) => {
     const where = { userId };
 
     // Filtro por status
-    if (status && ['PENDING', 'APPROVED', 'REJECTED'].includes(status)) {
+    if (status && !allowedStatus.includes(status)) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: `Status inválido. Use um dos valores: ${allowedStatus.join(', ')}`,
+      });
+    }
+
+    if (status && allowedStatus.includes(status)) {
       where.status = status;
     }
 
@@ -811,6 +1036,47 @@ const getCurrentEntry = async (req, res) => {
       });
     }
 
+    const [userConfig, priorEntriesToday] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          contractDailyMinutes: true,
+        },
+      }),
+      prisma.timeEntry.findMany({
+        where: {
+          userId,
+          clockIn: {
+            gte: getStartOfDay(openEntry.clockIn),
+            lte: getEndOfDay(openEntry.clockIn),
+            lt: openEntry.clockIn,
+          },
+          clockOut: {
+            not: null,
+          },
+        },
+        select: {
+          clockIn: true,
+          clockOut: true,
+          workedMinutes: true,
+        },
+      }),
+    ]);
+
+    const normalizedPriorEntriesToday = Array.isArray(priorEntriesToday) ? priorEntriesToday : [];
+
+    const workedMinutesBeforeEntry = normalizedPriorEntriesToday.reduce(
+      (sum, entry) => sum + resolveWorkedMinutes(entry),
+      0
+    );
+
+    const dailyProgress = calculateCurrentDailyProgress({
+      clockIn: openEntry.clockIn,
+      now: new Date(),
+      contractDailyMinutes: userConfig?.contractDailyMinutes,
+      workedMinutesBeforeEntry,
+    });
+
     // Calcula quanto tempo já passou desde o clock-in
     const elapsed = calculateDuration(openEntry.clockIn, new Date());
 
@@ -819,6 +1085,7 @@ const getCurrentEntry = async (req, res) => {
       entry: {
         ...openEntry,
         elapsed,
+        dailyProgress,
       },
     });
   } catch (error) {
@@ -927,7 +1194,7 @@ const getTimeEntryById = async (req, res) => {
     }
 
     // Verifica se o usuário tem permissão para ver este registro
-    if (entry.userId !== userId && !['ADMIN', 'SUPERVISOR'].includes(req.user.role)) {
+    if (entry.userId !== userId && !['SUPERADMIN', 'ADMIN', 'SUPERVISOR'].includes(req.user.role)) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você não tem permissão para visualizar este registro',
@@ -1044,6 +1311,7 @@ const updateMyEntryNotes = async (req, res) => {
 };
 
 module.exports = {
+  issueTerminalQr,
   clockIn,
   clockOut,
   getMyTimeEntries,

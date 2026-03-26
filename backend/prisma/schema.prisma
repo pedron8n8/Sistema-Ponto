@@ -9,6 +9,7 @@ generator client {
 }
 
 enum Role {
+  SUPERADMIN
   ADMIN
   HR
   SUPERVISOR
@@ -54,6 +55,8 @@ model User {
   pinUpdatedAt    DateTime?
   pinFailedAttempts Int      @default(0)
   pinLockedUntil  DateTime?
+  photoPath       String?
+  photoUpdatedAt  DateTime?
   contractDailyMinutes Int      @default(480)
   workdayStartTime String?
   workdayEndTime   String?
@@ -66,6 +69,11 @@ model User {
   supervisorId    String?
   supervisor      User?         @relation("TeamHierarchy", fields: [supervisorId], references: [id])
   subordinates    User[]        @relation("TeamHierarchy")
+  organizationAdminId String?
+  organizationAdmin User?       @relation("AdminOrganization", fields: [organizationAdminId], references: [id])
+  organizationMembers User[]    @relation("AdminOrganization")
+  adminSeatLimit Int?
+  adminExtraSeatPrice Decimal?  @db.Decimal(10, 2)
   timeEntries     TimeEntry[]
   bankHoursEntries BankHoursEntry[]
   vacationRequests VacationRequest[] @relation("VacationRequester")
@@ -78,6 +86,7 @@ model User {
   @@index([email])
   @@index([role])
   @@index([supervisorId])
+  @@index([organizationAdminId])
 }
 
 model TimeEntry {

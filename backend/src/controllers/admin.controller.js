@@ -2,6 +2,11 @@ const prisma = require('../config/database');
 const { hashPin, isValidPinFormat } = require('../utils/pinAuth');
 const { adjustBankHours, settleBankHoursAccruals } = require('../utils/bankHours');
 const { normalizeMinutes, normalizeTime, normalizeHourlyRate, normalizeTimeZone } = require('../utils/workSettings');
+const {
+  getGeofencePublicConfig,
+  updateGeofenceConfig,
+  LOCATION_VALIDATION_SOURCES,
+} = require('../utils/geofence');
 
 /**
  * Controller para funcionalidades administrativas e auditoria
@@ -1099,6 +1104,83 @@ const payUserBankHours = async (req, res) => {
   }
 };
 
+/**
+ * GET /admin/location-settings
+ * Retorna configuração atual de validação de localização
+ */
+const getLocationSettings = async (req, res) => {
+  try {
+    const geofence = getGeofencePublicConfig();
+    res.json({
+      locationSettings: {
+        locationValidationSource: geofence.locationValidationSource,
+        geofence: {
+          enabled: geofence.enabled,
+          mode: geofence.mode,
+          requireLocation: geofence.requireLocation,
+          center: geofence.center,
+          radiusMeters: geofence.radiusMeters,
+        },
+        allowedSources: Object.values(LOCATION_VALIDATION_SOURCES),
+      },
+    });
+  } catch (error) {
+    console.error('❌ Erro ao buscar configuração de localização:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao buscar configuração de localização',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
+/**
+ * PATCH /admin/location-settings
+ * Atualiza método de validação e localização do estabelecimento
+ */
+const updateLocationSettings = async (req, res) => {
+  try {
+    const {
+      locationValidationSource,
+      enabled,
+      mode,
+      requireLocation,
+      radiusMeters,
+      center,
+    } = req.body || {};
+
+    const nextConfig = updateGeofenceConfig({
+      locationValidationSource,
+      enabled,
+      mode,
+      requireLocation,
+      radiusMeters,
+      center,
+    });
+
+    res.json({
+      message: 'Configuração de localização atualizada com sucesso.',
+      locationSettings: {
+        locationValidationSource: nextConfig.locationValidationSource,
+        geofence: {
+          enabled: nextConfig.enabled,
+          mode: nextConfig.mode,
+          requireLocation: nextConfig.requireLocation,
+          center: nextConfig.center,
+          radiusMeters: nextConfig.radiusMeters,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('❌ Erro ao atualizar configuração de localização:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao atualizar configuração de localização',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
 module.exports = {
   getTimeEntryAuditLog,
   getUserTimeEntries,
@@ -1111,4 +1193,6 @@ module.exports = {
   updateUserWorkSettings,
   getBankHoursOverview,
   payUserBankHours,
+  getLocationSettings,
+  updateLocationSettings,
 };

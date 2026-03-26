@@ -12,6 +12,8 @@ const {
   updateUserWorkSettings,
   getBankHoursOverview,
   payUserBankHours,
+  getLocationSettings,
+  updateLocationSettings,
 } = require('../controllers/admin.controller');
 
 const router = express.Router();
@@ -92,5 +94,17 @@ router.patch('/users/:userId/bank-hours/pay', payUserBankHours);
  * Body: { contractDailyMinutes?: number, workdayStartTime?: "08:00", workdayEndTime?: "17:00", hourlyRate?: number }
  */
 router.patch('/users/:userId/work-settings', updateUserWorkSettings);
+
+/**
+ * GET /admin/location-settings
+ * Configuração de método de validação e geolocalização do estabelecimento
+ */
+router.get('/location-settings', getLocationSettings);
+
+/**
+ * PATCH /admin/location-settings
+ * Atualiza método de validação e localização do estabelecimento
+ */
+router.patch('/location-settings', updateLocationSettings);
 
 module.exports = router;

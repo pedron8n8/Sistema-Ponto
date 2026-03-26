@@ -1,11 +1,22 @@
 const DEFAULT_RADIUS_METERS = 200;
+const LOCATION_VALIDATION_SOURCES = {
+  MOBILE: 'MOBILE',
+  TERMINAL_QR: 'TERMINAL_QR',
+};
 
 const toNumber = (value) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-const getGeofenceConfig = () => {
+const resolveLocationValidationSource = (value) => {
+  const normalized = String(value || LOCATION_VALIDATION_SOURCES.MOBILE).trim().toUpperCase();
+  return normalized === LOCATION_VALIDATION_SOURCES.TERMINAL_QR
+    ? LOCATION_VALIDATION_SOURCES.TERMINAL_QR
+    : LOCATION_VALIDATION_SOURCES.MOBILE;
+};
+
+const readEnvGeofenceConfig = () => {
   const enabledEnv = String(process.env.GEOFENCE_ENABLED || 'true').toLowerCase();
   const requireLocationEnv = String(process.env.GEOFENCE_REQUIRE_LOCATION || 'false').toLowerCase();
   const modeEnv = String(process.env.GEOFENCE_MODE || 'ALERT').toUpperCase();
@@ -17,11 +28,15 @@ const getGeofenceConfig = () => {
   const hasCenter = centerLat !== null && centerLng !== null;
   const enabled = enabledEnv !== 'false' && hasCenter;
   const mode = modeEnv === 'REJECT' ? 'REJECT' : 'ALERT';
+  const locationValidationSource = resolveLocationValidationSource(
+    process.env.LOCATION_VALIDATION_SOURCE
+  );
 
   return {
     enabled,
     requireLocation: requireLocationEnv === 'true',
     mode,
+    locationValidationSource,
     center: hasCenter
       ? {
           lat: centerLat,
@@ -30,6 +45,57 @@ const getGeofenceConfig = () => {
       : null,
     radiusMeters,
   };
+};
+
+let runtimeGeofenceConfig = readEnvGeofenceConfig();
+
+const getGeofenceConfig = () => ({
+  ...runtimeGeofenceConfig,
+  center: runtimeGeofenceConfig.center ? { ...runtimeGeofenceConfig.center } : null,
+});
+
+const updateGeofenceConfig = (partialConfig = {}) => {
+  const current = getGeofenceConfig();
+  const next = { ...current };
+
+  if (partialConfig.locationValidationSource !== undefined) {
+    next.locationValidationSource = resolveLocationValidationSource(partialConfig.locationValidationSource);
+  }
+
+  if (partialConfig.enabled !== undefined) {
+    next.enabled = Boolean(partialConfig.enabled);
+  }
+
+  if (partialConfig.requireLocation !== undefined) {
+    next.requireLocation = Boolean(partialConfig.requireLocation);
+  }
+
+  if (partialConfig.mode !== undefined) {
+    next.mode = String(partialConfig.mode).toUpperCase() === 'REJECT' ? 'REJECT' : 'ALERT';
+  }
+
+  if (partialConfig.radiusMeters !== undefined) {
+    const parsedRadius = toNumber(partialConfig.radiusMeters);
+    if (parsedRadius !== null && parsedRadius > 0) {
+      next.radiusMeters = parsedRadius;
+    }
+  }
+
+  const center = partialConfig.center || {};
+  const latCandidate = center.lat !== undefined ? toNumber(center.lat) : null;
+  const lngCandidate = center.lng !== undefined ? toNumber(center.lng) : null;
+
+  if (latCandidate !== null && lngCandidate !== null) {
+    next.center = { lat: latCandidate, lng: lngCandidate };
+  }
+
+  if (!next.center || !Number.isFinite(Number(next.center.lat)) || !Number.isFinite(Number(next.center.lng))) {
+    next.enabled = false;
+    next.center = null;
+  }
+
+  runtimeGeofenceConfig = next;
+  return getGeofenceConfig();
 };
 
 const toRadians = (deg) => (deg * Math.PI) / 180;
@@ -54,6 +120,19 @@ const haversineDistanceMeters = (from, to) => {
 const evaluateGeofence = (location) => {
   const config = getGeofenceConfig();
 
+  if (config.locationValidationSource === LOCATION_VALIDATION_SOURCES.TERMINAL_QR) {
+    return {
+      enabled: config.enabled,
+      allowed: true,
+      reason: 'TERMINAL_QR_MODE',
+      mode: config.mode,
+      requireLocation: false,
+      locationValidationSource: config.locationValidationSource,
+      center: config.center,
+      radiusMeters: config.radiusMeters,
+    };
+  }
+
   if (!config.enabled || !config.center) {
     return {
       enabled: false,
@@ -61,6 +140,7 @@ const evaluateGeofence = (location) => {
       reason: 'GEOFENCE_DISABLED',
       mode: config.mode,
       requireLocation: config.requireLocation,
+      locationValidationSource: config.locationValidationSource,
     };
   }
 
@@ -75,6 +155,7 @@ const evaluateGeofence = (location) => {
       exceededByMeters: null,
       mode: config.mode,
       reason: allowed ? 'LOCATION_MISSING_BUT_OPTIONAL' : 'LOCATION_REQUIRED',
+      locationValidationSource: config.locationValidationSource,
       center: config.center,
       radiusMeters: config.radiusMeters,
     };
@@ -98,6 +179,7 @@ const evaluateGeofence = (location) => {
     exceededByMeters,
     mode: config.mode,
     reason: inside ? 'INSIDE_GEOFENCE' : config.mode === 'REJECT' ? 'OUTSIDE_GEOFENCE_REJECTED' : 'OUTSIDE_GEOFENCE_ALERT',
+    locationValidationSource: config.locationValidationSource,
     center: config.center,
     radiusMeters: config.radiusMeters,
   };
@@ -110,13 +192,16 @@ const getGeofencePublicConfig = () => {
     enabled: config.enabled,
     mode: config.mode,
     requireLocation: config.requireLocation,
+    locationValidationSource: config.locationValidationSource,
     center: config.center,
     radiusMeters: config.radiusMeters,
   };
 };
 
 module.exports = {
+  LOCATION_VALIDATION_SOURCES,
   evaluateGeofence,
   getGeofencePublicConfig,
   getGeofenceConfig,
+  updateGeofenceConfig,
 };

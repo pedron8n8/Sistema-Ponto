@@ -1,7 +1,92 @@
 const prisma = require('../config/database');
+const fs = require('fs');
+const path = require('path');
 const { supabaseAdmin } = require('../config/supabase');
 const { normalizeEmbedding, DEFAULT_THRESHOLD } = require('../utils/faceRecognition');
 const { validateLivenessEvidence } = require('../utils/liveness');
+const { buildUserPhotoUrl, normalizePhotoPath } = require('../utils/userPhoto');
+const { createAdditionalSeatsCheckoutSession } = require('../utils/seatBilling');
+
+const withPhotoUrl = (req, user) => {
+  if (!user) return user;
+  return {
+    ...user,
+    photoUrl: buildUserPhotoUrl(req, user.photoPath),
+  };
+};
+
+const removePhotoFileIfExists = (photoPath) => {
+  if (!photoPath) return;
+
+  const normalizedPath = String(photoPath).replace(/^\/+/, '');
+  const absolutePath = path.resolve(__dirname, '../../', normalizedPath);
+
+  if (fs.existsSync(absolutePath)) {
+    fs.unlinkSync(absolutePath);
+  }
+};
+
+const ALL_ROLES = ['SUPERADMIN', 'ADMIN', 'HR', 'SUPERVISOR', 'MEMBER'];
+const TEAM_MEMBER_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];
+const EXTRA_ADMIN_SEAT_MONTHLY_USD = 10;
+
+const toNumber = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const buildSeatSummary = ({ adminUser, currentTeamSize, nextTeamSize }) => {
+  const seatLimit = adminUser.adminSeatLimit;
+  const unitPrice = EXTRA_ADMIN_SEAT_MONTHLY_USD;
+
+  if (seatLimit === null || seatLimit === undefined) {
+    return {
+      seatLimit: null,
+      currentTeamSize,
+      nextTeamSize,
+      overageSeats: 0,
+      unitPrice,
+      amountDue: 0,
+      requiresPayment: false,
+    };
+  }
+
+  const overageSeats = Math.max(0, nextTeamSize - seatLimit);
+  const amountDue = Number((overageSeats * unitPrice).toFixed(2));
+
+  return {
+    seatLimit,
+    currentTeamSize,
+    nextTeamSize,
+    overageSeats,
+    unitPrice,
+    amountDue,
+    requiresPayment: overageSeats > 0,
+  };
+};
+
+const resolveAdminSeatConfig = ({ adminSeatLimit, adminExtraSeatPrice }) => {
+  const nextSeatLimit = adminSeatLimit === undefined ? 10 : Number(adminSeatLimit);
+  if (!Number.isInteger(nextSeatLimit) || nextSeatLimit < 1) {
+    return {
+      error: 'adminSeatLimit deve ser um número inteiro maior ou igual a 1',
+    };
+  }
+
+  const nextExtraSeatPrice =
+    adminExtraSeatPrice === undefined ? 0 : Number(adminExtraSeatPrice);
+
+  if (!Number.isFinite(nextExtraSeatPrice) || nextExtraSeatPrice < 0) {
+    return {
+      error: 'adminExtraSeatPrice deve ser um número maior ou igual a 0',
+    };
+  }
+
+  return {
+    adminSeatLimit: nextSeatLimit,
+    adminExtraSeatPrice: Number(nextExtraSeatPrice.toFixed(2)),
+  };
+};
 
 /**
  * Controller para gerenciamento de usuários
@@ -13,7 +98,19 @@ const { validateLivenessEvidence } = require('../utils/liveness');
  */
 const createUser = async (req, res) => {
   try {
-    const { email, name, role, password, supervisorId } = req.body;
+    const {
+      email,
+      name,
+      role,
+      password,
+      supervisorId,
+      organizationAdminId,
+      adminSeatLimit,
+      adminExtraSeatPrice,
+      allowPaidOverage,
+    } = req.body;
+
+    const requestedRole = role || 'MEMBER';
 
     // Validações
     if (!email || !email.includes('@')) {
@@ -37,12 +134,69 @@ const createUser = async (req, res) => {
       });
     }
 
-    const validRoles = ['ADMIN', 'HR', 'SUPERVISOR', 'MEMBER'];
-    if (role && !validRoles.includes(role)) {
+    if (!ALL_ROLES.includes(requestedRole)) {
       return res.status(400).json({
         error: 'Bad Request',
-        message: `Role inválida. Valores aceitos: ${validRoles.join(', ')}`,
+        message: `Role inválida. Valores aceitos: ${ALL_ROLES.join(', ')}`,
       });
+    }
+
+    if (req.user.role === 'ADMIN' && !TEAM_MEMBER_ROLES.includes(requestedRole)) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Admin só pode criar usuários do time (HR, SUPERVISOR, MEMBER)',
+      });
+    }
+
+    if (requestedRole === 'SUPERADMIN' && req.user.role !== 'SUPERADMIN') {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Apenas SUPERADMIN pode criar outro SUPERADMIN',
+      });
+    }
+
+    if (requestedRole === 'ADMIN' && req.user.role !== 'SUPERADMIN') {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Apenas SUPERADMIN pode criar logins de ADMIN',
+      });
+    }
+
+    let targetOrganizationAdminId = null;
+    let organizationAdmin = null;
+    let seatSummary = null;
+
+    if (req.user.role === 'ADMIN') {
+      targetOrganizationAdminId = req.user.id;
+      organizationAdmin = req.user;
+    }
+
+    if (req.user.role === 'SUPERADMIN' && TEAM_MEMBER_ROLES.includes(requestedRole)) {
+      if (!organizationAdminId) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'organizationAdminId é obrigatório para criar usuários do time via SUPERADMIN',
+        });
+      }
+
+      organizationAdmin = await prisma.user.findUnique({
+        where: { id: organizationAdminId },
+        select: {
+          id: true,
+          role: true,
+          adminSeatLimit: true,
+          adminExtraSeatPrice: true,
+        },
+      });
+
+      if (!organizationAdmin || organizationAdmin.role !== 'ADMIN') {
+        return res.status(404).json({
+          error: 'Not Found',
+          message: 'Administrador responsável não encontrado',
+        });
+      }
+
+      targetOrganizationAdminId = organizationAdmin.id;
     }
 
     // Validar se supervisor existe (se fornecido)
@@ -58,10 +212,21 @@ const createUser = async (req, res) => {
         });
       }
 
-      if (!['ADMIN', 'HR', 'SUPERVISOR'].includes(supervisor.role)) {
+      if (!['SUPERADMIN', 'ADMIN', 'HR', 'SUPERVISOR'].includes(supervisor.role)) {
         return res.status(400).json({
           error: 'Bad Request',
           message: 'Apenas Admin ou Supervisor podem ser atribuídos como supervisores',
+        });
+      }
+
+      if (
+        req.user.role === 'ADMIN' &&
+        supervisor.id !== req.user.id &&
+        supervisor.organizationAdminId !== req.user.id
+      ) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Supervisor deve pertencer ao seu time de administração',
         });
       }
     }
@@ -78,6 +243,68 @@ const createUser = async (req, res) => {
       });
     }
 
+    if (requestedRole === 'ADMIN') {
+      const seatConfig = resolveAdminSeatConfig({ adminSeatLimit, adminExtraSeatPrice });
+      if (seatConfig.error) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: seatConfig.error,
+        });
+      }
+    }
+
+    if (TEAM_MEMBER_ROLES.includes(requestedRole) && targetOrganizationAdminId) {
+      const adminOwner =
+        organizationAdmin ||
+        (await prisma.user.findUnique({
+          where: { id: targetOrganizationAdminId },
+          select: {
+            id: true,
+            adminSeatLimit: true,
+            adminExtraSeatPrice: true,
+          },
+        }));
+
+      const currentTeamSize = await prisma.user.count({
+        where: {
+          organizationAdminId: targetOrganizationAdminId,
+          role: { in: TEAM_MEMBER_ROLES },
+        },
+      });
+
+      seatSummary = buildSeatSummary({
+        adminUser: adminOwner,
+        currentTeamSize,
+        nextTeamSize: currentTeamSize + 1,
+      });
+
+      if (seatSummary.requiresPayment && allowPaidOverage !== true) {
+        const checkout = await createAdditionalSeatsCheckoutSession({
+          adminUserId: targetOrganizationAdminId,
+          adminEmail: req.user?.email,
+          overageSeats: seatSummary.overageSeats,
+          amountDue: seatSummary.amountDue,
+        });
+
+        return res.status(402).json({
+          error: 'Payment Required',
+          message:
+            'Limite de cadeiras excedido. Redirecione para o checkout Stripe para concluir a assinatura das cadeiras adicionais.',
+          billing: {
+            ...seatSummary,
+            stripe: {
+              configured: checkout.ok,
+              checkoutUrl: checkout.checkoutUrl || null,
+              sessionId: checkout.sessionId || null,
+              currency: 'usd',
+              monthlyUnitPrice: EXTRA_ADMIN_SEAT_MONTHLY_USD,
+              monthlyTotal: Number((seatSummary.overageSeats * EXTRA_ADMIN_SEAT_MONTHLY_USD).toFixed(2)),
+            },
+          },
+        });
+      }
+    }
+
     // Cria usuário no Supabase
     const { data: supabaseUser, error: supabaseError } = await supabaseAdmin.auth.admin.createUser(
       {
@@ -86,7 +313,8 @@ const createUser = async (req, res) => {
         email_confirm: true,
         user_metadata: {
           name,
-          role: role || 'MEMBER',
+          role: requestedRole,
+          organizationAdminId: targetOrganizationAdminId,
         },
       }
     );
@@ -100,14 +328,25 @@ const createUser = async (req, res) => {
       });
     }
 
+    let adminSeatConfigData = {};
+    if (requestedRole === 'ADMIN') {
+      const seatConfig = resolveAdminSeatConfig({ adminSeatLimit, adminExtraSeatPrice });
+      adminSeatConfigData = {
+        adminSeatLimit: seatConfig.adminSeatLimit,
+        adminExtraSeatPrice: seatConfig.adminExtraSeatPrice,
+      };
+    }
+
     // Cria usuário no banco local
     const user = await prisma.user.create({
       data: {
         id: supabaseUser.user.id,
         email,
         name: name.trim(),
-        role: role || 'MEMBER',
+        role: requestedRole,
         supervisorId: supervisorId || null,
+        organizationAdminId: targetOrganizationAdminId,
+        ...adminSeatConfigData,
       },
       include: {
         supervisor: {
@@ -125,14 +364,18 @@ const createUser = async (req, res) => {
 
     res.status(201).json({
       message: 'Usuário criado com sucesso',
-      user: {
+      user: withPhotoUrl(req, {
         id: user.id,
         email: user.email,
         name: user.name,
         role: user.role,
+        organizationAdminId: user.organizationAdminId,
+        adminSeatLimit: user.adminSeatLimit,
+        adminExtraSeatPrice: user.adminExtraSeatPrice,
         supervisor: user.supervisor,
         createdAt: user.createdAt,
-      },
+      }),
+      ...(seatSummary && { billing: seatSummary }),
     });
   } catch (error) {
     console.error('❌ Erro ao criar usuário:', error);
@@ -166,7 +409,7 @@ const createUser = async (req, res) => {
 const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, role, supervisorId } = req.body;
+    const { name, role, supervisorId, adminSeatLimit, adminExtraSeatPrice } = req.body;
 
     // Validar se usuário existe
     const existingUser = await prisma.user.findUnique({
@@ -181,11 +424,42 @@ const updateUser = async (req, res) => {
     }
 
     // Validações
-    const validRoles = ['ADMIN', 'HR', 'SUPERVISOR', 'MEMBER'];
-    if (role && !validRoles.includes(role)) {
+    if (role && !ALL_ROLES.includes(role)) {
       return res.status(400).json({
         error: 'Bad Request',
-        message: `Role inválida. Valores aceitos: ${validRoles.join(', ')}`,
+        message: `Role inválida. Valores aceitos: ${ALL_ROLES.join(', ')}`,
+      });
+    }
+
+    if (
+      req.user.role === 'ADMIN' &&
+      existingUser.id !== req.user.id &&
+      existingUser.organizationAdminId !== req.user.id
+    ) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você só pode editar usuários do seu próprio time',
+      });
+    }
+
+    if (req.user.role === 'ADMIN' && role && !TEAM_MEMBER_ROLES.includes(role)) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Admin só pode definir papéis do time (HR, SUPERVISOR, MEMBER)',
+      });
+    }
+
+    if (role === 'SUPERADMIN' && req.user.role !== 'SUPERADMIN') {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Apenas SUPERADMIN pode atribuir papel SUPERADMIN',
+      });
+    }
+
+    if (role === 'ADMIN' && req.user.role !== 'SUPERADMIN') {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Apenas SUPERADMIN pode atribuir papel ADMIN',
       });
     }
 
@@ -209,10 +483,21 @@ const updateUser = async (req, res) => {
         });
       }
 
-      if (!['ADMIN', 'HR', 'SUPERVISOR'].includes(supervisor.role)) {
+      if (!['SUPERADMIN', 'ADMIN', 'HR', 'SUPERVISOR'].includes(supervisor.role)) {
         return res.status(400).json({
           error: 'Bad Request',
           message: 'Apenas Admin ou Supervisor podem ser atribuídos como supervisores',
+        });
+      }
+
+      if (
+        req.user.role === 'ADMIN' &&
+        supervisor.id !== req.user.id &&
+        supervisor.organizationAdminId !== req.user.id
+      ) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Supervisor deve pertencer ao seu time de administração',
         });
       }
 
@@ -225,6 +510,39 @@ const updateUser = async (req, res) => {
       }
     }
 
+    let adminSeatConfigData = {};
+    if (existingUser.role === 'ADMIN' || role === 'ADMIN') {
+      if (req.user.role !== 'SUPERADMIN') {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Apenas SUPERADMIN pode alterar configuração de cadeiras de ADMIN',
+        });
+      }
+
+      if (adminSeatLimit !== undefined || adminExtraSeatPrice !== undefined) {
+        const seatConfig = resolveAdminSeatConfig({
+          adminSeatLimit:
+            adminSeatLimit === undefined ? existingUser.adminSeatLimit : adminSeatLimit,
+          adminExtraSeatPrice:
+            adminExtraSeatPrice === undefined
+              ? existingUser.adminExtraSeatPrice
+              : adminExtraSeatPrice,
+        });
+
+        if (seatConfig.error) {
+          return res.status(400).json({
+            error: 'Bad Request',
+            message: seatConfig.error,
+          });
+        }
+
+        adminSeatConfigData = {
+          adminSeatLimit: seatConfig.adminSeatLimit,
+          adminExtraSeatPrice: seatConfig.adminExtraSeatPrice,
+        };
+      }
+    }
+
     // Atualiza usuário
     const updatedUser = await prisma.user.update({
       where: { id },
@@ -232,6 +550,7 @@ const updateUser = async (req, res) => {
         ...(name && { name: name.trim() }),
         ...(role && { role }),
         ...(supervisorId !== undefined && { supervisorId }),
+        ...adminSeatConfigData,
       },
       include: {
         supervisor: {
@@ -259,14 +578,17 @@ const updateUser = async (req, res) => {
 
     res.json({
       message: 'Usuário atualizado com sucesso',
-      user: {
+      user: withPhotoUrl(req, {
         id: updatedUser.id,
         email: updatedUser.email,
         name: updatedUser.name,
         role: updatedUser.role,
+        organizationAdminId: updatedUser.organizationAdminId,
+        adminSeatLimit: updatedUser.adminSeatLimit,
+        adminExtraSeatPrice: updatedUser.adminExtraSeatPrice,
         supervisor: updatedUser.supervisor,
         createdAt: updatedUser.createdAt,
-      },
+      }),
     });
   } catch (error) {
     console.error('❌ Erro ao atualizar usuário:', error);
@@ -298,7 +620,7 @@ const listUsers = async (req, res) => {
     const where = {};
 
     // Filtro por role
-    if (role && ['ADMIN', 'HR', 'SUPERVISOR', 'MEMBER'].includes(role)) {
+    if (role && ALL_ROLES.includes(role)) {
       where.role = role;
     }
 
@@ -310,10 +632,20 @@ const listUsers = async (req, res) => {
       ];
     }
 
-    // Se for supervisor, só mostra seus subordinados
-    // HR e ADMIN visualizam todos.
+    const accessFilters = [];
+
+    // Se for supervisor, só mostra seus subordinados.
     if (req.user.role === 'SUPERVISOR') {
-      where.supervisorId = req.user.id;
+      accessFilters.push({ supervisorId: req.user.id });
+    }
+
+    // ADMIN visualiza apenas seu próprio time e a si mesmo.
+    if (req.user.role === 'ADMIN') {
+      accessFilters.push({ OR: [{ id: req.user.id }, { organizationAdminId: req.user.id }] });
+    }
+
+    if (accessFilters.length > 0) {
+      where.AND = [...(where.AND || []), ...accessFilters];
     }
 
     const [users, total] = await Promise.all([
@@ -324,6 +656,8 @@ const listUsers = async (req, res) => {
           email: true,
           name: true,
           role: true,
+          photoPath: true,
+          photoUpdatedAt: true,
           contractDailyMinutes: true,
           workdayStartTime: true,
           workdayEndTime: true,
@@ -346,8 +680,10 @@ const listUsers = async (req, res) => {
       prisma.user.count({ where }),
     ]);
 
+    const usersWithPhoto = users.map((user) => withPhotoUrl(req, user));
+
     res.json({
-      users,
+      users: usersWithPhoto,
       pagination: {
         total,
         page: parseInt(page),
@@ -414,12 +750,403 @@ const getUserById = async (req, res) => {
       });
     }
 
-    res.json({ user });
+    if (
+      req.user.role === 'ADMIN' &&
+      user.id !== req.user.id &&
+      user.organizationAdminId !== req.user.id
+    ) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você não tem permissão para visualizar este usuário',
+      });
+    }
+
+    res.json({ user: withPhotoUrl(req, user) });
   } catch (error) {
     console.error('❌ Erro ao buscar usuário:', error);
     res.status(500).json({
       error: 'Internal Server Error',
       message: 'Erro ao buscar usuário',
+    });
+  }
+};
+
+/**
+ * Listar mapa de cadeiras por admin
+ * SUPERADMIN: todos os admins
+ * ADMIN: apenas suas próprias cadeiras
+ * HR: cadeiras do admin responsável pelo seu time
+ */
+const listAdminSeatAssignments = async (req, res) => {
+  try {
+    const baseAdminWhere = { role: 'ADMIN' };
+
+    if (req.user.role === 'ADMIN') {
+      baseAdminWhere.id = req.user.id;
+    }
+
+    if (req.user.role === 'HR' || req.user.role === 'SUPERVISOR' || req.user.role === 'MEMBER') {
+      const currentUser = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { organizationAdminId: true },
+      });
+
+      if (!currentUser?.organizationAdminId) {
+        return res.json({ admins: [] });
+      }
+
+      baseAdminWhere.id = currentUser.organizationAdminId;
+    }
+
+    const admins = await prisma.user.findMany({
+      where: baseAdminWhere,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        adminSeatLimit: true,
+        adminExtraSeatPrice: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const adminIds = admins.map((admin) => admin.id);
+    if (adminIds.length === 0) {
+      return res.json({ admins: [] });
+    }
+
+    const members = await prisma.user.findMany({
+      where: {
+        organizationAdminId: { in: adminIds },
+        role: { in: TEAM_MEMBER_ROLES },
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        organizationAdminId: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const membersByAdmin = members.reduce((acc, member) => {
+      const ownerId = member.organizationAdminId;
+      if (!ownerId) return acc;
+      if (!acc[ownerId]) acc[ownerId] = [];
+      acc[ownerId].push(member);
+      return acc;
+    }, {});
+
+    const payload = admins.map((admin) => {
+      const teamMembers = membersByAdmin[admin.id] || [];
+      const seatLimit = admin.adminSeatLimit;
+      const occupiedSeats = teamMembers.length;
+      const totalSeats = Number.isInteger(seatLimit)
+        ? Math.max(seatLimit, occupiedSeats)
+        : occupiedSeats;
+
+      const seats = Array.from({ length: totalSeats }, (_, index) => {
+        const occupant = teamMembers[index] || null;
+        return {
+          seatNumber: index + 1,
+          occupied: Boolean(occupant),
+          occupant,
+        };
+      });
+
+      const overageSeats = Number.isInteger(seatLimit)
+        ? Math.max(0, occupiedSeats - seatLimit)
+        : 0;
+
+      return {
+        admin: {
+          id: admin.id,
+          name: admin.name,
+          email: admin.email,
+        },
+        billing: {
+          seatLimit,
+          occupiedSeats,
+          availableSeats: Number.isInteger(seatLimit) ? Math.max(0, seatLimit - occupiedSeats) : null,
+          overageSeats,
+          extraSeatPriceUsd: Number(admin.adminExtraSeatPrice ?? 10),
+        },
+        seats,
+      };
+    });
+
+    return res.json({ admins: payload });
+  } catch (error) {
+    console.error('❌ Erro ao listar cadeiras por admin:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao listar mapa de cadeiras dos admins',
+    });
+  }
+};
+
+/**
+ * GET /users/me/profile-complete
+ * Retorna perfil completo do usuário autenticado
+ */
+const getMyCompleteProfile = async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: {
+        supervisor: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Usuário não encontrado',
+      });
+    }
+
+    return res.json({ user: withPhotoUrl(req, user) });
+  } catch (error) {
+    console.error('❌ Erro ao buscar perfil completo:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao buscar perfil completo',
+    });
+  }
+};
+
+/**
+ * PATCH /users/me/account
+ * Atualiza dados da conta do usuario autenticado
+ */
+const updateMyAccount = async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    if (name === undefined && email === undefined && password === undefined) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Informe ao menos um campo para atualizar: name, email ou password.',
+      });
+    }
+
+    const normalizedName = name !== undefined ? String(name).trim() : undefined;
+    const normalizedEmail = email !== undefined ? String(email).trim().toLowerCase() : undefined;
+    const normalizedPassword = password !== undefined ? String(password) : undefined;
+
+    if (normalizedName !== undefined && normalizedName.length < 2) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Nome deve ter pelo menos 2 caracteres',
+      });
+    }
+
+    if (normalizedEmail !== undefined) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(normalizedEmail)) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'Email invalido',
+        });
+      }
+    }
+
+    if (normalizedPassword !== undefined && normalizedPassword.length > 0 && normalizedPassword.length < 6) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Senha deve ter pelo menos 6 caracteres',
+      });
+    }
+
+    if (normalizedEmail !== undefined && normalizedEmail !== req.user.email) {
+      const existingUserWithEmail = await prisma.user.findUnique({
+        where: { email: normalizedEmail },
+        select: { id: true },
+      });
+
+      if (existingUserWithEmail && existingUserWithEmail.id !== req.user.id) {
+        return res.status(409).json({
+          error: 'Conflict',
+          message: 'Ja existe um usuario com este email',
+        });
+      }
+    }
+
+    const nextName = normalizedName !== undefined ? normalizedName : req.user.name;
+
+    const supabasePayload = {
+      ...(normalizedEmail !== undefined ? { email: normalizedEmail } : {}),
+      ...(normalizedPassword !== undefined && normalizedPassword.length > 0
+        ? { password: normalizedPassword }
+        : {}),
+      user_metadata: {
+        name: nextName,
+        role: req.user.role,
+      },
+    };
+
+    const { error: supabaseError } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, supabasePayload);
+
+    if (supabaseError) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: supabaseError.message || 'Erro ao atualizar usuario no sistema de autenticacao',
+      });
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        ...(normalizedName !== undefined ? { name: normalizedName } : {}),
+        ...(normalizedEmail !== undefined ? { email: normalizedEmail } : {}),
+      },
+      include: {
+        supervisor: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+          },
+        },
+      },
+    });
+
+    return res.json({
+      message: 'Dados da conta atualizados com sucesso.',
+      user: withPhotoUrl(req, updatedUser),
+    });
+  } catch (error) {
+    console.error('❌ Erro ao atualizar conta do usuario:', error);
+
+    if (error.code === 'P2002') {
+      return res.status(409).json({
+        error: 'Conflict',
+        message: 'Ja existe um usuario com este email',
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao atualizar dados da conta',
+    });
+  }
+};
+
+/**
+ * POST /users/me/photo
+ * Faz upload de foto de perfil do usuário autenticado
+ */
+const uploadMyPhoto = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Envie a foto no campo "photo".',
+      });
+    }
+
+    const existingUser = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        id: true,
+        photoPath: true,
+      },
+    });
+
+    if (!existingUser) {
+      removePhotoFileIfExists(req.file.path);
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Usuário não encontrado',
+      });
+    }
+
+    const nextPhotoPath = normalizePhotoPath(path.join('uploads', 'user-photos', req.file.filename));
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        photoPath: nextPhotoPath,
+        photoUpdatedAt: new Date(),
+      },
+      select: {
+        id: true,
+        photoPath: true,
+        photoUpdatedAt: true,
+      },
+    });
+
+    removePhotoFileIfExists(existingUser.photoPath);
+
+    return res.json({
+      message: 'Foto de perfil atualizada com sucesso.',
+      photo: {
+        photoUrl: buildUserPhotoUrl(req, updatedUser.photoPath),
+        photoUpdatedAt: updatedUser.photoUpdatedAt,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Erro ao fazer upload da foto de perfil:', error);
+    removePhotoFileIfExists(req.file?.path);
+
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao salvar foto de perfil',
+    });
+  }
+};
+
+/**
+ * DELETE /users/me/photo
+ * Remove foto de perfil do usuário autenticado
+ */
+const deleteMyPhoto = async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        photoPath: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Usuário não encontrado',
+      });
+    }
+
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        photoPath: null,
+        photoUpdatedAt: null,
+      },
+    });
+
+    removePhotoFileIfExists(user.photoPath);
+
+    return res.json({
+      message: 'Foto de perfil removida com sucesso.',
+      photo: {
+        photoUrl: null,
+        photoUpdatedAt: null,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Erro ao remover foto de perfil:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao remover foto de perfil',
     });
   }
 };
@@ -442,6 +1169,17 @@ const deleteUser = async (req, res) => {
     const user = await prisma.user.findUnique({
       where: { id },
     });
+    if (
+      req.user.role === 'ADMIN' &&
+      user.id !== req.user.id &&
+      user.organizationAdminId !== req.user.id
+    ) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você só pode deletar usuários do seu próprio time',
+      });
+    }
+
 
     if (!user) {
       return res.status(404).json({
@@ -622,8 +1360,13 @@ module.exports = {
   createUser,
   updateUser,
   listUsers,
+  listAdminSeatAssignments,
   getUserById,
   deleteUser,
+  getMyCompleteProfile,
+  updateMyAccount,
+  uploadMyPhoto,
+  deleteMyPhoto,
   getMyFaceStatus,
   enrollMyFace,
   deleteMyFace,

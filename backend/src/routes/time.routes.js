@@ -1,11 +1,17 @@
 const express = require('express');
-const { authMiddleware } = require('../middlewares');
+const { authMiddleware, roleCheck } = require('../middlewares');
 const timeController = require('../controllers/time.controller');
 
 const router = express.Router();
 
 // Todas as rotas de time entries requerem autenticação
 router.use(authMiddleware);
+
+/**
+ * POST /api/v1/time/terminal/qr
+ * Emite QR dinâmico de terminal (somente ADMIN)
+ */
+router.post('/terminal/qr', roleCheck(['ADMIN']), timeController.issueTerminalQr);
 
 /**
  * POST /api/v1/time/clock-in

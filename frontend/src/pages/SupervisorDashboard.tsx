@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { API_BASE, apiFetch } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTimeZone } from '../context/TimezoneContext'
+import { useLanguage } from '../context/LanguageContext'
+import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet'
 import {
   TIME_ZONE_OPTIONS,
   formatDateTimeWithTimeZone,
@@ -72,6 +74,14 @@ type PresenceMember = {
     department: string
     team: string
   }
+  lastLocation?: {
+    lat: number
+    lng: number
+    source: 'CLOCK_IN' | 'CLOCK_OUT' | 'LEGACY'
+    recordedAt: string
+    updatedAt: string
+    timeEntryId: string
+  } | null
 }
 
 type PresenceSnapshot = {
@@ -88,7 +98,30 @@ type PresenceSnapshot = {
     department: string[]
     team: string[]
   }
+  overtimeAlerts?: Array<{
+    type: string
+    thresholdPercent: number
+    thresholdMinutes: number
+    overtimeMinutes: number
+    overtimeLimitMinutes: number
+    dateKey: string
+    triggeredAt: string
+    channels: string[]
+    member: {
+      id: string
+      name: string
+      email: string
+    }
+  }>
   members: PresenceMember[]
+}
+
+type OvertimeAlert = {
+  id: string
+  memberId: string
+  memberName: string
+  memberEmail: string
+  triggeredAt: string
 }
 
 type HoursKpiItem = {
@@ -117,53 +150,6 @@ type HoursKpiResponse = {
   }
   byCollaborator: HoursKpiItem[]
   timeline: HoursKpiTimelineItem[]
-}
-
-type VacationRequest = {
-  id: string
-  startDate: string
-  endDate: string
-  status:
-    | 'REQUESTED'
-    | 'SUPERVISOR_APPROVED'
-    | 'SUPERVISOR_REJECTED'
-    | 'HR_CONFIRMED'
-    | 'HR_REJECTED'
-    | 'CANCELED'
-  reason?: string | null
-  user: {
-    id: string
-    name: string
-    email: string
-  }
-}
-
-type VacationCalendarDay = {
-  date: string
-  absentCount: number
-  availableCount: number
-  teamSize: number
-  presencePercent: number
-  belowThreshold: boolean
-  membersOnVacation: Array<{
-    id: string
-    name: string | null
-    email: string
-    status: string
-  }>
-}
-
-type VacationCalendar = {
-  month: { year: number; month: number }
-  minPresencePercent: number
-  teamSize: number
-  days: VacationCalendarDay[]
-  annual: Array<{
-    year: number
-    month: number
-    requestsCount: number
-    membersScheduled: number
-  }>
 }
 
 type Stats = {
@@ -226,6 +212,7 @@ const presenceStatusClass: Record<PresenceStatus, string> = {
 
 const SupervisorDashboard = () => {
   const { session } = useAuth()
+  const { tr } = useLanguage()
   const { viewTimeZone } = useTimeZone()
   const token = session?.access_token
   const [entries, setEntries] = useState<Entry[]>([])
@@ -242,6 +229,7 @@ const SupervisorDashboard = () => {
   const [presenceSnapshot, setPresenceSnapshot] = useState<PresenceSnapshot | null>(null)
   const [presenceConnected, setPresenceConnected] = useState(false)
   const [presenceError, setPresenceError] = useState('')
+  const [overtimeAlerts, setOvertimeAlerts] = useState<OvertimeAlert[]>([])
   const [presenceFilters, setPresenceFilters] = useState({
     branch: '',
     department: '',
@@ -251,19 +239,6 @@ const SupervisorDashboard = () => {
   const [hoursKpiPeriod, setHoursKpiPeriod] = useState<'daily' | 'weekly' | 'monthly'>('weekly')
   const [hoursKpiLoading, setHoursKpiLoading] = useState(false)
   const [hoursKpiError, setHoursKpiError] = useState('')
-  const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([])
-  const [vacationRequestsLoading, setVacationRequestsLoading] = useState(false)
-  const [vacationReviewCommentById, setVacationReviewCommentById] = useState<Record<string, string>>({})
-  const [vacationNotice, setVacationNotice] = useState('')
-  const [vacationError, setVacationError] = useState('')
-  const [vacationActionLoadingById, setVacationActionLoadingById] = useState<Record<string, boolean>>({})
-  const [vacationCalendar, setVacationCalendar] = useState<VacationCalendar | null>(null)
-  const [vacationCalendarLoading, setVacationCalendarLoading] = useState(false)
-  const [vacationCalendarMonth, setVacationCalendarMonth] = useState(() => {
-    const now = new Date()
-    return { year: now.getFullYear(), month: now.getMonth() + 1 }
-  })
-  const [vacationMinPresencePercent, setVacationMinPresencePercent] = useState(70)
   const [nowMs, setNowMs] = useState(Date.now())
   const [teamErrorByUser, setTeamErrorByUser] = useState<Record<string, string>>({})
   const [teamNoticeByUser, setTeamNoticeByUser] = useState<Record<string, string>>({})
@@ -276,6 +251,8 @@ const SupervisorDashboard = () => {
   const [entryDetail, setEntryDetail] = useState<EntryDetailState>({ entry: null })
   const [review, setReview] = useState<ReviewState>({ entry: null, action: 'APPROVE', comment: '' })
   const [error, setError] = useState('')
+  const previousPresenceByUserRef = useRef<Record<string, PresenceStatus>>({})
+  const presenceBaselineReadyRef = useRef(false)
 
   const openMinutesByUser = useMemo(() => {
     const minutesByUser: Record<string, number> = {}
@@ -293,6 +270,31 @@ const SupervisorDashboard = () => {
     () => Object.values(openMinutesByUser).reduce((acc, value) => acc + value, 0),
     [openMinutesByUser]
   )
+
+  const membersWithLocation = useMemo(
+    () =>
+      (presenceSnapshot?.members || []).filter(
+        (row) =>
+          row.lastLocation &&
+          Number.isFinite(Number(row.lastLocation.lat)) &&
+          Number.isFinite(Number(row.lastLocation.lng))
+      ),
+    [presenceSnapshot]
+  )
+
+  const mapCenter: [number, number] = useMemo(() => {
+    if (membersWithLocation.length === 0) return [-23.55052, -46.63331]
+
+    const { latSum, lngSum } = membersWithLocation.reduce(
+      (acc, row) => ({
+        latSum: acc.latSum + Number(row.lastLocation?.lat || 0),
+        lngSum: acc.lngSum + Number(row.lastLocation?.lng || 0),
+      }),
+      { latSum: 0, lngSum: 0 }
+    )
+
+    return [latSum / membersWithLocation.length, lngSum / membersWithLocation.length]
+  }, [membersWithLocation])
 
   const hoursKpiWithOpen = useMemo(() => {
     if (!hoursKpi) return null
@@ -461,38 +463,6 @@ const SupervisorDashboard = () => {
     setPresenceSnapshot(payload)
   }
 
-  const loadVacationRequests = async () => {
-    if (!token) return
-    setVacationRequestsLoading(true)
-    try {
-      const response = await apiFetch<{ requests: VacationRequest[] }>('/vacations/team/requests?status=ALL', {
-        token,
-      })
-      setVacationRequests(response.requests || [])
-    } finally {
-      setVacationRequestsLoading(false)
-    }
-  }
-
-  const loadVacationCalendar = async () => {
-    if (!token) return
-    setVacationCalendarLoading(true)
-    try {
-      const query = new URLSearchParams({
-        year: String(vacationCalendarMonth.year),
-        month: String(vacationCalendarMonth.month),
-        minPresencePercent: String(vacationMinPresencePercent),
-      })
-
-      const response = await apiFetch<VacationCalendar>(`/vacations/team/calendar?${query.toString()}`, {
-        token,
-      })
-      setVacationCalendar(response)
-    } finally {
-      setVacationCalendarLoading(false)
-    }
-  }
-
   const connectPresenceStream = async (abortSignal: AbortSignal) => {
     if (!token) return
 
@@ -573,7 +543,7 @@ const SupervisorDashboard = () => {
 
   useEffect(() => {
     loadEntries().catch((err) => {
-      setError(err instanceof Error ? err.message : 'Erro ao carregar pendencias')
+      setError(err instanceof Error ? err.message : tr('Failed to load pending items', 'Erro ao carregar pendencias'))
       setEntries([])
       setSubordinates([])
       setStats(defaultStats)
@@ -616,20 +586,66 @@ const SupervisorDashboard = () => {
   }, [token, presenceFilters.branch, presenceFilters.department, presenceFilters.team])
 
   useEffect(() => {
-    loadVacationRequests().catch(() => undefined)
-  }, [token])
-
-  useEffect(() => {
-    loadVacationCalendar().catch(() => undefined)
-  }, [token, vacationCalendarMonth.year, vacationCalendarMonth.month, vacationMinPresencePercent])
-
-  useEffect(() => {
     const intervalId = setInterval(() => {
       setNowMs(Date.now())
     }, 30000)
 
     return () => clearInterval(intervalId)
   }, [])
+
+  useEffect(() => {
+    if (!presenceSnapshot) return
+
+    const currentStatuses = (presenceSnapshot.members || []).reduce<Record<string, PresenceStatus>>(
+      (acc, row) => {
+        acc[row.member.id] = row.status
+        return acc
+      },
+      {}
+    )
+
+    if (!presenceBaselineReadyRef.current) {
+      previousPresenceByUserRef.current = currentStatuses
+      presenceBaselineReadyRef.current = true
+      return
+    }
+
+    const previousStatuses = previousPresenceByUserRef.current
+    const enteredOvertime = (presenceSnapshot.members || []).filter((row) => {
+      const previousStatus = previousStatuses[row.member.id]
+      return previousStatus && previousStatus !== 'OVERTIME_ACTIVE' && row.status === 'OVERTIME_ACTIVE'
+    })
+
+    if (enteredOvertime.length > 0) {
+      setOvertimeAlerts((prev) => {
+        const next = [...prev]
+
+        for (const row of enteredOvertime) {
+          next.unshift({
+            id: `${row.member.id}-${presenceSnapshot.generatedAt}`,
+            memberId: row.member.id,
+            memberName: row.member.name,
+            memberEmail: row.member.email,
+            triggeredAt: presenceSnapshot.generatedAt,
+          })
+        }
+
+        const deduplicated = next.filter(
+          (item, index, arr) => arr.findIndex((x) => x.id === item.id) === index
+        )
+
+        return deduplicated.slice(0, 6)
+      })
+    }
+
+    previousPresenceByUserRef.current = currentStatuses
+  }, [presenceSnapshot])
+
+  useEffect(() => {
+    previousPresenceByUserRef.current = {}
+    presenceBaselineReadyRef.current = false
+    setOvertimeAlerts([])
+  }, [presenceFilters.branch, presenceFilters.department, presenceFilters.team])
 
   const openReview = (entry: Entry, action: ReviewState['action']) => {
     setReview({ entry, action, comment: '' })
@@ -754,48 +770,15 @@ const SupervisorDashboard = () => {
     }
   }
 
-  const handleReviewVacationBySupervisor = async (requestId: string, decision: 'APPROVE' | 'REJECT') => {
-    if (!token) return
-
-    const comment = vacationReviewCommentById[requestId] || ''
-    setVacationError('')
-    setVacationNotice('')
-    setVacationActionLoadingById((prev) => ({ ...prev, [requestId]: true }))
-
-    try {
-      await apiFetch(`/vacations/${requestId}/supervisor-review`, {
-        token,
-        method: 'PATCH',
-        body: {
-          decision,
-          comment: comment || undefined,
-        },
-      })
-
-      setVacationNotice(
-        decision === 'APPROVE'
-          ? 'Solicitação aprovada e encaminhada ao RH.'
-          : 'Solicitação rejeitada pelo supervisor.'
-      )
-      await loadVacationRequests()
-      await loadVacationCalendar()
-      setVacationReviewCommentById((prev) => ({ ...prev, [requestId]: '' }))
-    } catch (err) {
-      setVacationError(err instanceof Error ? err.message : 'Erro ao revisar solicitação de férias')
-    } finally {
-      setVacationActionLoadingById((prev) => ({ ...prev, [requestId]: false }))
-    }
-  }
-
   const canSubmit = review.action === 'APPROVE' || review.comment.trim().length >= 3
 
   return (
     <section className="grid gap-6">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
         <p className="text-xs uppercase tracking-[0.35em] text-teal-700">Supervisor</p>
-        <h2 className="mt-4 text-3xl font-semibold text-slate-900">Aprovacoes pendentes em um painel.</h2>
+        <h2 className="mt-4 text-3xl font-semibold text-slate-900">{tr('Pending approvals in one panel.', 'Aprovacoes pendentes em um painel.')}</h2>
         <p className="mt-4 text-sm text-slate-600">
-          Revise as jornadas da equipe e registre comentarios sem sair do fluxo.
+          {tr('Review team work logs and register comments without leaving the flow.', 'Revise as jornadas da equipe e registre comentarios sem sair do fluxo.')}
         </p>
       </div>
 
@@ -815,6 +798,48 @@ const SupervisorDashboard = () => {
           Atualizacao continua via SSE sem recarregar a pagina.
         </p>
         {presenceError ? <p className="mt-2 text-xs text-rose-600">{presenceError}</p> : null}
+
+        {(presenceSnapshot?.overtimeAlerts || []).length > 0 ? (
+          <div className="mt-3 space-y-2">
+            {(presenceSnapshot?.overtimeAlerts || []).map((alert) => (
+              <div
+                key={`${alert.member.id}-${alert.triggeredAt}`}
+                className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+              >
+                <p>
+                  <span className="font-semibold">Alerta proativo HE:</span> {alert.member.name} atingiu {alert.overtimeMinutes}min de HE no dia ({alert.thresholdPercent}% do limite de {alert.overtimeLimitMinutes}min).
+                </p>
+                <p className="mt-1 text-[11px] text-amber-800">
+                  Disparado às {formatDateTimeWithTimeZone(alert.triggeredAt, viewTimeZone)} via {alert.channels.join(', ')}.
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {overtimeAlerts.length > 0 ? (
+          <div className="mt-3 space-y-2">
+            {overtimeAlerts.map((alert) => (
+              <div
+                key={alert.id}
+                className="flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800"
+              >
+                <p>
+                  <span className="font-semibold">Hora extra ativa:</span> {alert.memberName} ({alert.memberEmail}) desde{' '}
+                  {formatTimeWithTimeZone(alert.triggeredAt, viewTimeZone)}.
+                </p>
+                <button
+                  onClick={() =>
+                    setOvertimeAlerts((prev) => prev.filter((currentAlert) => currentAlert.id !== alert.id))
+                  }
+                  className="rounded-full border border-rose-300 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-rose-700"
+                >
+                  Fechar
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
 
         <div className="mt-4 grid gap-2 text-xs text-slate-600 md:grid-cols-3">
           <select
@@ -904,10 +929,57 @@ const SupervisorDashboard = () => {
                   Desde {formatDateTimeWithTimeZone(row.since, viewTimeZone)}
                 </p>
               ) : null}
+              {row.lastLocation ? (
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Última posição: {row.lastLocation.lat.toFixed(5)}, {row.lastLocation.lng.toFixed(5)} ({row.lastLocation.source})
+                </p>
+              ) : null}
             </div>
           ))}
           {presenceSnapshot && presenceSnapshot.members.length === 0 ? (
             <p className="text-sm text-slate-500">Nenhum colaborador para os filtros atuais.</p>
+          ) : null}
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-slate-100 bg-white p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <h4 className="text-sm font-semibold text-slate-800">Mapa de colaboradores (última localização)</h4>
+            <span className="text-[11px] text-slate-500">{membersWithLocation.length} com posição</span>
+          </div>
+          <div className="overflow-hidden rounded-xl border border-slate-100">
+            <MapContainer center={mapCenter} zoom={11} style={{ height: '280px', width: '100%' }}>
+              <TileLayer
+                attribution="&copy; OpenStreetMap contributors"
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+
+              {membersWithLocation.map((row) => (
+                <CircleMarker
+                  key={`map-${row.member.id}`}
+                  center={[Number(row.lastLocation?.lat), Number(row.lastLocation?.lng)]}
+                  radius={7}
+                  pathOptions={{ color: '#0f766e', fillColor: '#14b8a6', fillOpacity: 0.9 }}
+                >
+                  <Popup>
+                    <div className="text-xs">
+                      <p className="font-semibold">{row.member.name}</p>
+                      <p>{row.member.email}</p>
+                      <p>Status: {presenceStatusLabel[row.status]}</p>
+                      <p>
+                        Atualizado:{' '}
+                        {formatDateTimeWithTimeZone(
+                          row.lastLocation?.updatedAt || row.lastLocation?.recordedAt || new Date(),
+                          viewTimeZone
+                        )}
+                      </p>
+                    </div>
+                  </Popup>
+                </CircleMarker>
+              ))}
+            </MapContainer>
+          </div>
+          {membersWithLocation.length === 0 ? (
+            <p className="mt-2 text-xs text-slate-500">Nenhuma posição disponível para os filtros atuais.</p>
           ) : null}
         </div>
       </div>
@@ -1139,11 +1211,11 @@ const SupervisorDashboard = () => {
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold text-slate-900">Pendencias</h3>
+          <h3 className="text-lg font-semibold text-slate-900">{tr('Pending items', 'Pendencias')}</h3>
           <div className="flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.2em] text-slate-500">
-            <span className="rounded-full bg-slate-100 px-3 py-1">Pendentes {stats.PENDING}</span>
-            <span className="rounded-full bg-slate-100 px-3 py-1">Aprovados {stats.APPROVED}</span>
-            <span className="rounded-full bg-slate-100 px-3 py-1">Rejeitados {stats.REJECTED}</span>
+            <span className="rounded-full bg-slate-100 px-3 py-1">{tr('Pending', 'Pendentes')} {stats.PENDING}</span>
+            <span className="rounded-full bg-slate-100 px-3 py-1">{tr('Approved', 'Aprovados')} {stats.APPROVED}</span>
+            <span className="rounded-full bg-slate-100 px-3 py-1">{tr('Rejected', 'Rejeitados')} {stats.REJECTED}</span>
           </div>
         </div>
 
@@ -1156,17 +1228,17 @@ const SupervisorDashboard = () => {
             onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))}
             className="rounded-full border border-slate-200 bg-white px-3 py-2"
           >
-            <option value="PENDING">Pendentes</option>
-            <option value="APPROVED">Aprovados</option>
-            <option value="REJECTED">Rejeitados</option>
-            <option value="ALL">Todos</option>
+            <option value="PENDING">{tr('Pending', 'Pendentes')}</option>
+            <option value="APPROVED">{tr('Approved', 'Aprovados')}</option>
+            <option value="REJECTED">{tr('Rejected', 'Rejeitados')}</option>
+            <option value="ALL">{tr('All', 'Todos')}</option>
           </select>
           <select
             value={filters.userId}
             onChange={(event) => setFilters((prev) => ({ ...prev, userId: event.target.value }))}
             className="rounded-full border border-slate-200 bg-white px-3 py-2"
           >
-            <option value="">Todos os colaboradores</option>
+            <option value="">{tr('All members', 'Todos os colaboradores')}</option>
             {subordinates.map((subordinate) => (
               <option key={subordinate.id} value={subordinate.id}>
                 {subordinate.name}
@@ -1189,7 +1261,7 @@ const SupervisorDashboard = () => {
 
         <div className="mt-5 space-y-4">
           {entries.length === 0 ? (
-            <p className="text-sm text-slate-500">Nenhuma pendencia no momento.</p>
+            <p className="text-sm text-slate-500">{tr('No pending items at the moment.', 'Nenhuma pendencia no momento.')}</p>
           ) : (
             entries.map((entry) => (
               <div

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { apiFetch } from '../lib/api'
+import { apiFetch, resolveApiAssetUrl } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTimeZone } from '../context/TimezoneContext'
+import { useLanguage } from '../context/LanguageContext'
 import { formatDateWithTimeZone } from '../lib/timezone'
+import UserAvatar from '../components/UserAvatar'
 
 type VacationRequest = {
   id: string
@@ -20,6 +22,7 @@ type VacationRequest = {
     id: string
     name: string
     email: string
+    photoUrl?: string | null
   }
 }
 
@@ -34,6 +37,7 @@ type VacationCalendarDay = {
     id: string
     name: string | null
     email: string
+    photoUrl?: string | null
     status: string
   }>
 }
@@ -54,6 +58,7 @@ type VacationCalendar = {
 const VacationSupervisorPage = () => {
   const { session, profile } = useAuth()
   const { viewTimeZone } = useTimeZone()
+  const { tr } = useLanguage()
   const token = session?.access_token
   const isHrFlow = profile?.role === 'HR' || profile?.role === 'ADMIN'
 
@@ -105,7 +110,15 @@ const VacationSupervisorPage = () => {
         : '/vacations/team/requests?status=ALL'
 
       const response = await apiFetch<{ requests: VacationRequest[] }>(endpoint, { token })
-      setRequests(response.requests || [])
+      setRequests(
+        (response.requests || []).map((request) => ({
+          ...request,
+          user: {
+            ...request.user,
+            photoUrl: resolveApiAssetUrl(request.user.photoUrl),
+          },
+        }))
+      )
     } finally {
       setRequestsLoading(false)
     }
@@ -124,7 +137,16 @@ const VacationSupervisorPage = () => {
       const response = await apiFetch<VacationCalendar>(`/vacations/team/calendar?${query.toString()}`, {
         token,
       })
-      setCalendar(response)
+      setCalendar({
+        ...response,
+        days: (response.days || []).map((day) => ({
+          ...day,
+          membersOnVacation: (day.membersOnVacation || []).map((member) => ({
+            ...member,
+            photoUrl: resolveApiAssetUrl(member.photoUrl),
+          })),
+        })),
+      })
     } finally {
       setCalendarLoading(false)
     }
@@ -161,7 +183,7 @@ const VacationSupervisorPage = () => {
     setNotice('')
 
     if (decision === 'REJECT' && comment.trim().length < 5) {
-      setError('Comentário obrigatório para rejeição (mínimo 5 caracteres).')
+      setError(tr('Comment is required for rejection (minimum 5 characters).', 'Comentário obrigatório para rejeição (mínimo 5 caracteres).'))
       return
     }
 
@@ -182,18 +204,18 @@ const VacationSupervisorPage = () => {
 
       setNotice(
         decision === 'APPROVE'
-          ? 'Solicitação aprovada e encaminhada ao RH.'
+          ? tr('Request approved and forwarded to HR.', 'Solicitação aprovada e encaminhada ao RH.')
           : decision === 'CONFIRM'
-            ? 'Solicitação confirmada pelo RH.'
+            ? tr('Request confirmed by HR.', 'Solicitação confirmada pelo RH.')
             : isHrFlow
-              ? 'Solicitação rejeitada pelo RH.'
-              : 'Solicitação rejeitada pelo supervisor.'
+              ? tr('Request rejected by HR.', 'Solicitação rejeitada pelo RH.')
+              : tr('Request rejected by supervisor.', 'Solicitação rejeitada pelo supervisor.')
       )
       setReviewCommentById((prev) => ({ ...prev, [requestId]: '' }))
       await loadRequests()
       await loadCalendar()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao revisar solicitação')
+      setError(err instanceof Error ? err.message : tr('Failed to review request', 'Erro ao revisar solicitação'))
     } finally {
       setActionLoadingById((prev) => ({ ...prev, [requestId]: false }))
     }
@@ -202,17 +224,17 @@ const VacationSupervisorPage = () => {
   return (
     <section className="grid gap-6">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
-        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">Supervisor</p>
-        <h2 className="mt-4 text-3xl font-semibold text-slate-900">Férias da equipe</h2>
+        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">{tr('Supervisor', 'Supervisor')}</p>
+        <h2 className="mt-4 text-3xl font-semibold text-slate-900">{tr('Team vacation', 'Férias da equipe')}</h2>
         <p className="mt-3 text-sm text-slate-600">
-          Aprove/rejeite solicitações e acompanhe impacto na presença da equipe.
+          {tr('Approve/reject requests and track impact on team availability.', 'Aprove/rejeite solicitações e acompanhe impacto na presença da equipe.')}
         </p>
       </div>
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-lg font-semibold text-slate-900">
-            {isHrFlow ? 'Solicitações pendentes de RH' : 'Solicitações pendentes'}
+            {isHrFlow ? tr('Pending HR requests', 'Solicitações pendentes de RH') : tr('Pending requests', 'Solicitações pendentes')}
           </h3>
           <button
             onClick={() => {
@@ -221,7 +243,7 @@ const VacationSupervisorPage = () => {
             }}
             className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
           >
-            Atualizar
+            {tr('Refresh', 'Atualizar')}
           </button>
         </div>
 
@@ -229,12 +251,12 @@ const VacationSupervisorPage = () => {
         {notice ? <p className="mt-2 text-xs text-emerald-600">{notice}</p> : null}
 
         <div className="mt-4 space-y-3">
-          {requestsLoading ? <p className="text-sm text-slate-500">Carregando solicitações...</p> : null}
+          {requestsLoading ? <p className="text-sm text-slate-500">{tr('Loading requests...', 'Carregando solicitações...')}</p> : null}
           {!requestsLoading && requests.filter((item) => (isHrFlow ? item.status === 'SUPERVISOR_APPROVED' : item.status === 'REQUESTED')).length === 0 ? (
             <p className="text-sm text-slate-500">
               {isHrFlow
-                ? 'Nenhuma solicitação pendente de RH.'
-                : 'Nenhuma solicitação pendente de supervisor.'}
+                ? tr('No pending HR requests.', 'Nenhuma solicitação pendente de RH.')
+                : tr('No pending supervisor requests.', 'Nenhuma solicitação pendente de supervisor.')}
             </p>
           ) : null}
 
@@ -242,13 +264,18 @@ const VacationSupervisorPage = () => {
             .filter((item) => (isHrFlow ? item.status === 'SUPERVISOR_APPROVED' : item.status === 'REQUESTED'))
             .map((request) => (
               <div key={request.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
-                <p className="text-sm font-semibold text-slate-800">{request.user.name}</p>
-                <p className="text-xs text-slate-500">{request.user.email}</p>
+                <div className="flex items-center gap-3">
+                  <UserAvatar name={request.user.name} photoUrl={request.user.photoUrl} size="md" />
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">{request.user.name}</p>
+                    <p className="text-xs text-slate-500">{request.user.email}</p>
+                  </div>
+                </div>
                 <p className="mt-2 text-xs text-slate-600">
-                  {formatDateWithTimeZone(request.startDate, viewTimeZone)} até{' '}
+                  {formatDateWithTimeZone(request.startDate, viewTimeZone)} {tr('to', 'até')}{' '}
                   {formatDateWithTimeZone(request.endDate, viewTimeZone)}
                 </p>
-                {request.reason ? <p className="mt-1 text-xs text-slate-600">Motivo: {request.reason}</p> : null}
+                {request.reason ? <p className="mt-1 text-xs text-slate-600">{tr('Reason:', 'Motivo:')} {request.reason}</p> : null}
 
                 <input
                   value={reviewCommentById[request.id] || ''}
@@ -258,7 +285,7 @@ const VacationSupervisorPage = () => {
                       [request.id]: event.target.value,
                     }))
                   }
-                  placeholder="Comentário (obrigatório para rejeição)"
+                  placeholder={tr('Comment (required for rejection)', 'Comentário (obrigatório para rejeição)')}
                   className="mt-3 w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
                 />
 
@@ -268,14 +295,14 @@ const VacationSupervisorPage = () => {
                     disabled={Boolean(actionLoadingById[request.id])}
                     className="rounded-full bg-teal-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
                   >
-                    {isHrFlow ? 'Confirmar' : 'Aprovar'}
+                    {isHrFlow ? tr('Confirm', 'Confirmar') : tr('Approve', 'Aprovar')}
                   </button>
                   <button
                     onClick={() => handleReviewRequest(request.id, 'REJECT')}
                     disabled={Boolean(actionLoadingById[request.id])}
                     className="rounded-full border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
                   >
-                    Rejeitar
+                    {tr('Reject', 'Rejeitar')}
                   </button>
                 </div>
               </div>
@@ -284,7 +311,7 @@ const VacationSupervisorPage = () => {
       </div>
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-slate-900">Calendário da equipe</h3>
+        <h3 className="text-lg font-semibold text-slate-900">{tr('Team calendar', 'Calendário da equipe')}</h3>
 
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           <input
@@ -298,7 +325,7 @@ const VacationSupervisorPage = () => {
               }))
             }
             className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
-            placeholder="Ano"
+            placeholder={tr('Year', 'Ano')}
           />
           <input
             type="number"
@@ -312,7 +339,7 @@ const VacationSupervisorPage = () => {
               }))
             }
             className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
-            placeholder="Mês"
+            placeholder={tr('Month', 'Mês')}
           />
           <input
             type="number"
@@ -321,22 +348,22 @@ const VacationSupervisorPage = () => {
             value={minPresencePercent}
             onChange={(event) => setMinPresencePercent(Math.min(100, Math.max(0, Number(event.target.value) || 0)))}
             className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
-            placeholder="Min. presença (%)"
+            placeholder={tr('Min. presence (%)', 'Min. presença (%)')}
           />
         </div>
 
-        {calendarLoading ? <p className="mt-3 text-sm text-slate-500">Carregando calendário...</p> : null}
+        {calendarLoading ? <p className="mt-3 text-sm text-slate-500">{tr('Loading calendar...', 'Carregando calendário...')}</p> : null}
         {!calendarLoading && calendar ? (
           <div className="mt-4 grid gap-4 lg:grid-cols-[1.4fr_1fr]">
             <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
               <div className="mb-2 grid grid-cols-7 gap-2 text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                <span>Dom</span>
-                <span>Seg</span>
-                <span>Ter</span>
-                <span>Qua</span>
-                <span>Qui</span>
-                <span>Sex</span>
-                <span>Sab</span>
+                <span>{tr('Sun', 'Dom')}</span>
+                <span>{tr('Mon', 'Seg')}</span>
+                <span>{tr('Tue', 'Ter')}</span>
+                <span>{tr('Wed', 'Qua')}</span>
+                <span>{tr('Thu', 'Qui')}</span>
+                <span>{tr('Fri', 'Sex')}</span>
+                <span>{tr('Sat', 'Sab')}</span>
               </div>
 
               <div className="grid grid-cols-7 gap-2">
@@ -361,8 +388,8 @@ const VacationSupervisorPage = () => {
                       }`}
                     >
                       <p className="font-semibold text-slate-800">{new Date(`${day.date}T12:00:00`).getDate()}</p>
-                      <p className="mt-1 text-slate-600">Ausentes: {day.absentCount}</p>
-                      <p className="text-slate-600">Presença: {day.presencePercent}%</p>
+                      <p className="mt-1 text-slate-600">{tr('Absent:', 'Ausentes:')} {day.absentCount}</p>
+                      <p className="text-slate-600">{tr('Presence:', 'Presença:')} {day.presencePercent}%</p>
                     </button>
                   )
                 })}
@@ -370,31 +397,36 @@ const VacationSupervisorPage = () => {
             </div>
 
             <div className="rounded-2xl border border-slate-100 bg-white p-4 text-xs text-slate-600">
-              <p className="text-sm font-semibold text-slate-800">Detalhes do dia</p>
+              <p className="text-sm font-semibold text-slate-800">{tr('Day details', 'Detalhes do dia')}</p>
               {!selectedDay ? (
-                <p className="mt-2 text-slate-500">Selecione um dia para ver os detalhes.</p>
+                <p className="mt-2 text-slate-500">{tr('Select a day to see details.', 'Selecione um dia para ver os detalhes.')}</p>
               ) : (
                 <>
                   <p className="mt-2 font-semibold text-slate-800">{formatDateWithTimeZone(selectedDay.date, viewTimeZone)}</p>
-                  <p className="mt-1">Ausentes: {selectedDay.absentCount}</p>
-                  <p>Disponíveis: {selectedDay.availableCount}</p>
-                  <p>Presença: {selectedDay.presencePercent}%</p>
+                  <p className="mt-1">{tr('Absent:', 'Ausentes:')} {selectedDay.absentCount}</p>
+                  <p>{tr('Available:', 'Disponíveis:')} {selectedDay.availableCount}</p>
+                  <p>{tr('Presence:', 'Presença:')} {selectedDay.presencePercent}%</p>
                   {selectedDay.belowThreshold ? (
                     <p className="mt-2 rounded-lg bg-rose-50 px-2 py-1 text-rose-700">
-                      Alerta: equipe abaixo do limite mínimo configurado.
+                      {tr('Alert: team is below the configured minimum threshold.', 'Alerta: equipe abaixo do limite mínimo configurado.')}
                     </p>
                   ) : null}
 
                   <div className="mt-3 space-y-2">
-                    <p className="font-semibold text-slate-700">Em férias neste dia</p>
+                    <p className="font-semibold text-slate-700">{tr('On vacation this day', 'Em férias neste dia')}</p>
                     {selectedDay.membersOnVacation.length === 0 ? (
-                      <p className="text-slate-500">Nenhum colaborador em férias.</p>
+                      <p className="text-slate-500">{tr('No team members on vacation.', 'Nenhum colaborador em férias.')}</p>
                     ) : (
                       selectedDay.membersOnVacation.map((member) => (
                         <div key={member.id} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-                          <p className="font-semibold text-slate-800">{member.name || member.email}</p>
-                          <p className="text-slate-500">{member.email}</p>
-                          <p className="text-slate-500">Status: {member.status}</p>
+                          <div className="flex items-center gap-2">
+                            <UserAvatar name={member.name || member.email} photoUrl={member.photoUrl} size="sm" />
+                            <div>
+                              <p className="font-semibold text-slate-800">{member.name || member.email}</p>
+                              <p className="text-slate-500">{member.email}</p>
+                            </div>
+                          </div>
+                          <p className="mt-1 text-slate-500">{tr('Status:', 'Status:')} {member.status}</p>
                         </div>
                       ))
                     )}
@@ -423,8 +455,8 @@ const VacationSupervisorPage = () => {
                 <p className="font-semibold text-slate-800">
                   {String(item.month).padStart(2, '0')}/{item.year}
                 </p>
-                <p>Solicitações: {item.requestsCount}</p>
-                <p>Colaboradores em férias: {item.membersScheduled}</p>
+                <p>{tr('Requests:', 'Solicitações:')} {item.requestsCount}</p>
+                <p>{tr('Team members on vacation:', 'Colaboradores em férias:')} {item.membersScheduled}</p>
               </button>
             ))}
           </div>

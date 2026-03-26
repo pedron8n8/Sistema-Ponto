@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react'
-import { apiFetch } from '../lib/api'
+import { API_BASE, apiFetch, resolveApiAssetUrl } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { TIME_ZONE_OPTIONS } from '../lib/timezone'
+import UserAvatar from '../components/UserAvatar'
 
-type Role = 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'
+type Role = 'SUPERADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'
 
 type User = {
   id: string
   email: string
   name: string
   role: Role
+  photoUrl?: string | null
+  photoUpdatedAt?: string | null
   contractDailyMinutes?: number
   workdayStartTime?: string | null
   workdayEndTime?: string | null
@@ -68,6 +71,20 @@ type VacationRequest = {
     name: string
     email: string
   } | null
+}
+
+type LocationValidationSource = 'MOBILE' | 'TERMINAL_QR'
+
+type AdminLocationSettings = {
+  locationValidationSource: LocationValidationSource
+  geofence: {
+    enabled: boolean
+    mode: 'ALERT' | 'REJECT'
+    requireLocation: boolean
+    center: { lat: number; lng: number } | null
+    radiusMeters: number
+  }
+  allowedSources: LocationValidationSource[]
 }
 
 const roles: Role[] = ['ADMIN', 'HR', 'SUPERVISOR', 'MEMBER']
@@ -140,6 +157,18 @@ const AdminDashboard = () => {
   const [vacationActionLoadingById, setVacationActionLoadingById] = useState<Record<string, boolean>>({})
   const [vacationNotice, setVacationNotice] = useState('')
   const [vacationError, setVacationError] = useState('')
+  const [locationSettings, setLocationSettings] = useState<AdminLocationSettings | null>(null)
+  const [locationSettingsLoading, setLocationSettingsLoading] = useState(false)
+  const [locationSettingsSaving, setLocationSettingsSaving] = useState(false)
+  const [locationSettingsForm, setLocationSettingsForm] = useState({
+    locationValidationSource: 'MOBILE' as LocationValidationSource,
+    enabled: true,
+    mode: 'ALERT' as 'ALERT' | 'REJECT',
+    requireLocation: false,
+    centerLat: '',
+    centerLng: '',
+    radiusMeters: '200',
+  })
   const [errorByUser, setErrorByUser] = useState<Record<string, string>>({})
   const [noticeByUser, setNoticeByUser] = useState<Record<string, string>>({})
   const [form, setForm] = useState({
@@ -156,15 +185,20 @@ const AdminDashboard = () => {
     if (!token) return
     const response = await apiFetch<{ users: User[] }>('/users', { token })
 
-    setUsers(response.users)
+    const usersWithPhoto = response.users.map((user) => ({
+      ...user,
+      photoUrl: resolveApiAssetUrl(user.photoUrl),
+    }))
+
+    setUsers(usersWithPhoto)
     setEditNames(
-      response.users.reduce<Record<string, string>>((acc, user) => {
+      usersWithPhoto.reduce<Record<string, string>>((acc, user) => {
         acc[user.id] = user.name
         return acc
       }, {})
     )
     setWorkSettingsByUser(
-      response.users.reduce<Record<string, WorkSettingsForm>>((acc, user) => {
+      usersWithPhoto.reduce<Record<string, WorkSettingsForm>>((acc, user) => {
         acc[user.id] = {
           contractDailyHours: formatMinutesToHours(user.contractDailyMinutes),
           workdayStartTime: user.workdayStartTime || '',
@@ -205,6 +239,35 @@ const AdminDashboard = () => {
     }
   }
 
+  const loadLocationSettings = async () => {
+    if (!token) return
+    setLocationSettingsLoading(true)
+    try {
+      const response = await apiFetch<{ locationSettings: AdminLocationSettings }>(
+        '/admin/location-settings',
+        { token }
+      )
+      setLocationSettings(response.locationSettings)
+      setLocationSettingsForm({
+        locationValidationSource: response.locationSettings.locationValidationSource,
+        enabled: response.locationSettings.geofence.enabled,
+        mode: response.locationSettings.geofence.mode,
+        requireLocation: response.locationSettings.geofence.requireLocation,
+        centerLat:
+          response.locationSettings.geofence.center?.lat !== undefined
+            ? String(response.locationSettings.geofence.center.lat)
+            : '',
+        centerLng:
+          response.locationSettings.geofence.center?.lng !== undefined
+            ? String(response.locationSettings.geofence.center.lng)
+            : '',
+        radiusMeters: String(response.locationSettings.geofence.radiusMeters || 200),
+      })
+    } finally {
+      setLocationSettingsLoading(false)
+    }
+  }
+
   useEffect(() => {
     loadUsers().catch(() => undefined)
   }, [token])
@@ -217,23 +280,50 @@ const AdminDashboard = () => {
     loadVacationRequests().catch(() => undefined)
   }, [token])
 
+  useEffect(() => {
+    loadLocationSettings().catch(() => undefined)
+  }, [token])
+
   const handleCreate = async () => {
     if (!token) return
     setError('')
     setNotice('')
 
     try {
-      await apiFetch('/users', {
-        token,
+      const response = await fetch(`${API_BASE}/users`, {
         method: 'POST',
-        body: {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
           email: form.email,
           name: form.name,
           role: form.role,
           password: form.password,
           supervisorId: form.supervisorId || null,
-        },
+        }),
       })
+
+      const payload = await response.json().catch(() => ({}))
+
+      if (response.status === 402) {
+        const checkoutUrl = payload?.billing?.stripe?.checkoutUrl
+        if (checkoutUrl) {
+          setNotice('Redirecionando para checkout das cadeiras adicionais...')
+          window.location.assign(checkoutUrl)
+          return
+        }
+
+        throw new Error(
+          payload?.message ||
+            'Limite de cadeiras excedido. Configure Stripe no backend para redirecionamento automático.'
+        )
+      }
+
+      if (!response.ok) {
+        throw new Error(payload?.message || 'Erro ao criar usuario')
+      }
 
       setForm({ email: '', name: '', role: 'MEMBER', password: '', supervisorId: '' })
       await loadUsers()
@@ -457,6 +547,55 @@ const AdminDashboard = () => {
     }
   }
 
+  const handleSaveLocationSettings = async () => {
+    if (!token) return
+    setError('')
+    setNotice('')
+    setLocationSettingsSaving(true)
+
+    try {
+      const lat = Number(locationSettingsForm.centerLat)
+      const lng = Number(locationSettingsForm.centerLng)
+      const radius = Number(locationSettingsForm.radiusMeters)
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        setError('Latitude e longitude do estabelecimento são obrigatórias e válidas.')
+        return
+      }
+
+      if (!Number.isFinite(radius) || radius <= 0) {
+        setError('Raio da cerca deve ser maior que zero.')
+        return
+      }
+
+      const response = await apiFetch<{ locationSettings: AdminLocationSettings; message: string }>(
+        '/admin/location-settings',
+        {
+          token,
+          method: 'PATCH',
+          body: {
+            locationValidationSource: locationSettingsForm.locationValidationSource,
+            enabled: locationSettingsForm.enabled,
+            mode: locationSettingsForm.mode,
+            requireLocation: locationSettingsForm.requireLocation,
+            radiusMeters: radius,
+            center: {
+              lat,
+              lng,
+            },
+          },
+        }
+      )
+
+      setLocationSettings(response.locationSettings)
+      setNotice(response.message || 'Configuração de localização atualizada com sucesso.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao salvar configuração de localização')
+    } finally {
+      setLocationSettingsSaving(false)
+    }
+  }
+
   return (
     <section className="grid gap-6">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
@@ -466,6 +605,136 @@ const AdminDashboard = () => {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm lg:col-span-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-lg font-semibold text-slate-900">Localização do estabelecimento</h3>
+            <button
+              onClick={() => loadLocationSettings().catch(() => undefined)}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
+            >
+              Atualizar
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Defina se o ponto valida pelo QR do terminal ou pela geolocalização do celular, e ajuste a posição do estabelecimento.
+          </p>
+
+          {locationSettingsLoading ? (
+            <p className="mt-2 text-xs text-slate-500">Carregando configuração de localização...</p>
+          ) : null}
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            <label className="text-xs text-slate-600">
+              Método de validação
+              <select
+                value={locationSettingsForm.locationValidationSource}
+                onChange={(event) =>
+                  setLocationSettingsForm((prev) => ({
+                    ...prev,
+                    locationValidationSource: event.target.value as LocationValidationSource,
+                  }))
+                }
+                className="mt-1 w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
+              >
+                {(locationSettings?.allowedSources || ['MOBILE', 'TERMINAL_QR']).map((source) => (
+                  <option key={source} value={source}>
+                    {source === 'TERMINAL_QR' ? 'QR do terminal' : 'GPS do celular'}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-xs text-slate-600">
+              Modo da cerca
+              <select
+                value={locationSettingsForm.mode}
+                onChange={(event) =>
+                  setLocationSettingsForm((prev) => ({
+                    ...prev,
+                    mode: event.target.value as 'ALERT' | 'REJECT',
+                  }))
+                }
+                className="mt-1 w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
+              >
+                <option value="ALERT">ALERTA</option>
+                <option value="REJECT">BLOQUEAR</option>
+              </select>
+            </label>
+
+            <label className="text-xs text-slate-600">
+              Raio (metros)
+              <input
+                value={locationSettingsForm.radiusMeters}
+                onChange={(event) =>
+                  setLocationSettingsForm((prev) => ({ ...prev, radiusMeters: event.target.value }))
+                }
+                type="number"
+                min={1}
+                className="mt-1 w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
+              />
+            </label>
+
+            <label className="text-xs text-slate-600">
+              Latitude
+              <input
+                value={locationSettingsForm.centerLat}
+                onChange={(event) =>
+                  setLocationSettingsForm((prev) => ({ ...prev, centerLat: event.target.value }))
+                }
+                type="number"
+                step="0.000001"
+                className="mt-1 w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
+              />
+            </label>
+
+            <label className="text-xs text-slate-600">
+              Longitude
+              <input
+                value={locationSettingsForm.centerLng}
+                onChange={(event) =>
+                  setLocationSettingsForm((prev) => ({ ...prev, centerLng: event.target.value }))
+                }
+                type="number"
+                step="0.000001"
+                className="mt-1 w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
+              />
+            </label>
+
+            <div className="flex flex-col gap-2 pt-5 text-xs text-slate-700">
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={locationSettingsForm.enabled}
+                  onChange={(event) =>
+                    setLocationSettingsForm((prev) => ({ ...prev, enabled: event.target.checked }))
+                  }
+                />
+                Cerca virtual ativa
+              </label>
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={locationSettingsForm.requireLocation}
+                  onChange={(event) =>
+                    setLocationSettingsForm((prev) => ({ ...prev, requireLocation: event.target.checked }))
+                  }
+                />
+                Exigir GPS quando modo celular
+              </label>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <button
+              onClick={handleSaveLocationSettings}
+              disabled={locationSettingsSaving}
+              className="rounded-full bg-teal-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              {locationSettingsSaving ? 'Salvando...' : 'Salvar configuração de localização'}
+            </button>
+          </div>
+        </div>
+
         <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
           <h3 className="text-lg font-semibold text-slate-900">Usuarios</h3>
           {error ? <p className="mt-2 text-xs text-rose-600">{error}</p> : null}
@@ -477,15 +746,18 @@ const AdminDashboard = () => {
             ) : (
               users.map((user) => (
                 <div key={user.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="space-y-2">
-                    <input
-                      value={editNames[user.id] || ''}
-                      onChange={(event) =>
-                        setEditNames((prev) => ({ ...prev, [user.id]: event.target.value }))
-                      }
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-1 text-sm"
-                    />
-                    <p className="text-xs text-slate-500">{user.email}</p>
+                  <div className="flex items-center gap-3">
+                    <UserAvatar name={user.name} photoUrl={user.photoUrl} size="md" />
+                    <div className="w-full space-y-2">
+                      <input
+                        value={editNames[user.id] || ''}
+                        onChange={(event) =>
+                          setEditNames((prev) => ({ ...prev, [user.id]: event.target.value }))
+                        }
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-1 text-sm"
+                      />
+                      <p className="text-xs text-slate-500">{user.email}</p>
+                    </div>
                   </div>
 
                   <div className="mt-4 rounded-2xl border border-slate-200/70 bg-white p-3">

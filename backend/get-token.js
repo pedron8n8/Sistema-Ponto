@@ -9,9 +9,16 @@ const supabase = createClient(
 async function getToken() {
   console.log('🔐 Fazendo login no Supabase...\n');
 
-  // ALTERE AQUI com suas credenciais
-  const email = 'pedron8n8@gmail.com';
-  const password = 'Pedro397!';
+  const email = process.argv[2] || process.env.TEST_LOGIN_EMAIL;
+  const password = process.argv[3] || process.env.TEST_LOGIN_PASSWORD;
+
+  if (!email || !password) {
+    console.error('❌ Informe email e senha via argumentos ou variáveis de ambiente.');
+    console.log('Exemplo: node get-token.js usuario@empresa.com senha123');
+    console.log('Ou defina TEST_LOGIN_EMAIL e TEST_LOGIN_PASSWORD no ambiente.');
+    process.exitCode = 1;
+    return;
+  }
 
   const { data, error } = await supabase.auth.signInWithPassword({
     email,

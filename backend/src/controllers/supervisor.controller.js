@@ -1,8 +1,19 @@
 const prisma = require('../config/database');
 const { adjustBankHours, settleBankHoursAccruals } = require('../utils/bankHours');
 const { normalizeMinutes, normalizeTime, normalizeTimeZone } = require('../utils/workSettings');
+const { sendOvertimeThresholdNotification } = require('../utils/notifications');
 
 const PRESENCE_REFRESH_MS = 15000;
+const DEFAULT_OVERTIME_LIMIT_MINUTES = Number(process.env.OVERTIME_DAILY_LIMIT_MINUTES || 120);
+const OVERTIME_ALERT_THRESHOLD_PERCENT = Math.max(
+  1,
+  Math.min(100, Number(process.env.OVERTIME_ALERT_THRESHOLD_PERCENT || 80))
+);
+const OVERTIME_ALERT_CHANNELS = String(process.env.OVERTIME_ALERT_CHANNELS || 'IN_APP')
+  .split(',')
+  .map((channel) => channel.trim().toUpperCase())
+  .filter(Boolean);
+const overtimeAlertDispatchRegistry = new Map();
 
 const PRESENCE_STATUS = {
   PRESENT: 'PRESENT',
@@ -13,7 +24,7 @@ const PRESENCE_STATUS = {
 
 const KPI_PERIODS = new Set(['daily', 'weekly', 'monthly']);
 
-const isElevatedRole = (role) => ['ADMIN', 'HR'].includes(role);
+const isElevatedRole = (role) => ['SUPERADMIN', 'ADMIN', 'HR'].includes(role);
 
 const buildSupervisorScopeWhere = ({ supervisorId, isAdmin }) =>
   isAdmin ? { role: { notIn: ['ADMIN', 'HR'] } } : { supervisorId };
@@ -174,7 +185,59 @@ const buildFilterOptions = (members) => {
   };
 };
 
-const buildTeamPresenceSnapshot = async ({ supervisorId, isAdmin, filters }) => {
+const extractCoordinatesFromLocation = (locationPayload) => {
+  if (!locationPayload || typeof locationPayload !== 'object') return null;
+
+  const hasLatLng = (candidate) =>
+    candidate &&
+    typeof candidate === 'object' &&
+    Number.isFinite(Number(candidate.lat)) &&
+    Number.isFinite(Number(candidate.lng));
+
+  if (hasLatLng(locationPayload)) {
+    return {
+      lat: Number(locationPayload.lat),
+      lng: Number(locationPayload.lng),
+      source: 'LEGACY',
+    };
+  }
+
+  if (hasLatLng(locationPayload.clockOut)) {
+    return {
+      lat: Number(locationPayload.clockOut.lat),
+      lng: Number(locationPayload.clockOut.lng),
+      source: 'CLOCK_OUT',
+    };
+  }
+
+  if (hasLatLng(locationPayload.clockIn)) {
+    return {
+      lat: Number(locationPayload.clockIn.lat),
+      lng: Number(locationPayload.clockIn.lng),
+      source: 'CLOCK_IN',
+    };
+  }
+
+  return null;
+};
+
+const resolveOvertimeAlertLimitMinutes = (member) => {
+  const fromUser = Number(member?.bankHoursLimitMinutes);
+  if (Number.isFinite(fromUser) && fromUser > 0) {
+    return Math.floor(fromUser);
+  }
+
+  if (Number.isFinite(DEFAULT_OVERTIME_LIMIT_MINUTES) && DEFAULT_OVERTIME_LIMIT_MINUTES > 0) {
+    return Math.floor(DEFAULT_OVERTIME_LIMIT_MINUTES);
+  }
+
+  return 120;
+};
+
+const buildOvertimeAlertRegistryKey = ({ managerId, memberId, dateKey, thresholdPercent }) =>
+  `${managerId}:${memberId}:${dateKey}:${thresholdPercent}`;
+
+const buildTeamPresenceSnapshot = async ({ supervisorId, supervisorEmail, supervisorName, isAdmin, filters }) => {
   const teamMembersRaw = await prisma.user.findMany({
     where: buildSupervisorScopeWhere({ supervisorId, isAdmin }),
     select: {
@@ -184,12 +247,14 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, isAdmin, filters }) => 
       role: true,
       timeZone: true,
       contractDailyMinutes: true,
+      bankHoursLimitMinutes: true,
       workdayStartTime: true,
       workdayEndTime: true,
       supervisor: {
         select: {
           id: true,
           name: true,
+          email: true,
         },
       },
     },
@@ -220,7 +285,7 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, isAdmin, filters }) => 
 
   const teamIds = teamMembers.map((member) => member.id);
 
-  const [openEntries, todayEntries] = await Promise.all([
+  const [openEntries, todayEntries, latestEntriesWithLocation] = await Promise.all([
     prisma.timeEntry.findMany({
       where: {
         userId: { in: teamIds },
@@ -230,6 +295,8 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, isAdmin, filters }) => 
         id: true,
         userId: true,
         clockIn: true,
+        location: true,
+        updatedAt: true,
       },
       orderBy: { clockIn: 'desc' },
     }),
@@ -243,8 +310,27 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, isAdmin, filters }) => 
         userId: true,
         clockIn: true,
         clockOut: true,
+        workedMinutes: true,
+        location: true,
+        updatedAt: true,
       },
       orderBy: { clockIn: 'desc' },
+    }),
+    prisma.timeEntry.findMany({
+      where: {
+        userId: { in: teamIds },
+        location: { not: null },
+      },
+      select: {
+        id: true,
+        userId: true,
+        clockIn: true,
+        clockOut: true,
+        location: true,
+        updatedAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: Math.max(60, teamIds.length * 12),
     }),
   ]);
 
@@ -254,6 +340,35 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, isAdmin, filters }) => 
     acc[entry.userId].push(entry);
     return acc;
   }, {});
+
+  const resolveEntryWorkedMinutes = (entry) => {
+    if (!entry?.clockIn || !entry?.clockOut) return 0;
+
+    const storedWorkedMinutes = Number(entry.workedMinutes);
+    if (Number.isFinite(storedWorkedMinutes) && storedWorkedMinutes > 0) {
+      return Math.floor(storedWorkedMinutes);
+    }
+
+    const start = new Date(entry.clockIn).getTime();
+    const end = new Date(entry.clockOut).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+    return Math.floor((end - start) / 60000);
+  };
+
+  const latestLocationByUser = new Map();
+  for (const entry of latestEntriesWithLocation) {
+    if (latestLocationByUser.has(entry.userId)) continue;
+    const coordinates = extractCoordinatesFromLocation(entry.location);
+    if (!coordinates) continue;
+    latestLocationByUser.set(entry.userId, {
+      ...coordinates,
+      recordedAt: entry.clockOut || entry.clockIn,
+      updatedAt: entry.updatedAt,
+      timeEntryId: entry.id,
+    });
+  }
+
+  const overtimeAlerts = [];
 
   const members = teamMembers.map((member) => {
     const labels = resolveVirtualOrgLabels(member);
@@ -271,15 +386,69 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, isAdmin, filters }) => 
 
     if (openEntry) {
       const elapsedMinutes = Math.max(0, Math.floor((now - new Date(openEntry.clockIn)) / 60000));
+      const closedWorkedMinutesToday = userTodayEntries.reduce((sum, entry) => {
+        if (!entry.clockOut) return sum;
+        if (entry.id === openEntry.id) return sum;
+        return sum + resolveEntryWorkedMinutes(entry);
+      }, 0);
+      const totalWorkedMinutesToday = closedWorkedMinutesToday + elapsedMinutes;
+      const contractDailyMinutes = Number(member.contractDailyMinutes || 480);
+      const overtimeMinutesSoFar = Math.max(0, totalWorkedMinutesToday - contractDailyMinutes);
+      const overtimeLimitMinutes = resolveOvertimeAlertLimitMinutes(member);
+      const thresholdMinutes = Math.ceil((overtimeLimitMinutes * OVERTIME_ALERT_THRESHOLD_PERCENT) / 100);
+
       status =
-        elapsedMinutes > Number(member.contractDailyMinutes || 480)
+        totalWorkedMinutesToday > contractDailyMinutes
           ? PRESENCE_STATUS.OVERTIME_ACTIVE
           : PRESENCE_STATUS.PRESENT;
       since = openEntry.clockIn;
+
+      if (overtimeMinutesSoFar >= thresholdMinutes && thresholdMinutes > 0) {
+        const dateKey = new Date(now).toISOString().slice(0, 10);
+        const managerId = supervisorId;
+        const registryKey = buildOvertimeAlertRegistryKey({
+          managerId,
+          memberId: member.id,
+          dateKey,
+          thresholdPercent: OVERTIME_ALERT_THRESHOLD_PERCENT,
+        });
+
+        const alertPayload = {
+          type: 'OVERTIME_LIMIT_THRESHOLD',
+          thresholdPercent: OVERTIME_ALERT_THRESHOLD_PERCENT,
+          thresholdMinutes,
+          overtimeMinutes: overtimeMinutesSoFar,
+          overtimeLimitMinutes,
+          dateKey,
+          member: {
+            id: member.id,
+            name: member.name,
+            email: member.email,
+          },
+          manager: {
+            id: managerId,
+            name: supervisorName || member.supervisor?.name || 'Gestor',
+            email: supervisorEmail || member.supervisor?.email || null,
+          },
+          channels: OVERTIME_ALERT_CHANNELS,
+          triggeredAt: new Date().toISOString(),
+        };
+
+        overtimeAlerts.push(alertPayload);
+
+        if (!overtimeAlertDispatchRegistry.has(registryKey)) {
+          overtimeAlertDispatchRegistry.set(registryKey, alertPayload.triggeredAt);
+          sendOvertimeThresholdNotification(alertPayload).catch((error) => {
+            console.error('⚠️ Falha ao enviar alerta proativo de HE:', error?.message || error);
+          });
+        }
+      }
     } else if (userTodayEntries.length > 0 && withinConfiguredWorkday) {
       status = PRESENCE_STATUS.ON_BREAK;
       since = userTodayEntries[0].clockIn;
     }
+
+    const lastLocation = latestLocationByUser.get(member.id) || null;
 
     return {
       member: {
@@ -295,6 +464,7 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, isAdmin, filters }) => 
         department: labels.department,
         team: labels.team,
       },
+      lastLocation,
       schedule: {
         contractDailyMinutes: member.contractDailyMinutes,
         workdayStartTime: member.workdayStartTime,
@@ -323,6 +493,7 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, isAdmin, filters }) => 
   return {
     generatedAt: new Date().toISOString(),
     summary,
+    overtimeAlerts,
     filters: filterOptions,
     members,
   };
@@ -1139,6 +1310,8 @@ const getTeamPresenceSnapshot = async (req, res) => {
   try {
     const snapshot = await buildTeamPresenceSnapshot({
       supervisorId: req.user.id,
+      supervisorEmail: req.user.email,
+      supervisorName: req.user.name,
       isAdmin: isElevatedRole(req.user.role),
       filters: req.query,
     });
@@ -1173,6 +1346,8 @@ const streamTeamPresence = async (req, res) => {
     try {
       const snapshot = await buildTeamPresenceSnapshot({
         supervisorId: req.user.id,
+        supervisorEmail: req.user.email,
+        supervisorName: req.user.name,
         isAdmin: isElevatedRole(req.user.role),
         filters: req.query,
       });
