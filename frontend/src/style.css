@@ -25,3 +25,30 @@ body {
 ::selection {
   background: rgba(15, 118, 110, 0.2);
 }
+
+@keyframes revealUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.reveal {
+  animation: revealUp 0.72s cubic-bezier(0.2, 0.78, 0.28, 1) both;
+}
+
+.reveal-delay-1 {
+  animation-delay: 0.12s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .reveal-delay-1 {
+    animation: none;
+  }
+}

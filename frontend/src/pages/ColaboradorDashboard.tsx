@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
+import { usePlan } from '../hooks/usePlan'
 import { useTimeZone } from '../context/TimezoneContext'
-import { useLanguage } from '../context/LanguageContext'
+import { useTranslation } from 'react-i18next'
 import { Circle, CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet'
 import * as faceapi from 'face-api.js'
 import { formatDateTimeWithTimeZone, formatTimeWithTimeZone } from '../lib/timezone'
@@ -115,7 +116,10 @@ const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve
 
 const ColaboradorDashboard = () => {
   const { session } = useAuth()
-  const { tr } = useLanguage()
+  const { isPro } = usePlan()
+  const { t: i18nT, i18n } = useTranslation()
+  const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
+  const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
   const { viewTimeZone } = useTimeZone()
   const [entries, setEntries] = useState<TimeEntry[]>([])
   const [currentEntry, setCurrentEntry] = useState<CurrentEntryResponse['entry'] | null>(null)
@@ -1140,9 +1144,9 @@ const ColaboradorDashboard = () => {
           </div>
 
           <div className="mt-6 rounded-2xl border border-slate-100 bg-white px-4 py-4">
-            <h3 className="text-base font-semibold text-slate-900">{tr('Current status', 'Status atual')}</h3>
+            <h3 className="text-base font-semibold text-slate-900">{t('Current status', 'Status atual')}</h3>
             <p className="mt-1 text-sm text-slate-600">
-              {activeEntry ? tr('Workday in progress', 'Jornada em andamento') : tr('No open workday', 'Nenhuma jornada aberta')}
+              {activeEntry ? t('Workday in progress', 'Jornada em andamento') : t('No open workday', 'Nenhuma jornada aberta')}
             </p>
 
             <div className="mt-3 flex items-center gap-2 text-xs">
@@ -1215,22 +1219,23 @@ const ColaboradorDashboard = () => {
             </div>
 
             <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{tr('Active time', 'Tempo ativo')}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('Active time', 'Tempo ativo')}</p>
               <p className="mt-2 text-2xl font-semibold text-slate-900">{formatElapsed(elapsedMs)}</p>
               <p className="mt-2 text-xs text-slate-500">
                 {currentEntry?.clockIn
-                  ? `${tr('Started', 'Inicio')}: ${formatTimeWithTimeZone(currentEntry.clockIn, viewTimeZone)}`
-                  : tr('No workday in progress', 'Sem jornada em andamento')}
+                  ? `${t('Started', 'Inicio')}: ${formatTimeWithTimeZone(currentEntry.clockIn, viewTimeZone)}`
+                  : t('No workday in progress', 'Sem jornada em andamento')}
               </p>
             </div>
             <p className="mt-3 text-xs text-slate-500">
-              {tr('Last record', 'Ultimo registro')}: {entries[0]?.clockIn ? formatDateTimeWithTimeZone(entries[0].clockIn, viewTimeZone) : '--'}
+              {t('Last record', 'Ultimo registro')}: {entries[0]?.clockIn ? formatDateTimeWithTimeZone(entries[0].clockIn, viewTimeZone) : '--'}
             </p>
           </div>
         </div>
       </div>
 
       <aside className="space-y-5">
+        {isPro && (
         <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
           <h3 className="text-lg font-semibold text-slate-900">Reconhecimento facial</h3>
           <p className="mt-2 text-xs text-slate-600">
@@ -1270,6 +1275,7 @@ const ColaboradorDashboard = () => {
             </button>
           </div>
         </div>
+        )}
 
         {enrollModalOpen ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 px-4">

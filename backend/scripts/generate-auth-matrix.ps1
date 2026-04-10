@@ -1,11 +1,16 @@
 $ProgressPreference = 'SilentlyContinue'
 
-$apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRndmJnd2Z2d3d0eGZod2p6d2thIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTY2NTQsImV4cCI6MjA4ODgzMjY1NH0.G7wiFxrziYSMWpw0sF_VFQ7ymt4XY2g3ITeX7acNg98'
-$authUrl = 'https://tgvbgwfvwwtxfhwjzwka.supabase.co/auth/v1/token?grant_type=password'
-$base = 'http://localhost:3000'
+$apiKey = $env:SUPABASE_KEY
+$supabaseUrl = $env:SUPABASE_URL
+$authUrl = if ($supabaseUrl) { "$supabaseUrl/auth/v1/token?grant_type=password" } else { '' }
+$base = if ($env:BACKEND_BASE_URL) { $env:BACKEND_BASE_URL } else { 'http://localhost:3000' }
 $api = "$base/api/v1"
 
 function Get-Token([string]$email, [string]$password) {
+  if (-not $apiKey -or -not $authUrl -or -not $email -or -not $password) {
+    return ''
+  }
+
   try {
     $payload = @{ email = $email; password = $password } | ConvertTo-Json
     $resp = Invoke-RestMethod -Method Post -Uri $authUrl -Headers @{ apikey = $apiKey } -ContentType 'application/json' -Body $payload -TimeoutSec 20
@@ -51,12 +56,17 @@ function Invoke-ApiStatusWithRetry([string]$method, [string]$url, [string]$token
   return $status
 }
 
+$memberEmail = if ($env:MATRIX_MEMBER_EMAIL) { $env:MATRIX_MEMBER_EMAIL } else { 'colaborador1@empresa.com' }
+$supervisorEmail = if ($env:MATRIX_SUPERVISOR_EMAIL) { $env:MATRIX_SUPERVISOR_EMAIL } else { 'supervisor1@empresa.com' }
+$hrEmail = if ($env:MATRIX_HR_EMAIL) { $env:MATRIX_HR_EMAIL } else { 'rh@empresa.com' }
+$adminEmail = if ($env:MATRIX_ADMIN_EMAIL) { $env:MATRIX_ADMIN_EMAIL } else { 'admin@empresa.com' }
+
 $tokens = @{
   none = ''
-  member = Get-Token 'colaborador1@empresa.com' 'colab123456'
-  supervisor = Get-Token 'supervisor1@empresa.com' 'super123456'
-  hr = Get-Token 'rh@empresa.com' 'rh123456'
-  admin = Get-Token 'admin@empresa.com' 'admin123456'
+  member = Get-Token $memberEmail $env:MATRIX_MEMBER_PASSWORD
+  supervisor = Get-Token $supervisorEmail $env:MATRIX_SUPERVISOR_PASSWORD
+  hr = Get-Token $hrEmail $env:MATRIX_HR_PASSWORD
+  admin = Get-Token $adminEmail $env:MATRIX_ADMIN_PASSWORD
 }
 
 $users = @()

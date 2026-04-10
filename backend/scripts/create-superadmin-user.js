@@ -11,9 +11,9 @@ const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-const DEFAULT_EMAIL = 'superadmin@empresa.com';
-const DEFAULT_PASSWORD = 'superadmin123';
-const DEFAULT_NAME = 'Super Admin';
+const DEFAULT_EMAIL = process.env.SEED_SUPERADMIN_EMAIL || '';
+const DEFAULT_PASSWORD = process.env.SEED_SUPERADMIN_PASSWORD || '';
+const DEFAULT_NAME = process.env.SEED_SUPERADMIN_NAME || 'Super Admin';
 
 const normalizeArg = (value, fallback) => {
   if (!value) return fallback;
@@ -86,6 +86,9 @@ const ensureSuperAdminUser = async ({ email, password, name }) => {
         organizationAdminId: null,
         adminSeatLimit: null,
         adminExtraSeatPrice: null,
+        adminPlanId: null,
+        adminPlanStatus: 'INACTIVE',
+        adminPlanLinkedAt: null,
       },
     });
   } else {
@@ -101,6 +104,9 @@ const ensureSuperAdminUser = async ({ email, password, name }) => {
           organizationAdminId: null,
           adminSeatLimit: null,
           adminExtraSeatPrice: null,
+          adminPlanId: null,
+          adminPlanStatus: 'INACTIVE',
+          adminPlanLinkedAt: null,
         },
       });
     } else {
@@ -114,6 +120,9 @@ const ensureSuperAdminUser = async ({ email, password, name }) => {
           organizationAdminId: null,
           adminSeatLimit: null,
           adminExtraSeatPrice: null,
+          adminPlanId: null,
+          adminPlanStatus: 'INACTIVE',
+          adminPlanLinkedAt: null,
         },
       });
     }
@@ -131,6 +140,12 @@ const ensureSuperAdminUser = async ({ email, password, name }) => {
   const email = normalizeArg(process.argv[2], DEFAULT_EMAIL);
   const password = normalizeArg(process.argv[3], DEFAULT_PASSWORD);
   const name = normalizeArg(process.argv[4], DEFAULT_NAME);
+
+  if (!email || !password) {
+    console.error('❌ Informe email/senha por argumentos ou configure SEED_SUPERADMIN_EMAIL e SEED_SUPERADMIN_PASSWORD no .env');
+    process.exitCode = 1;
+    return;
+  }
 
   try {
     const user = await ensureSuperAdminUser({ email, password, name });

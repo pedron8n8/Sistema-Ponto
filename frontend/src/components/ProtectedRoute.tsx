@@ -1,20 +1,26 @@
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { useLanguage } from '../context/LanguageContext'
+import { usePlan } from '../hooks/usePlan'
+import type { PlanCode } from '../hooks/usePlan'
+import { useTranslation } from 'react-i18next'
 
 type Props = {
   children: React.ReactNode
   allowedRoles?: Array<'SUPERADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'>
+  allowedPlans?: PlanCode | PlanCode[]
 }
 
-const ProtectedRoute = ({ children, allowedRoles }: Props) => {
+const ProtectedRoute = ({ children, allowedRoles, allowedPlans }: Props) => {
   const { session, loading, profile } = useAuth()
-  const { tr } = useLanguage()
+  const { hasPlan } = usePlan()
+  const { t: i18nT, i18n } = useTranslation()
+  const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
+  const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
 
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">
-        {tr('Loading...', 'Carregando...')}
+        {t('Loading...', 'Carregando...')}
       </div>
     )
   }
@@ -24,6 +30,10 @@ const ProtectedRoute = ({ children, allowedRoles }: Props) => {
   }
 
   if (allowedRoles && (!profile || !allowedRoles.includes(profile.role))) {
+    return <Navigate to="/app" replace />
+  }
+
+  if (allowedPlans && !hasPlan(allowedPlans)) {
     return <Navigate to="/app" replace />
   }
 

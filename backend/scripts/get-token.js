@@ -153,8 +153,14 @@ if (command === 'refresh') {
   }
 } else {
   // Login com email e senha
-  const email = args[0] || 'admin@empresa.com';
-  const password = args[1] || 'admin123456';
+  const email = args[0] || process.env.TEST_LOGIN_EMAIL || '';
+  const password = args[1] || process.env.TEST_LOGIN_PASSWORD || '';
+
+  if (!email || !password) {
+    console.error('❌ Informe email/senha por argumentos ou configure TEST_LOGIN_EMAIL e TEST_LOGIN_PASSWORD no .env');
+    process.exitCode = 1;
+    return;
+  }
 
   login(email, password);
 }

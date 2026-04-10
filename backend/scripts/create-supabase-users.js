@@ -12,32 +12,32 @@ const supabaseAdmin = createClient(
 
 const users = [
   {
-    email: 'admin@empresa.com',
-    password: 'admin123456',
+    email: process.env.SEED_ADMIN_EMAIL || 'admin@empresa.com',
+    password: process.env.SEED_ADMIN_PASSWORD || '',
     name: 'Administrador',
     role: 'ADMIN',
   },
   {
-    email: 'supervisor1@empresa.com',
-    password: 'super123456',
+    email: process.env.SEED_SUPERVISOR1_EMAIL || 'supervisor1@empresa.com',
+    password: process.env.SEED_SUPERVISOR1_PASSWORD || '',
     name: 'Supervisor 1',
     role: 'SUPERVISOR',
   },
   {
-    email: 'supervisor2@empresa.com',
-    password: 'super123456',
+    email: process.env.SEED_SUPERVISOR2_EMAIL || 'supervisor2@empresa.com',
+    password: process.env.SEED_SUPERVISOR2_PASSWORD || '',
     name: 'Supervisor 2',
     role: 'SUPERVISOR',
   },
   {
-    email: 'colaborador1@empresa.com',
-    password: 'colab123456',
+    email: process.env.SEED_MEMBER1_EMAIL || 'colaborador1@empresa.com',
+    password: process.env.SEED_MEMBER1_PASSWORD || '',
     name: 'Colaborador 1',
     role: 'MEMBER',
   },
   {
-    email: 'colaborador2@empresa.com',
-    password: 'colab123456',
+    email: process.env.SEED_MEMBER2_EMAIL || 'colaborador2@empresa.com',
+    password: process.env.SEED_MEMBER2_PASSWORD || '',
     name: 'Colaborador 2',
     role: 'MEMBER',
   },
@@ -51,6 +51,11 @@ async function createUsers() {
   for (const userData of users) {
     try {
       console.log(`📧 Criando: ${userData.email}...`);
+
+      if (!userData.password) {
+        console.log('   ⚠️  Senha não informada no ambiente. Usuário ignorado.\n');
+        continue;
+      }
 
       const { data, error } = await supabaseAdmin.auth.admin.createUser({
         email: userData.email,
@@ -67,7 +72,7 @@ async function createUsers() {
       } else {
         console.log(`   ✅ Criado! ID: ${data.user.id}`);
         console.log(`   📝 Email: ${data.user.email}`);
-        console.log(`   🔐 Senha: ${userData.password}\n`);
+        console.log('   🔐 Senha: definida via variável de ambiente\n');
 
         createdUsers.push({
           id: data.user.id,
@@ -100,7 +105,7 @@ async function createUsers() {
     console.log('\n🔑 Credenciais criadas:');
     console.log('─────────────────────────────────────────────────────');
     users.forEach((user) => {
-      console.log(`  ${user.email} / ${user.password}`);
+      console.log(`  ${user.email} / senha definida via .env`);
     });
     console.log('─────────────────────────────────────────────────────\n');
   }

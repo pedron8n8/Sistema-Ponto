@@ -1,5 +1,5 @@
 const express = require('express');
-const { authMiddleware, roleCheck } = require('../middlewares');
+const { authMiddleware, roleCheck, requirePlan } = require('../middlewares');
 const {
   getTimeEntryAuditLog,
   getUserTimeEntries,
@@ -99,12 +99,12 @@ router.patch('/users/:userId/work-settings', updateUserWorkSettings);
  * GET /admin/location-settings
  * Configuração de método de validação e geolocalização do estabelecimento
  */
-router.get('/location-settings', getLocationSettings);
+router.get('/location-settings', requirePlan(['GROWTH', 'PRO']), getLocationSettings);
 
 /**
  * PATCH /admin/location-settings
  * Atualiza método de validação e localização do estabelecimento
  */
-router.patch('/location-settings', updateLocationSettings);
+router.patch('/location-settings', requirePlan(['GROWTH', 'PRO']), updateLocationSettings);
 
 module.exports = router;

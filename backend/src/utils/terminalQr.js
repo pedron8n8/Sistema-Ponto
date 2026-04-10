@@ -7,7 +7,7 @@ const TOKEN_TTL_SECONDS = Math.max(
   Number(process.env.TERMINAL_QR_TTL_SECONDS || TOKEN_TTL_DAYS * 24 * 60 * 60)
 );
 const TOKEN_SINGLE_USE = /^(1|true|yes|on)$/i.test(String(process.env.TERMINAL_QR_SINGLE_USE || 'false'));
-const SIGNING_KEY = process.env.TERMINAL_QR_SIGNING_KEY || process.env.JWT_SECRET || 'terminal-qr-dev-key';
+const SIGNING_KEY = process.env.TERMINAL_QR_SIGNING_KEY || process.env.JWT_SECRET;
 
 const consumedFallback = new Map();
 
@@ -54,6 +54,10 @@ const findTerminal = ({ terminalId }) =>
   terminalRegistry.find((terminal) => terminal.id === String(terminalId || '').trim()) || null;
 
 const issueTerminalQrToken = ({ terminalId }) => {
+  if (!SIGNING_KEY) {
+    return { ok: false, reason: 'MISSING_QR_SIGNING_KEY' };
+  }
+
   const terminal = findTerminal({ terminalId });
   if (!terminal) {
     return { ok: false, reason: 'TERMINAL_NOT_FOUND' };
@@ -123,6 +127,10 @@ const consumeReplayKey = async ({ replayKey, ttlSeconds }) => {
 };
 
 const consumeTerminalQrToken = async ({ token }) => {
+  if (!SIGNING_KEY) {
+    return { ok: false, reason: 'MISSING_QR_SIGNING_KEY' };
+  }
+
   const safeToken = String(token || '').trim();
   if (!safeToken) {
     return { ok: false, reason: 'MISSING_QR_TOKEN' };

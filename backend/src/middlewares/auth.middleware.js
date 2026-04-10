@@ -44,6 +44,13 @@ const authMiddleware = async (req, res, next) => {
             role: true,
           },
         },
+        adminPlan: true,
+        organizationAdmin: {
+          select: {
+            adminPlan: true,
+            adminPlanStatus: true,
+          },
+        },
       },
     });
 
@@ -54,6 +61,24 @@ const authMiddleware = async (req, res, next) => {
         message: 'Usuário não cadastrado no sistema. Contate o administrador.',
       });
     }
+
+    // Calcula o plano atual do usuário baseado no admin dono do workspace
+    let currentPlan = 'BASE';
+    let currentPlanStatus = 'INACTIVE';
+
+    if (user.role === 'SUPERADMIN') {
+      currentPlan = 'PRO'; // Superadmin tem tudo
+      currentPlanStatus = 'ACTIVE';
+    } else if (user.role === 'ADMIN') {
+      currentPlan = user.adminPlan?.code || 'BASE';
+      currentPlanStatus = user.adminPlanStatus;
+    } else if (user.organizationAdmin) {
+      currentPlan = user.organizationAdmin.adminPlan?.code || 'BASE';
+      currentPlanStatus = user.organizationAdmin.adminPlanStatus;
+    }
+
+    user.currentPlan = currentPlan;
+    user.currentPlanStatus = currentPlanStatus;
 
     // Adiciona o usuário e o token na requisição
     req.user = user;

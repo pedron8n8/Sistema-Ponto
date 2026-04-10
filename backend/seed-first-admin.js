@@ -22,14 +22,38 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
+const ensureDefaultAdminPlan = async () => {
+  return prisma.adminPlan.upsert({
+    where: { code: 'BASE' },
+    update: {
+      name: 'Plano Base',
+      isActive: true,
+    },
+    create: {
+      code: 'BASE',
+      name: 'Plano Base',
+      description: 'Plano padrão para administradores',
+      monthlyPrice: 0,
+      isActive: true,
+    },
+  });
+};
+
 async function seedFirstAdmin() {
   try {
     console.log('🚀 Criando primeiro usuário ADMIN no sistema...\n');
 
-    // ALTERE AQUI com as credenciais do Supabase
-    const email = 'pedron8n8@gmail.com';
-    const password = 'Pedro397!'; // Use a mesma senha do Supabase
-    const name = 'Pedro'; // Nome do admin
+    const email = process.env.INITIAL_ADMIN_EMAIL;
+    const password = process.env.INITIAL_ADMIN_PASSWORD;
+    const name = process.env.INITIAL_ADMIN_NAME || 'Admin';
+
+    if (!email || !password) {
+      console.error('❌ Defina INITIAL_ADMIN_EMAIL e INITIAL_ADMIN_PASSWORD no backend/.env antes de executar este script.');
+      process.exitCode = 1;
+      return;
+    }
+
+    const defaultAdminPlan = await ensureDefaultAdminPlan();
 
     // 1. Faz login no Supabase para obter o ID do usuário
     console.log('1️⃣ Autenticando no Supabase...');
@@ -64,16 +88,22 @@ async function seedFirstAdmin() {
       console.log('      - Email:', existingUser.email);
       console.log('      - Nome:', existingUser.name);
       console.log('      - Role:', existingUser.role);
-      
-      // Atualiza para ADMIN se não for
-      if (existingUser.role !== 'ADMIN') {
-        console.log('\n3️⃣ Atualizando role para ADMIN...');
-        const updated = await prisma.user.update({
-          where: { id: supabaseUserId },
-          data: { role: 'ADMIN' }
-        });
-        console.log('   ✅ Role atualizada para ADMIN!');
-      }
+
+      console.log('\n3️⃣ Garantindo vínculo ADMIN + plano...');
+      await prisma.user.update({
+        where: { id: supabaseUserId },
+        data: {
+          email: supabaseEmail,
+          name,
+          role: 'ADMIN',
+          supervisorId: null,
+          organizationAdminId: supabaseUserId,
+          adminPlanId: defaultAdminPlan.id,
+          adminPlanStatus: existingUser.adminPlanStatus || 'ACTIVE',
+          adminPlanLinkedAt: existingUser.adminPlanLinkedAt || new Date(),
+        }
+      });
+      console.log('   ✅ Usuário atualizado para regra nova (self-admin + plano).');
       
       return;
     }
@@ -88,7 +118,11 @@ async function seedFirstAdmin() {
         email: supabaseEmail,
         name: name,
         role: 'ADMIN',
-        supervisorId: null
+        supervisorId: null,
+        organizationAdminId: supabaseUserId,
+        adminPlanId: defaultAdminPlan.id,
+        adminPlanStatus: 'ACTIVE',
+        adminPlanLinkedAt: new Date(),
       }
     });
 

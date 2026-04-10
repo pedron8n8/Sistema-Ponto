@@ -1,12 +1,12 @@
 Super ADMIN
- pedron8n8@gmail.com / pedro123
+ definir via SEED_SUPERADMIN_EMAIL / SEED_SUPERADMIN_PASSWORD no .env
 
 ─────────────────────────────────────────────────────
-  admin@empresa.com / admin123456
-  supervisor1@empresa.com / super123456
-  supervisor2@empresa.com / super123456
-  rh@empresa.com / rh123456
-  colaborador1@empresa.com / colab123456
-  colaborador2@empresa.com / colab123456
+  admin@empresa.com / definir senha segura no seu ambiente
+  supervisor1@empresa.com / definir senha segura no seu ambiente
+  supervisor2@empresa.com / definir senha segura no seu ambiente
+  rh@empresa.com / definir senha segura no seu ambiente
+  colaborador1@empresa.com / definir senha segura no seu ambiente
+  colaborador2@empresa.com / definir senha segura no seu ambiente
 
 ─────────────────────────────────────────────────────

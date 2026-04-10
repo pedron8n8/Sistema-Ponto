@@ -26,13 +26,34 @@ async function main() {
   // Use o painel do Supabase ou a API para criar os usuários
   // Os IDs abaixo são exemplos - substitua pelos IDs reais do Supabase
 
+  const adminUserId = '70fd1122-4764-4f55-8be9-018801c4d1ce';
+
+  const adminPlan = await prisma.adminPlan.upsert({
+    where: { code: 'BASE' },
+    update: {
+      name: 'Plano Base',
+      isActive: true,
+    },
+    create: {
+      code: 'BASE',
+      name: 'Plano Base',
+      description: 'Plano padrão para administradores',
+      monthlyPrice: 0,
+      isActive: true,
+    },
+  });
+
   const users = [
     {
-      id: '70fd1122-4764-4f55-8be9-018801c4d1ce',
+      id: adminUserId,
       email: 'admin@empresa.com',
       name: 'Administrador',
       role: 'ADMIN',
       supervisorId: null,
+      organizationAdminId: adminUserId,
+      adminPlanId: adminPlan.id,
+      adminPlanStatus: 'ACTIVE',
+      adminPlanLinkedAt: new Date(),
     },
     {
       id: '0baa0bc9-6092-422c-a3a6-81d8dfbba261',
@@ -40,6 +61,7 @@ async function main() {
       name: 'Supervisor 1',
       role: 'SUPERVISOR',
       supervisorId: null,
+      organizationAdminId: adminUserId,
     },
     {
       id: '2af82c10-3d3b-4ca5-9e42-bff7ddae4ff2',
@@ -47,6 +69,7 @@ async function main() {
       name: 'Supervisor 2',
       role: 'SUPERVISOR',
       supervisorId: null,
+      organizationAdminId: adminUserId,
     },
     {
       id: '50d2c9d7-ab40-44ba-8858-e161b1bb929f',
@@ -54,6 +77,7 @@ async function main() {
       name: 'Colaborador 1',
       role: 'MEMBER',
       supervisorId: '0baa0bc9-6092-422c-a3a6-81d8dfbba261', // Supervisor 1
+      organizationAdminId: adminUserId,
     },
     {
       id: '892eced6-7521-4d6d-8b2f-53b788c8341b',
@@ -61,6 +85,7 @@ async function main() {
       name: 'Colaborador 2',
       role: 'MEMBER',
       supervisorId: '0baa0bc9-6092-422c-a3a6-81d8dfbba261', // Supervisor 1
+      organizationAdminId: adminUserId,
     },
   ];
 

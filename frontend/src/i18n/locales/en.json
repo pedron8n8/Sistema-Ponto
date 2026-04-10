@@ -1,0 +1,226 @@
+{
+  "brand": {
+    "name": "SystemaPonto",
+    "product": "Attendance Intelligence"
+  },
+  "language": {
+    "switchLabel": "Language selector",
+    "en": "EN",
+    "pt": "PT"
+  },
+  "common": {
+    "login": "Login",
+    "signUp": "Sign up",
+    "getStarted": "Get started free",
+    "viewPricing": "View pricing",
+    "subscribeNow": "Subscribe now",
+    "mostPopular": "Most Popular",
+    "allRights": "All rights reserved.",
+    "openApp": "Open app"
+  },
+  "seo": {
+    "landing": {
+      "title": "SystemaPonto | Real-time Attendance Intelligence",
+      "description": "Track attendance in real time with approvals, geolocation, face verification, terminal QR, reports, and vacation workflows."
+    },
+    "pricing": {
+      "title": "Pricing | SystemaPonto",
+      "description": "Choose the right monthly plan for your team with transparent seat-based pricing and direct Stripe checkout links."
+    },
+    "privacy": {
+      "title": "Privacy Policy | SystemaPonto",
+      "description": "Understand how SystemaPonto processes attendance, geolocation, and facial verification data with GDPR/LGPD-ready principles."
+    },
+    "terms": {
+      "title": "Terms of Service | SystemaPonto",
+      "description": "Review acceptable use, account responsibilities, cancellation, refund policy, and liability limitations for SystemaPonto."
+    },
+    "login": {
+      "title": "Login | SystemaPonto",
+      "description": "Sign in with Google or email and password to access your attendance workspace."
+    }
+  },
+  "publicNav": {
+    "features": "Features",
+    "pricing": "Pricing",
+    "login": "Login",
+    "signUp": "Sign up"
+  },
+  "footer": {
+    "privacy": "Privacy Policy",
+    "terms": "Terms of Service",
+    "pricing": "Pricing",
+    "contact": "Contact",
+    "contactValue": "support@systemaponto.com",
+    "copyright": "SystemaPonto helps operations teams run accurate attendance workflows."
+  },
+  "auth": {
+    "eyebrow": "Secure access",
+    "title": "Access your workspace",
+    "subtitle": "Sign in with Google or use your email and password.",
+    "emailLabel": "Work email",
+    "emailPlaceholder": "name@company.com",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "At least 6 characters",
+    "googleButton": "Sign in with Google",
+    "emailButton": "Sign in with email/password",
+    "createButton": "Create account",
+    "googleLoading": "Redirecting to Google...",
+    "emailLoading": "Signing in...",
+    "createLoading": "Creating account...",
+    "signupSuccess": "Account created. Check your inbox for verification if required, then sign in.",
+    "hint": "Use the same corporate email mapped in your workspace.",
+    "heroTitle": "Stop chasing timesheets.",
+    "heroText": "Run attendance with face verification, geolocation checks, terminal QR validation, and complete audit trails.",
+    "oauthFail": "Unable to start Google sign-in flow.",
+    "signinFail": "Failed to sign in with email/password.",
+    "signupFail": "Failed to create account.",
+    "linksTitle": "Need context first?",
+    "linksSubtitle": "Explore product capabilities and pricing before authentication."
+  },
+  "landing": {
+    "hero": {
+      "badge": "Built for attendance operations",
+      "headline": "Stop using spreadsheets. Track your team's attendance in real time.",
+      "subheadline": "SystemaPonto combines secure clock events, approvals, and operational analytics in one workflow.",
+      "primary": "Get started free",
+      "secondary": "View pricing"
+    },
+    "proof": {
+      "availabilityLabel": "Platform reliability",
+      "availabilityValue": "99.9%",
+      "latencyLabel": "Real-time updates",
+      "latencyValue": "< 2s",
+      "teamsLabel": "Teams onboarded",
+      "teamsValue": "120+"
+    },
+    "features": {
+      "eyebrow": "Based on real product modules",
+      "title": "Everything your team needs to control attendance",
+      "subtitle": "Mapped to actual app workflows: time entries, approvals, overtime, vacation flow, reports, and admin governance.",
+      "clockTitle": "Real-time clock in/out",
+      "clockDesc": "Capture entries, status changes, and worked-hour summaries with a reliable timeline.",
+      "faceTitle": "Face verification + liveness",
+      "faceDesc": "Use face-api.js embeddings with guided checks before attendance actions.",
+      "geoTitle": "Geolocation and terminal QR",
+      "geoDesc": "Validate attendance by GPS radius or terminal QR mode with anti-replay controls.",
+      "approvalTitle": "Supervisor approvals",
+      "approvalDesc": "Approve, reject, or request edits with comments and complete audit history.",
+      "vacationTitle": "Vacation workflow",
+      "vacationDesc": "Route requests through supervisor and HR stages, with calendar visibility.",
+      "reportTitle": "Reports and exports",
+      "reportDesc": "Generate async CSV exports and monitor key indicators without blocking operations."
+    },
+    "how": {
+      "eyebrow": "How it works",
+      "title": "Three simple steps",
+      "step1Title": "Capture attendance securely",
+      "step1Desc": "Employees clock in from validated channels with optional facial verification.",
+      "step2Title": "Review and approve",
+      "step2Desc": "Supervisors and admins manage pending entries, overtime alerts, and exceptions.",
+      "step3Title": "Export and decide",
+      "step3Desc": "Use dashboards and CSV reports to drive payroll and operational decisions."
+    },
+    "testimonials": {
+      "eyebrow": "Social proof",
+      "title": "Operations teams replaced manual control with confidence",
+      "quote1": "We reduced payroll disputes in the first month because each record has context and approval logs.",
+      "author1": "Marina Costa",
+      "role1": "HR Manager, UrbanFoods",
+      "quote2": "Terminal QR and geolocation stopped attendance ambiguity in distributed shifts.",
+      "author2": "Daniel Reed",
+      "role2": "Operations Lead, Nova Dispatch",
+      "quote3": "Vacation workflow and overtime alerts made supervisor routines significantly faster.",
+      "author3": "Bianca Mello",
+      "role3": "People Ops, Atlas Manufacturing"
+    },
+    "pricingPreview": {
+      "eyebrow": "Embedded pricing",
+      "title": "Choose your monthly plan",
+      "subtitle": "Seat-based plans with direct checkout links."
+    },
+    "finalCta": {
+      "title": "Ready to modernize attendance control?",
+      "subtitle": "Launch with secure capture, automated approvals, and actionable reporting.",
+      "primary": "Get started free",
+      "secondary": "View full pricing"
+    }
+  },
+  "pricing": {
+    "eyebrow": "Pricing",
+    "title": "Transparent monthly plans",
+    "subtitle": "All plans include attendance core, approvals, and reporting workflows.",
+    "period": "/mo",
+    "starterName": "Starter",
+    "starterPrice": "$30",
+    "starterSeats": "3 seats",
+    "starterDescription": "For small teams replacing manual attendance routines.",
+    "growthName": "Growth",
+    "growthPrice": "$40",
+    "growthSeats": "5 seats",
+    "growthDescription": "Best for growing teams with active supervisor workflows.",
+    "proName": "Pro",
+    "proPrice": "$50",
+    "proSeats": "7 seats",
+    "proDescription": "For operations with broader control and visibility needs.",
+    "featureStarter1": "Basic clock in/out via Web & App",
+    "featureStarter2": "Simple supervisor approvals",
+    "featureStarter3": "Standard CSV reports",
+    "featureStarter4": "6-month data history",
+    "featureGrowth1": "Everything in Starter",
+    "featureGrowth2": "Geolocation tracking (GPS)",
+    "featureGrowth3": "Terminal QR for physical sites",
+    "featureGrowth4": "Vacation & overtime workflows",
+    "featurePro1": "Everything in Growth",
+    "featurePro2": "Facial verification with liveness",
+    "featurePro3": "Real-time proactive alerts",
+    "featurePro4": "API access & 5-year retention",
+    "cta": "Subscribe now",
+    "missingCheckout": "Checkout link not configured",
+    "envNote": "Set VITE_STRIPE_LINK_STARTER, VITE_STRIPE_LINK_GROWTH, and VITE_STRIPE_LINK_PRO in your frontend environment."
+  },
+  "privacy": {
+    "eyebrow": "Privacy Policy",
+    "title": "Privacy Policy",
+    "updated": "Last updated: April 8, 2026",
+    "intro": "This policy explains how SystemaPonto collects, uses, stores, and protects personal data while providing attendance and workforce management services.",
+    "section1Title": "1. Data Collection",
+    "section1Body": "We process account data (name, email, role), attendance records (clock-in/out timestamps, notes, status), technical metadata (IP and device information), optional geolocation coordinates, vacation and approval workflow records, and facial verification vectors generated through face-api.js. We do not store raw facial video as a persistent attendance record.",
+    "section2Title": "2. Data Usage",
+    "section2Body": "Data is used to authenticate users via Supabase Auth, validate attendance events, support supervisor/admin approvals, calculate worked/overtime hours, process vacation requests, generate reports, and maintain system integrity and security monitoring.",
+    "section3Title": "3. Storage and Security",
+    "section3Body": "Operational records are stored in PostgreSQL and protected by role-based access controls. Authentication is handled by Supabase. We apply access logging, request metadata tracking, and least-privilege controls to reduce unauthorized access risk.",
+    "section4Title": "4. Cookies and Local Storage",
+    "section4Body": "SystemaPonto uses browser storage for session continuity, language preferences, and product behavior required for authenticated usage. These technologies are used for platform functionality, not behavioral advertising.",
+    "section5Title": "5. User Rights (GDPR/LGPD)",
+    "section5Body": "Depending on jurisdiction, users may request access, correction, portability, restriction, or deletion of personal data, subject to legal and operational retention requirements. Requests can be routed through the customer account administrator.",
+    "section6Title": "6. Data Retention",
+    "section6Body": "Attendance and audit records are retained according to contractual and legal obligations. Report exports may follow platform retention windows. Data no longer required is deleted or anonymized according to internal procedures.",
+    "section7Title": "7. International Transfers",
+    "section7Body": "When infrastructure providers operate across regions, data may be processed in other jurisdictions under contractual safeguards and applicable data protection standards.",
+    "section8Title": "8. Contact",
+    "section8Body": "For privacy requests or security concerns, contact {{email}}."
+  },
+  "terms": {
+    "eyebrow": "Terms of Service",
+    "title": "Terms of Service",
+    "updated": "Last updated: April 8, 2026",
+    "intro": "These Terms govern access to and use of SystemaPonto by customer organizations and their authorized users.",
+    "section1Title": "1. Acceptable Use",
+    "section1Body": "You agree to use the platform only for lawful workforce and attendance management activities. Attempts to bypass security controls, scrape restricted data, or misuse authentication mechanisms are prohibited.",
+    "section2Title": "2. Account Responsibilities",
+    "section2Body": "Customers are responsible for managing user permissions, safeguarding credentials, and ensuring that submitted attendance and workforce information is accurate and authorized.",
+    "section3Title": "3. Subscription, Cancellation, and Refunds",
+    "section3Body": "Paid plans renew according to the selected billing cycle. Customers can cancel renewal at any time before the next billing date. Refunds, when applicable, follow the commercial policy and local mandatory consumer rights.",
+    "section4Title": "4. Service Availability",
+    "section4Body": "We aim for high availability but cannot guarantee uninterrupted service in all circumstances, including maintenance windows, third-party outages, or force majeure events.",
+    "section5Title": "5. Data and Compliance",
+    "section5Body": "Customers remain responsible for compliance with local labor and privacy regulations when configuring attendance, geolocation, and biometric verification policies.",
+    "section6Title": "6. Limitation of Liability",
+    "section6Body": "To the maximum extent permitted by law, SystemaPonto and its providers are not liable for indirect, incidental, special, consequential, or punitive damages, including lost profits or business interruption.",
+    "section7Title": "7. Changes to Terms",
+    "section7Body": "We may update these Terms periodically. Continued use after an effective update constitutes acceptance of the revised Terms.",
+    "section8Title": "8. Contact",
+    "section8Body": "For legal or contractual questions, contact {{email}}."
+  }
+}

@@ -11,9 +11,10 @@ const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-const DEFAULT_EMAIL = 'rh@empresa.com';
-const DEFAULT_PASSWORD = 'rh123456';
-const DEFAULT_NAME = 'RH Empresa';
+const DEFAULT_EMAIL = process.env.SEED_RH_EMAIL || '';
+const DEFAULT_PASSWORD = process.env.SEED_RH_PASSWORD || '';
+const DEFAULT_NAME = process.env.SEED_RH_NAME || 'RH Empresa';
+const DEFAULT_ORGANIZATION_ADMIN_ID = process.env.SEED_RH_ADMIN_ID || '';
 
 const normalizeArg = (value, fallback) => {
   if (!value) return fallback;
@@ -42,7 +43,41 @@ const getSupabaseUserByEmail = async (email) => {
   return null;
 };
 
-const ensureRhUser = async ({ email, password, name }) => {
+const resolveOrganizationAdminId = async (adminIdCandidate) => {
+  if (adminIdCandidate) {
+    const adminById = await prisma.user.findUnique({
+      where: { id: adminIdCandidate },
+      select: { id: true, role: true, adminPlanId: true },
+    });
+
+    if (!adminById || adminById.role !== 'ADMIN') {
+      throw new Error('SEED_RH_ADMIN_ID/arg adminId precisa apontar para um usuário ADMIN existente.');
+    }
+
+    if (!adminById.adminPlanId) {
+      throw new Error('O ADMIN informado não possui plano vinculado.');
+    }
+
+    return adminById.id;
+  }
+
+  const fallbackAdmin = await prisma.user.findFirst({
+    where: {
+      role: 'ADMIN',
+      adminPlanId: { not: null },
+    },
+    select: { id: true },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  if (!fallbackAdmin) {
+    throw new Error('Nenhum ADMIN com plano vinculado foi encontrado para associar o usuário RH.');
+  }
+
+  return fallbackAdmin.id;
+};
+
+const ensureRhUser = async ({ email, password, name, organizationAdminId }) => {
   let supabaseUser = await getSupabaseUserByEmail(email);
 
   if (!supabaseUser) {
@@ -53,6 +88,7 @@ const ensureRhUser = async ({ email, password, name }) => {
       user_metadata: {
         name,
         role: 'HR',
+        organizationAdminId,
       },
     });
 
@@ -69,6 +105,7 @@ const ensureRhUser = async ({ email, password, name }) => {
         ...(supabaseUser.user_metadata || {}),
         name,
         role: 'HR',
+        organizationAdminId,
       },
     });
   }
@@ -83,6 +120,7 @@ const ensureRhUser = async ({ email, password, name }) => {
         name,
         role: 'HR',
         supervisorId: null,
+        organizationAdminId,
       },
     });
   } else {
@@ -95,6 +133,7 @@ const ensureRhUser = async ({ email, password, name }) => {
           name,
           role: 'HR',
           supervisorId: null,
+          organizationAdminId,
         },
       });
     } else {
@@ -105,6 +144,7 @@ const ensureRhUser = async ({ email, password, name }) => {
           name,
           role: 'HR',
           supervisorId: null,
+          organizationAdminId,
         },
       });
     }
@@ -115,6 +155,7 @@ const ensureRhUser = async ({ email, password, name }) => {
     email,
     name,
     role: 'HR',
+    organizationAdminId,
   };
 };
 
@@ -122,14 +163,23 @@ const ensureRhUser = async ({ email, password, name }) => {
   const email = normalizeArg(process.argv[2], DEFAULT_EMAIL);
   const password = normalizeArg(process.argv[3], DEFAULT_PASSWORD);
   const name = normalizeArg(process.argv[4], DEFAULT_NAME);
+  const adminIdInput = normalizeArg(process.argv[5], DEFAULT_ORGANIZATION_ADMIN_ID);
+
+  if (!email || !password) {
+    console.error('❌ Informe email/senha por argumentos ou configure SEED_RH_EMAIL e SEED_RH_PASSWORD no .env');
+    process.exitCode = 1;
+    return;
+  }
 
   try {
-    const user = await ensureRhUser({ email, password, name });
+    const organizationAdminId = await resolveOrganizationAdminId(adminIdInput);
+    const user = await ensureRhUser({ email, password, name, organizationAdminId });
 
     console.log('✅ Usuário RH configurado com sucesso');
     console.log(`   Email: ${user.email}`);
     console.log(`   Nome: ${user.name}`);
     console.log(`   Role: ${user.role}`);
+    console.log(`   Admin responsável: ${user.organizationAdminId}`);
     console.log(`   ID: ${user.id}`);
   } catch (error) {
     console.error('❌ Falha ao configurar usuário RH:', error.message || error);

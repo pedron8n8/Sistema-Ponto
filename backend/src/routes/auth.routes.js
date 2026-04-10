@@ -21,6 +21,8 @@ router.get('/me', authMiddleware, (req, res) => {
       photoUrl,
       photoUpdatedAt: req.user.photoUpdatedAt,
       createdAt: req.user.createdAt,
+      currentPlan: req.user.currentPlan,
+      currentPlanStatus: req.user.currentPlanStatus,
     },
   });
 });

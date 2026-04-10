@@ -16,6 +16,11 @@ enum Role {
   MEMBER
 }
 
+enum AdminPlanStatus {
+  ACTIVE
+  INACTIVE
+}
+
 enum EntryStatus {
   PENDING
   APPROVED
@@ -74,6 +79,10 @@ model User {
   organizationMembers User[]    @relation("AdminOrganization")
   adminSeatLimit Int?
   adminExtraSeatPrice Decimal?  @db.Decimal(10, 2)
+  adminPlanId      String?
+  adminPlan        AdminPlan?     @relation(fields: [adminPlanId], references: [id])
+  adminPlanStatus  AdminPlanStatus @default(INACTIVE)
+  adminPlanLinkedAt DateTime?
   timeEntries     TimeEntry[]
   bankHoursEntries BankHoursEntry[]
   vacationRequests VacationRequest[] @relation("VacationRequester")
@@ -87,6 +96,19 @@ model User {
   @@index([role])
   @@index([supervisorId])
   @@index([organizationAdminId])
+  @@index([adminPlanId])
+}
+
+model AdminPlan {
+  id           String   @id @default(uuid())
+  code         String   @unique
+  name         String
+  description  String?
+  monthlyPrice Decimal  @default(0) @db.Decimal(10, 2)
+  isActive     Boolean  @default(true)
+  admins       User[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model TimeEntry {

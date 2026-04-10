@@ -1,0 +1,226 @@
+{
+  "brand": {
+    "name": "SystemaPonto",
+    "product": "Inteligencia de Presenca"
+  },
+  "language": {
+    "switchLabel": "Seletor de idioma",
+    "en": "EN",
+    "pt": "PT"
+  },
+  "common": {
+    "login": "Entrar",
+    "signUp": "Criar conta",
+    "getStarted": "Comecar gratis",
+    "viewPricing": "Ver precos",
+    "subscribeNow": "Assinar agora",
+    "mostPopular": "Mais popular",
+    "allRights": "Todos os direitos reservados.",
+    "openApp": "Abrir app"
+  },
+  "seo": {
+    "landing": {
+      "title": "SystemaPonto | Presenca em tempo real",
+      "description": "Acompanhe presenca em tempo real com aprovacoes, geolocalizacao, verificacao facial, QR de terminal, relatorios e fluxo de ferias."
+    },
+    "pricing": {
+      "title": "Precos | SystemaPonto",
+      "description": "Escolha o plano mensal ideal para sua equipe com precos por assento e links diretos para checkout Stripe."
+    },
+    "privacy": {
+      "title": "Politica de Privacidade | SystemaPonto",
+      "description": "Entenda como o SystemaPonto trata dados de presenca, geolocalizacao e verificacao facial com principios prontos para GDPR/LGPD."
+    },
+    "terms": {
+      "title": "Termos de Uso | SystemaPonto",
+      "description": "Veja uso aceitavel, responsabilidades de conta, cancelamento, politica de reembolso e limitacao de responsabilidade."
+    },
+    "login": {
+      "title": "Login | SystemaPonto",
+      "description": "Entre com Google ou email e senha para acessar seu workspace de controle de ponto."
+    }
+  },
+  "publicNav": {
+    "features": "Recursos",
+    "pricing": "Precos",
+    "login": "Login",
+    "signUp": "Criar conta"
+  },
+  "footer": {
+    "privacy": "Politica de Privacidade",
+    "terms": "Termos de Uso",
+    "pricing": "Precos",
+    "contact": "Contato",
+    "contactValue": "support@systemaponto.com",
+    "copyright": "SystemaPonto ajuda times operacionais a executar fluxos de ponto com precisao."
+  },
+  "auth": {
+    "eyebrow": "Acesso seguro",
+    "title": "Acesse seu workspace",
+    "subtitle": "Entre com Google ou use email e senha.",
+    "emailLabel": "Email corporativo",
+    "emailPlaceholder": "nome@empresa.com",
+    "passwordLabel": "Senha",
+    "passwordPlaceholder": "No minimo 6 caracteres",
+    "googleButton": "Entrar com Google",
+    "emailButton": "Entrar com email/senha",
+    "createButton": "Criar conta",
+    "googleLoading": "Redirecionando para Google...",
+    "emailLoading": "Entrando...",
+    "createLoading": "Criando conta...",
+    "signupSuccess": "Conta criada. Confira seu email para verificacao, se necessario, e depois faca login.",
+    "hint": "Use o mesmo email corporativo mapeado no seu workspace.",
+    "heroTitle": "Pare de perseguir planilhas.",
+    "heroText": "Execute o controle de ponto com verificacao facial, geolocalizacao, QR de terminal e trilha completa de auditoria.",
+    "oauthFail": "Nao foi possivel iniciar o login com Google.",
+    "signinFail": "Falha ao entrar com email/senha.",
+    "signupFail": "Falha ao criar conta.",
+    "linksTitle": "Quer entender antes?",
+    "linksSubtitle": "Explore recursos e precos antes da autenticacao."
+  },
+  "landing": {
+    "hero": {
+      "badge": "Feito para operacoes de ponto",
+      "headline": "Pare de usar planilhas. Acompanhe a presenca da sua equipe em tempo real.",
+      "subheadline": "SystemaPonto une registros seguros, aprovacoes e analise operacional em um unico fluxo.",
+      "primary": "Comecar gratis",
+      "secondary": "Ver precos"
+    },
+    "proof": {
+      "availabilityLabel": "Confiabilidade da plataforma",
+      "availabilityValue": "99.9%",
+      "latencyLabel": "Atualizacao em tempo real",
+      "latencyValue": "< 2s",
+      "teamsLabel": "Equipes ativas",
+      "teamsValue": "120+"
+    },
+    "features": {
+      "eyebrow": "Baseado em modulos reais do produto",
+      "title": "Tudo que sua equipe precisa para controlar presenca",
+      "subtitle": "Mapeado para fluxos reais do app: ponto, aprovacoes, horas extras, ferias, relatorios e governanca admin.",
+      "clockTitle": "Clock in/out em tempo real",
+      "clockDesc": "Registre entradas, mudancas de status e resumos de horas com linha do tempo confiavel.",
+      "faceTitle": "Verificacao facial + prova de vida",
+      "faceDesc": "Use embeddings com face-api.js e checagens guiadas antes das marcacoes.",
+      "geoTitle": "Geolocalizacao e QR de terminal",
+      "geoDesc": "Valide presenca por raio GPS ou modo de QR de terminal com protecao anti-replay.",
+      "approvalTitle": "Aprovacoes de supervisor",
+      "approvalDesc": "Aprove, rejeite ou solicite ajuste com comentarios e historico completo de auditoria.",
+      "vacationTitle": "Fluxo de ferias",
+      "vacationDesc": "Encaminhe solicitacoes por etapas de supervisor e RH com visibilidade de calendario.",
+      "reportTitle": "Relatorios e exportacoes",
+      "reportDesc": "Gere CSV assincro no background e acompanhe indicadores sem travar a operacao."
+    },
+    "how": {
+      "eyebrow": "Como funciona",
+      "title": "Tres passos simples",
+      "step1Title": "Capture presenca com seguranca",
+      "step1Desc": "Colaboradores batem ponto por canais validados com verificacao facial opcional.",
+      "step2Title": "Revise e aprove",
+      "step2Desc": "Supervisores e admins tratam pendencias, alertas de HE e excecoes.",
+      "step3Title": "Exporte e decida",
+      "step3Desc": "Use dashboards e relatorios CSV para apoiar folha e decisoes operacionais."
+    },
+    "testimonials": {
+      "eyebrow": "Prova social",
+      "title": "Times operacionais trocaram controle manual por confianca",
+      "quote1": "Reduzimos contestacoes de folha no primeiro mes porque cada registro tem contexto e log de aprovacao.",
+      "author1": "Marina Costa",
+      "role1": "Gerente de RH, UrbanFoods",
+      "quote2": "QR de terminal e geolocalizacao eliminaram ambiguidade em turnos distribuidos.",
+      "author2": "Daniel Reed",
+      "role2": "Lider de Operacoes, Nova Dispatch",
+      "quote3": "Fluxo de ferias e alertas de HE aceleraram bastante a rotina dos supervisores.",
+      "author3": "Bianca Mello",
+      "role3": "People Ops, Atlas Manufacturing"
+    },
+    "pricingPreview": {
+      "eyebrow": "Precos integrados",
+      "title": "Escolha seu plano mensal",
+      "subtitle": "Planos por assento com links diretos de checkout."
+    },
+    "finalCta": {
+      "title": "Pronto para modernizar o controle de ponto?",
+      "subtitle": "Lance com captura segura, aprovacoes automatizadas e relatorios acionaveis.",
+      "primary": "Comecar gratis",
+      "secondary": "Ver precos completos"
+    }
+  },
+  "pricing": {
+    "eyebrow": "Precos",
+    "title": "Planos mensais transparentes",
+    "subtitle": "Todos os planos incluem nucleo de ponto, aprovacoes e fluxo de relatorios.",
+    "period": "/mes",
+    "starterName": "Starter",
+    "starterPrice": "$30",
+    "starterSeats": "3 assentos",
+    "starterDescription": "Para equipes pequenas que vao sair do controle manual.",
+    "growthName": "Growth",
+    "growthPrice": "$40",
+    "growthSeats": "5 assentos",
+    "growthDescription": "Ideal para equipes em crescimento com supervisao ativa.",
+    "proName": "Pro",
+    "proPrice": "$50",
+    "proSeats": "7 assentos",
+    "proDescription": "Para operacoes com maior necessidade de controle e visibilidade.",
+    "featureStarter1": "Ponto via web e aplicativo",
+    "featureStarter2": "Aprovações simples por supervisor",
+    "featureStarter3": "Relatórios CSV padrão",
+    "featureStarter4": "Histórico de dados por 6 meses",
+    "featureGrowth1": "Tudo que há no Starter",
+    "featureGrowth2": "Rastreio por geolocalização (GPS)",
+    "featureGrowth3": "Modo QR Terminal para fábricas",
+    "featureGrowth4": "Fluxos de férias e banco de horas",
+    "featurePro1": "Tudo que há no Growth",
+    "featurePro2": "Reconhecimento facial com prova de vida",
+    "featurePro3": "Alertas proativos em tempo real",
+    "featurePro4": "Integração API e histórico de 5 anos",
+    "cta": "Assinar agora",
+    "missingCheckout": "Link de checkout nao configurado",
+    "envNote": "Defina VITE_STRIPE_LINK_STARTER, VITE_STRIPE_LINK_GROWTH e VITE_STRIPE_LINK_PRO no ambiente do frontend."
+  },
+  "privacy": {
+    "eyebrow": "Politica de Privacidade",
+    "title": "Politica de Privacidade",
+    "updated": "Ultima atualizacao: 8 de abril de 2026",
+    "intro": "Esta politica explica como o SystemaPonto coleta, usa, armazena e protege dados pessoais durante a prestacao de servicos de ponto e gestao de forca de trabalho.",
+    "section1Title": "1. Coleta de dados",
+    "section1Body": "Processamos dados de conta (nome, email, role), registros de ponto (timestamps de entrada/saida, notas, status), metadados tecnicos (IP e dispositivo), coordenadas de geolocalizacao opcionais, dados de fluxo de ferias/aprovacao e vetores faciais gerados com face-api.js. Nao armazenamos video facial bruto como registro persistente de ponto.",
+    "section2Title": "2. Uso dos dados",
+    "section2Body": "Os dados sao usados para autenticar usuarios via Supabase Auth, validar marcacoes de ponto, suportar aprovacoes de supervisor/admin, calcular horas trabalhadas/extras, processar solicitacoes de ferias, gerar relatorios e manter integridade e seguranca da plataforma.",
+    "section3Title": "3. Armazenamento e seguranca",
+    "section3Body": "Registros operacionais sao armazenados em PostgreSQL e protegidos por controle de acesso por papel. A autenticacao e feita pelo Supabase. Aplicamos logs de acesso, rastreio de metadados de requisicao e principio de menor privilegio para reduzir risco de acesso nao autorizado.",
+    "section4Title": "4. Cookies e armazenamento local",
+    "section4Body": "O SystemaPonto usa armazenamento do navegador para continuidade de sessao, preferencia de idioma e comportamentos necessarios para uso autenticado. Essas tecnologias servem ao funcionamento da plataforma e nao a publicidade comportamental.",
+    "section5Title": "5. Direitos do usuario (GDPR/LGPD)",
+    "section5Body": "Dependendo da jurisdicao, usuarios podem solicitar acesso, correcao, portabilidade, restricao ou exclusao de dados pessoais, respeitando obrigacoes legais e de retencao operacional. Solicitacoes podem ser encaminhadas pelo administrador da conta cliente.",
+    "section6Title": "6. Retencao de dados",
+    "section6Body": "Registros de ponto e auditoria sao mantidos conforme obrigacoes contratuais e legais. Exportacoes de relatorios podem seguir janelas de retencao da plataforma. Dados nao necessarios passam por exclusao ou anonimizaçao conforme procedimentos internos.",
+    "section7Title": "7. Transferencias internacionais",
+    "section7Body": "Quando provedores de infraestrutura operam em multiplas regioes, os dados podem ser processados em outras jurisdicoes com salvaguardas contratuais e padroes aplicaveis de protecao de dados.",
+    "section8Title": "8. Contato",
+    "section8Body": "Para solicitacoes de privacidade ou seguranca, entre em contato por {{email}}."
+  },
+  "terms": {
+    "eyebrow": "Termos de Uso",
+    "title": "Termos de Uso",
+    "updated": "Ultima atualizacao: 8 de abril de 2026",
+    "intro": "Estes Termos regem o acesso e uso do SystemaPonto por organizacoes clientes e seus usuarios autorizados.",
+    "section1Title": "1. Uso aceitavel",
+    "section1Body": "Voce concorda em usar a plataforma apenas para atividades licitas de gestao de presenca e forca de trabalho. Sao proibidas tentativas de burlar controles de seguranca, coletar dados restritos ou abusar dos mecanismos de autenticacao.",
+    "section2Title": "2. Responsabilidades da conta",
+    "section2Body": "Clientes sao responsaveis por gerenciar permissoes de usuarios, proteger credenciais e garantir que as informacoes de ponto e de equipe enviadas sejam corretas e autorizadas.",
+    "section3Title": "3. Assinatura, cancelamento e reembolso",
+    "section3Body": "Planos pagos renovam conforme o ciclo escolhido. O cliente pode cancelar a renovacao antes da proxima cobranca. Reembolsos, quando aplicaveis, seguem a politica comercial e direitos obrigatorios do consumidor.",
+    "section4Title": "4. Disponibilidade do servico",
+    "section4Body": "Buscamos alta disponibilidade, mas nao garantimos servico ininterrupto em todas as circunstancias, incluindo manutencoes, indisponibilidade de terceiros ou eventos de forca maior.",
+    "section5Title": "5. Dados e conformidade",
+    "section5Body": "O cliente continua responsavel por cumprir normas trabalhistas e de privacidade locais ao configurar politicas de ponto, geolocalizacao e verificacao biometrica.",
+    "section6Title": "6. Limitacao de responsabilidade",
+    "section6Body": "No limite permitido por lei, o SystemaPonto e seus provedores nao respondem por danos indiretos, incidentais, especiais, consequenciais ou punitivos, incluindo perda de lucro ou interrupcao de negocio.",
+    "section7Title": "7. Alteracoes dos termos",
+    "section7Body": "Podemos atualizar estes Termos periodicamente. O uso continuado apos a vigencia da atualizacao representa aceite dos termos revisados.",
+    "section8Title": "8. Contato",
+    "section8Body": "Para duvidas juridicas ou contratuais, entre em contato por {{email}}."
+  }
+}

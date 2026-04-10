@@ -4,32 +4,32 @@
 
 ### 👨‍💼 Administrador
 - **Email:** admin@empresa.com
-- **Senha:** admin123456
+- **Senha:** defina no seu ambiente (nao commitar)
 - **Role:** ADMIN
 - **ID:** 70fd1122-4764-4f55-8be9-018801c4d1ce
 
 ### 👔 Supervisor 1
 - **Email:** supervisor1@empresa.com
-- **Senha:** super123456
+- **Senha:** defina no seu ambiente (nao commitar)
 - **Role:** SUPERVISOR
 - **ID:** 0baa0bc9-6092-422c-a3a6-81d8dfbba261
 
 ### 👔 Supervisor 2
 - **Email:** supervisor2@empresa.com
-- **Senha:** super123456
+- **Senha:** defina no seu ambiente (nao commitar)
 - **Role:** SUPERVISOR
 - **ID:** 2af82c10-3d3b-4ca5-9e42-bff7ddae4ff2
 
 ### 👤 Colaborador 1
 - **Email:** colaborador1@empresa.com
-- **Senha:** colab123456
+- **Senha:** defina no seu ambiente (nao commitar)
 - **Role:** MEMBER
 - **Supervisor:** Supervisor 1
 - **ID:** 50d2c9d7-ab40-44ba-8858-e161b1bb929f
 
 ### 👤 Colaborador 2
 - **Email:** colaborador2@empresa.com
-- **Senha:** colab123456
+- **Senha:** defina no seu ambiente (nao commitar)
 - **Role:** MEMBER
 - **Supervisor:** Supervisor 1
 - **ID:** 892eced6-7521-4d6d-8b2f-53b788c8341b
@@ -41,11 +41,11 @@
 ### Via API (Supabase):
 ```bash
 curl -X POST 'https://tgvbgwfvwwtxfhwjzwka.supabase.co/auth/v1/token?grant_type=password' \
-  -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRndmJnd2Z2d3d0eGZod2p6d2thIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTY2NTQsImV4cCI6MjA4ODgzMjY1NH0.G7wiFxrziYSMWpw0sF_VFQ7ymt4XY2g3ITeX7acNg98" \
+  -H "apikey: SUA_SUPABASE_ANON_KEY_ROTACIONADA" \
   -H "Content-Type: application/json" \
   -d '{
     "email": "admin@empresa.com",
-    "password": "admin123456"
+    "password": "SUA_SENHA_ROTACIONADA"
   }'
 ```
 
@@ -73,7 +73,7 @@ Para facilitar o gerenciamento de tokens durante o desenvolvimento, use o script
 
 ### 1️⃣ **Fazer Login e Obter Token:**
 ```bash
-node scripts/get-token.js admin@empresa.com admin123456
+node scripts/get-token.js admin@empresa.com SUA_SENHA_ROTACIONADA
 ```
 
 Este comando:
@@ -135,7 +135,7 @@ npm run dev
 TOKEN=$(curl -s -X POST 'https://tgvbgwfvwwtxfhwjzwka.supabase.co/auth/v1/token?grant_type=password' \
   -H "apikey: SUA_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@empresa.com","password":"admin123456"}' | jq -r .access_token)
+  -d '{"email":"admin@empresa.com","password":"SUA_SENHA_ROTACIONADA"}' | jq -r .access_token)
 
 echo $TOKEN
 ```

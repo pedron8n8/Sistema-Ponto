@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import i18n from '../i18n'
 
 type Language = 'en' | 'pt-BR'
 
@@ -8,23 +9,33 @@ type LanguageContextState = {
   tr: (en: string, ptBR: string) => string
 }
 
-const LANGUAGE_STORAGE_KEY = 'systemaPonto.language'
-
 const LanguageContext = createContext<LanguageContextState | undefined>(undefined)
 
+const normalizeLanguage = (rawLanguage?: string): Language => {
+  return rawLanguage?.toLowerCase().startsWith('pt') ? 'pt-BR' : 'en'
+}
+
+const toI18nLanguage = (language: Language) => (language === 'pt-BR' ? 'pt' : 'en')
+
 export const LanguageProvider = ({ children }: { children: React.ReactNode }) => {
-  const [language, setLanguageState] = useState<Language>('en')
+  const [language, setLanguageState] = useState<Language>(() =>
+    normalizeLanguage(i18n.resolvedLanguage || i18n.language)
+  )
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(LANGUAGE_STORAGE_KEY)
-    if (saved === 'en' || saved === 'pt-BR') {
-      setLanguageState(saved)
+    const handleLanguageChange = (nextLanguage: string) => {
+      setLanguageState(normalizeLanguage(nextLanguage))
+    }
+
+    i18n.on('languageChanged', handleLanguageChange)
+
+    return () => {
+      i18n.off('languageChanged', handleLanguageChange)
     }
   }, [])
 
   const setLanguage = (nextLanguage: Language) => {
-    setLanguageState(nextLanguage)
-    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage)
+    void i18n.changeLanguage(toI18nLanguage(nextLanguage))
   }
 
   const tr = (en: string, ptBR: string) => (language === 'pt-BR' ? ptBR : en)

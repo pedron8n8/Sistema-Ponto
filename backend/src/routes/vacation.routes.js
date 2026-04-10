@@ -1,5 +1,5 @@
 const express = require('express');
-const { authMiddleware, roleCheck } = require('../middlewares');
+const { authMiddleware, roleCheck, requirePlan } = require('../middlewares');
 const {
   createVacationRequest,
   getMyVacationRequests,
@@ -13,6 +13,7 @@ const {
 const router = express.Router();
 
 router.use(authMiddleware);
+router.use(requirePlan(['GROWTH', 'PRO'])); // Somente a partir de GROWTH
 
 /**
  * GET /vacations/me

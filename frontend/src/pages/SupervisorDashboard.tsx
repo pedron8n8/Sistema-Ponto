@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { API_BASE, apiFetch } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTimeZone } from '../context/TimezoneContext'
-import { useLanguage } from '../context/LanguageContext'
+import { useTranslation } from 'react-i18next'
 import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet'
 import {
   TIME_ZONE_OPTIONS,
@@ -212,7 +212,9 @@ const presenceStatusClass: Record<PresenceStatus, string> = {
 
 const SupervisorDashboard = () => {
   const { session } = useAuth()
-  const { tr } = useLanguage()
+  const { t: i18nT, i18n } = useTranslation()
+  const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
+  const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
   const { viewTimeZone } = useTimeZone()
   const token = session?.access_token
   const [entries, setEntries] = useState<Entry[]>([])
@@ -543,7 +545,7 @@ const SupervisorDashboard = () => {
 
   useEffect(() => {
     loadEntries().catch((err) => {
-      setError(err instanceof Error ? err.message : tr('Failed to load pending items', 'Erro ao carregar pendencias'))
+      setError(err instanceof Error ? err.message : t('Failed to load pending items', 'Erro ao carregar pendencias'))
       setEntries([])
       setSubordinates([])
       setStats(defaultStats)
@@ -776,9 +778,9 @@ const SupervisorDashboard = () => {
     <section className="grid gap-6">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
         <p className="text-xs uppercase tracking-[0.35em] text-teal-700">Supervisor</p>
-        <h2 className="mt-4 text-3xl font-semibold text-slate-900">{tr('Pending approvals in one panel.', 'Aprovacoes pendentes em um painel.')}</h2>
+        <h2 className="mt-4 text-3xl font-semibold text-slate-900">{t('Pending approvals in one panel.', 'Aprovacoes pendentes em um painel.')}</h2>
         <p className="mt-4 text-sm text-slate-600">
-          {tr('Review team work logs and register comments without leaving the flow.', 'Revise as jornadas da equipe e registre comentarios sem sair do fluxo.')}
+          {t('Review team work logs and register comments without leaving the flow.', 'Revise as jornadas da equipe e registre comentarios sem sair do fluxo.')}
         </p>
       </div>
 
@@ -1211,11 +1213,11 @@ const SupervisorDashboard = () => {
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold text-slate-900">{tr('Pending items', 'Pendencias')}</h3>
+          <h3 className="text-lg font-semibold text-slate-900">{t('Pending items', 'Pendencias')}</h3>
           <div className="flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.2em] text-slate-500">
-            <span className="rounded-full bg-slate-100 px-3 py-1">{tr('Pending', 'Pendentes')} {stats.PENDING}</span>
-            <span className="rounded-full bg-slate-100 px-3 py-1">{tr('Approved', 'Aprovados')} {stats.APPROVED}</span>
-            <span className="rounded-full bg-slate-100 px-3 py-1">{tr('Rejected', 'Rejeitados')} {stats.REJECTED}</span>
+            <span className="rounded-full bg-slate-100 px-3 py-1">{t('Pending', 'Pendentes')} {stats.PENDING}</span>
+            <span className="rounded-full bg-slate-100 px-3 py-1">{t('Approved', 'Aprovados')} {stats.APPROVED}</span>
+            <span className="rounded-full bg-slate-100 px-3 py-1">{t('Rejected', 'Rejeitados')} {stats.REJECTED}</span>
           </div>
         </div>
 
@@ -1228,17 +1230,17 @@ const SupervisorDashboard = () => {
             onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))}
             className="rounded-full border border-slate-200 bg-white px-3 py-2"
           >
-            <option value="PENDING">{tr('Pending', 'Pendentes')}</option>
-            <option value="APPROVED">{tr('Approved', 'Aprovados')}</option>
-            <option value="REJECTED">{tr('Rejected', 'Rejeitados')}</option>
-            <option value="ALL">{tr('All', 'Todos')}</option>
+            <option value="PENDING">{t('Pending', 'Pendentes')}</option>
+            <option value="APPROVED">{t('Approved', 'Aprovados')}</option>
+            <option value="REJECTED">{t('Rejected', 'Rejeitados')}</option>
+            <option value="ALL">{t('All', 'Todos')}</option>
           </select>
           <select
             value={filters.userId}
             onChange={(event) => setFilters((prev) => ({ ...prev, userId: event.target.value }))}
             className="rounded-full border border-slate-200 bg-white px-3 py-2"
           >
-            <option value="">{tr('All members', 'Todos os colaboradores')}</option>
+            <option value="">{t('All members', 'Todos os colaboradores')}</option>
             {subordinates.map((subordinate) => (
               <option key={subordinate.id} value={subordinate.id}>
                 {subordinate.name}
@@ -1261,7 +1263,7 @@ const SupervisorDashboard = () => {
 
         <div className="mt-5 space-y-4">
           {entries.length === 0 ? (
-            <p className="text-sm text-slate-500">{tr('No pending items at the moment.', 'Nenhuma pendencia no momento.')}</p>
+            <p className="text-sm text-slate-500">{t('No pending items at the moment.', 'Nenhuma pendencia no momento.')}</p>
           ) : (
             entries.map((entry) => (
               <div

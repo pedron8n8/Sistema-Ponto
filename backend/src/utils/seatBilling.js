@@ -19,6 +19,60 @@ const toCurrencyAmount = (value, fallback = 0) => {
   return Number(parsed.toFixed(2));
 };
 
+const listAdditionalSeatsCheckoutSessions = async ({
+  perPage = 100,
+  maxPages = 5,
+  createdGte,
+} = {}) => {
+  const stripe = getStripeClient();
+
+  if (!stripe) {
+    return {
+      ok: false,
+      reason: 'STRIPE_NOT_CONFIGURED',
+      sessions: [],
+    };
+  }
+
+  const safePerPage = Math.min(100, toPositiveInteger(perPage, 100));
+  const safeMaxPages = toPositiveInteger(maxPages, 5);
+  const hasCreatedGte = Number.isFinite(Number(createdGte)) && Number(createdGte) > 0;
+
+  let startingAfter;
+  const sessions = [];
+
+  for (let page = 0; page < safeMaxPages; page += 1) {
+    const listParams = {
+      limit: safePerPage,
+      ...(hasCreatedGte && { created: { gte: Math.floor(Number(createdGte)) } }),
+      ...(startingAfter && { starting_after: startingAfter }),
+    };
+
+    const response = await stripe.checkout.sessions.list(listParams);
+    const pageItems = Array.isArray(response?.data) ? response.data : [];
+
+    const relevantItems = pageItems.filter(
+      (session) => session?.metadata?.type === 'additional_admin_seats'
+    );
+    sessions.push(...relevantItems);
+
+    if (!response?.has_more || pageItems.length === 0) {
+      break;
+    }
+
+    startingAfter = pageItems[pageItems.length - 1]?.id;
+    if (!startingAfter) {
+      break;
+    }
+  }
+
+  return {
+    ok: true,
+    reason: null,
+    sessions,
+  };
+};
+
 const createAdditionalSeatsCheckoutSession = async ({
   adminUserId,
   adminEmail,
@@ -75,4 +129,5 @@ const createAdditionalSeatsCheckoutSession = async ({
 
 module.exports = {
   createAdditionalSeatsCheckoutSession,
+  listAdditionalSeatsCheckoutSessions,
 };

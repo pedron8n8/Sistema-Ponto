@@ -1,6 +1,6 @@
 const express = require('express');
 const multer = require('multer');
-const { authMiddleware, roleCheck } = require('../middlewares');
+const { authMiddleware, roleCheck, requirePlan } = require('../middlewares');
 const userController = require('../controllers/user.controller');
 const { photoUpload, MAX_PHOTO_SIZE_BYTES } = require('../middlewares/upload.middleware');
 
@@ -59,19 +59,19 @@ router.delete('/me/photo', userController.deleteMyPhoto);
  * GET /api/v1/users/me/face
  * Status do cadastro facial do usuário logado
  */
-router.get('/me/face', userController.getMyFaceStatus);
+router.get('/me/face', requirePlan('PRO'), userController.getMyFaceStatus);
 
 /**
  * POST /api/v1/users/me/face/enroll
  * Cadastra/atualiza reconhecimento facial do usuário logado
  */
-router.post('/me/face/enroll', userController.enrollMyFace);
+router.post('/me/face/enroll', requirePlan('PRO'), userController.enrollMyFace);
 
 /**
  * DELETE /api/v1/users/me/face
  * Remove reconhecimento facial do usuário logado
  */
-router.delete('/me/face', userController.deleteMyFace);
+router.delete('/me/face', requirePlan('PRO'), userController.deleteMyFace);
 
 /**
  * GET /api/v1/users
@@ -84,6 +84,16 @@ router.get('/', roleCheck(['ADMIN', 'HR', 'SUPERVISOR']), userController.listUse
  * Mapa de cadeiras por admin e ocupantes
  */
 router.get('/admin-seats', roleCheck(['SUPERADMIN', 'ADMIN', 'HR']), userController.listAdminSeatAssignments);
+
+/**
+ * GET /api/v1/users/superadmin/accounts-overview
+ * Visão consolidada de contas e cobrança (apenas SUPERADMIN)
+ */
+router.get(
+	'/superadmin/accounts-overview',
+	roleCheck(['SUPERADMIN']),
+	userController.listSuperAdminAccountsOverview
+);
 
 /**
  * GET /api/v1/users/:id

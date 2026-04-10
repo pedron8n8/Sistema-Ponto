@@ -41,7 +41,7 @@ O token JWT do Supabase expira após **1 hora**. Use nosso helper script para ge
 
 #### 🔐 **Fazer Login:**
 ```bash
-node scripts/get-token.js admin@empresa.com admin123456
+node scripts/get-token.js admin@empresa.com SUA_SENHA_ROTACIONADA
 ```
 
 Este comando:
@@ -79,7 +79,7 @@ Este comando:
 3. Clique em **Add user** → **Create new user**
 4. Preencha:
    - Email: `admin@empresa.com`
-   - Password: `admin123456` (ou sua senha)
+  - Password: `SUA_SENHA_ROTACIONADA`
    - Auto Confirm User: **SIM** ✅
 
 ### **Opção 3: Criar Usuário Programaticamente**
@@ -102,7 +102,7 @@ curl -X POST 'https://tgvbgwfvwwtxfhwjzwka.supabase.co/auth/v1/token?grant_type=
   -H "Content-Type: application/json" \
   -d '{
     "email": "admin@empresa.com",
-    "password": "admin123456"
+    "password": "SUA_SENHA_ROTACIONADA"
   }'
 ```
 
@@ -118,15 +118,15 @@ Crie os seguintes usuários no painel do Supabase:
 
 1. **Admin**
    - Email: `admin@empresa.com`
-   - Password: `admin123`
+  - Password: `SUA_SENHA_ROTACIONADA`
 
 2. **Supervisor**
    - Email: `supervisor1@empresa.com`
-   - Password: `super123`
+  - Password: `SUA_SENHA_ROTACIONADA`
 
 3. **Colaborador**
    - Email: `colaborador1@empresa.com`
-   - Password: `colab123`
+  - Password: `SUA_SENHA_ROTACIONADA`
 
 ### Passo 2: Copiar IDs dos Usuários
 
@@ -169,7 +169,7 @@ curl -X POST 'https://tgvbgwfvwwtxfhwjzwka.supabase.co/auth/v1/token?grant_type=
   -H "Content-Type: application/json" \
   -d '{
     "email": "admin@empresa.com",
-    "password": "admin123"
+    "password": "SUA_SENHA_ROTACIONADA"
   }'
 ```
 
@@ -287,7 +287,7 @@ npm run format
 node scripts/get-token.js refresh
 
 # Opção 2: Fazer novo login
-node scripts/get-token.js admin@empresa.com admin123456
+node scripts/get-token.js admin@empresa.com SUA_SENHA_ROTACIONADA
 ```
 
 ### "Usuário não cadastrado no sistema"

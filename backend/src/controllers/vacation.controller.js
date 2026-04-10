@@ -233,7 +233,7 @@ const reviewVacationBySupervisor = async (req, res) => {
     const { id } = req.params;
     const { decision, comment } = req.body || {};
     const reviewerId = req.user.id;
-    const isAdmin = req.user.role === 'ADMIN';
+    const isAdmin = isElevatedVacationViewer(req.user.role);
 
     if (!['APPROVE', 'REJECT'].includes(decision)) {
       return res.status(400).json({
@@ -614,7 +614,7 @@ const getHrVacationRequests = async (req, res) => {
 
 const getTeamVacationCalendar = async (req, res) => {
   try {
-    const isAdmin = req.user.role === 'ADMIN';
+    const isAdmin = isElevatedVacationViewer(req.user.role);
     const supervisorId = req.user.id;
 
     const now = new Date();

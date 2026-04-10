@@ -19,6 +19,8 @@ type UserProfile = {
     role: Role
   } | null
   createdAt?: string
+  currentPlan?: 'BASE' | 'STARTER' | 'GROWTH' | 'PRO' | string
+  currentPlanStatus?: 'ACTIVE' | 'INACTIVE' | string
 }
 
 type AuthState = {
@@ -27,6 +29,8 @@ type AuthState = {
   loading: boolean
   profileError: string | null
   signIn: (email: string, password: string) => Promise<void>
+  signUp: (email: string, password: string) => Promise<void>
+  signInWithGoogle: () => Promise<void>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
 }
@@ -106,6 +110,46 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     await fetchProfile(data.session)
   }
 
+  const signUp = async (email: string, password: string) => {
+    if (!supabase) {
+      throw new Error('Supabase nao configurado no frontend')
+    }
+
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: `${window.location.origin}/login`,
+      },
+    })
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    if (data.session) {
+      setSession(data.session)
+      await fetchProfile(data.session)
+    }
+  }
+
+  const signInWithGoogle = async () => {
+    if (!supabase) {
+      throw new Error('Supabase nao configurado no frontend')
+    }
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/app`,
+      },
+    })
+
+    if (error) {
+      throw new Error(error.message)
+    }
+  }
+
   const signOut = async () => {
     if (!supabase) {
       setSession(null)
@@ -125,7 +169,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }
 
   const value = useMemo(
-    () => ({ session, profile, loading, profileError, signIn, signOut, refreshProfile }),
+    () => ({
+      session,
+      profile,
+      loading,
+      profileError,
+      signIn,
+      signUp,
+      signInWithGoogle,
+      signOut,
+      refreshProfile,
+    }),
     [session, profile, loading, profileError]
   )
 

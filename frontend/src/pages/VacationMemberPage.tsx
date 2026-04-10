@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTimeZone } from '../context/TimezoneContext'
-import { useLanguage } from '../context/LanguageContext'
+import { useTranslation } from 'react-i18next'
 import { formatDateTimeWithTimeZone, formatDateWithTimeZone } from '../lib/timezone'
 
 type VacationRequest = {
@@ -43,7 +43,9 @@ const vacationStatusLabel: Record<string, string> = {
 const VacationMemberPage = () => {
   const { session } = useAuth()
   const { viewTimeZone } = useTimeZone()
-  const { tr } = useLanguage()
+  const { t: i18nT, i18n } = useTranslation()
+  const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
+  const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
   const token = session?.access_token
 
   const [requests, setRequests] = useState<VacationRequest[]>([])
@@ -64,7 +66,7 @@ const VacationMemberPage = () => {
       const response = await apiFetch<{ requests: VacationRequest[] }>('/vacations/me', { token })
       setRequests(response.requests || [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : tr('Failed to load vacation requests', 'Erro ao carregar férias'))
+      setError(err instanceof Error ? err.message : t('Failed to load vacation requests', 'Erro ao carregar férias'))
     } finally {
       setLoading(false)
     }
@@ -80,7 +82,7 @@ const VacationMemberPage = () => {
     setNotice('')
 
     if (!form.startDate || !form.endDate) {
-      setError(tr('Provide both start and end dates to request vacation.', 'Informe data inicial e final para solicitar férias.'))
+      setError(t('Provide both start and end dates to request vacation.', 'Informe data inicial e final para solicitar férias.'))
       return
     }
 
@@ -95,26 +97,26 @@ const VacationMemberPage = () => {
         },
       })
 
-      setNotice(tr('Vacation request sent successfully.', 'Solicitação de férias enviada com sucesso.'))
+      setNotice(t('Vacation request sent successfully.', 'Solicitação de férias enviada com sucesso.'))
       setForm({ startDate: '', endDate: '', reason: '' })
       await loadRequests()
     } catch (err) {
-      setError(err instanceof Error ? err.message : tr('Failed to submit vacation request', 'Erro ao solicitar férias'))
+      setError(err instanceof Error ? err.message : t('Failed to submit vacation request', 'Erro ao solicitar férias'))
     }
   }
 
   return (
     <section className="grid gap-6">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
-        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">{tr('Vacation', 'Férias')}</p>
-        <h2 className="mt-4 text-3xl font-semibold text-slate-900">{tr('Request and track your vacation.', 'Solicite e acompanhe suas férias.')}</h2>
+        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">{t('Vacation', 'Férias')}</p>
+        <h2 className="mt-4 text-3xl font-semibold text-slate-900">{t('Request and track your vacation.', 'Solicite e acompanhe suas férias.')}</h2>
         <p className="mt-3 text-sm text-slate-600">
-          {tr('The flow goes through supervisor approval and final HR confirmation.', 'O fluxo segue para aprovação do supervisor e confirmação final do RH.')}
+          {t('The flow goes through supervisor approval and final HR confirmation.', 'O fluxo segue para aprovação do supervisor e confirmação final do RH.')}
         </p>
       </div>
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-slate-900">{tr('New request', 'Nova solicitação')}</h3>
+        <h3 className="text-lg font-semibold text-slate-900">{t('New request', 'Nova solicitação')}</h3>
         <div className="mt-4 grid gap-2 md:grid-cols-2">
           <input
             type="date"
@@ -131,7 +133,7 @@ const VacationMemberPage = () => {
           <textarea
             value={form.reason}
             onChange={(event) => setForm((prev) => ({ ...prev, reason: event.target.value }))}
-            placeholder={tr('Reason (optional)', 'Motivo (opcional)')}
+            placeholder={t('Reason (optional)', 'Motivo (opcional)')}
             className="h-24 w-full resize-none rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm md:col-span-2"
           />
         </div>
@@ -142,13 +144,13 @@ const VacationMemberPage = () => {
             disabled={loading}
             className="rounded-full bg-teal-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
           >
-            {loading ? tr('Sending...', 'Enviando...') : tr('Request vacation', 'Solicitar férias')}
+            {loading ? t('Sending...', 'Enviando...') : t('Request vacation', 'Solicitar férias')}
           </button>
           <button
             onClick={() => loadRequests().catch(() => undefined)}
             className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-700"
           >
-            {tr('Refresh', 'Atualizar')}
+            {t('Refresh', 'Atualizar')}
           </button>
         </div>
 
@@ -157,10 +159,10 @@ const VacationMemberPage = () => {
       </div>
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-slate-900">{tr('History', 'Histórico')}</h3>
+        <h3 className="text-lg font-semibold text-slate-900">{t('History', 'Histórico')}</h3>
         <div className="mt-4 space-y-2 text-xs text-slate-600">
-          {loading ? <p className="text-sm text-slate-500">{tr('Loading requests...', 'Carregando solicitações...')}</p> : null}
-          {!loading && requests.length === 0 ? <p>{tr('No requests found.', 'Nenhuma solicitação registrada.')}</p> : null}
+          {loading ? <p className="text-sm text-slate-500">{t('Loading requests...', 'Carregando solicitações...')}</p> : null}
+          {!loading && requests.length === 0 ? <p>{t('No requests found.', 'Nenhuma solicitação registrada.')}</p> : null}
 
           {requests.map((request) => (
             <div key={request.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
@@ -169,7 +171,7 @@ const VacationMemberPage = () => {
                 {formatDateWithTimeZone(request.endDate, viewTimeZone)}
               </p>
               <p className="mt-1 text-[11px] uppercase tracking-[0.2em] text-slate-500">
-                {tr(
+                {t(
                   {
                     REQUESTED: 'Awaiting supervisor',
                     SUPERVISOR_APPROVED: 'Awaiting HR',
@@ -181,10 +183,10 @@ const VacationMemberPage = () => {
                   vacationStatusLabel[request.status] || request.status
                 )}
               </p>
-              {request.reason ? <p className="mt-1 text-xs text-slate-600">{tr('Reason:', 'Motivo:')} {request.reason}</p> : null}
+              {request.reason ? <p className="mt-1 text-xs text-slate-600">{t('Reason:', 'Motivo:')} {request.reason}</p> : null}
               {request.logs[0] ? (
                 <p className="mt-1 text-[11px] text-slate-500">
-                  {tr('Last action:', 'Última ação:')} {request.logs[0].action} {tr('at', 'em')}{' '}
+                  {t('Last action:', 'Última ação:')} {request.logs[0].action} {t('at', 'em')}{' '}
                   {formatDateTimeWithTimeZone(request.logs[0].timestamp, viewTimeZone)}
                 </p>
               ) : null}

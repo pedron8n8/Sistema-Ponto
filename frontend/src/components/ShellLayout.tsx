@@ -1,8 +1,9 @@
 import { Link, NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTimeZone } from '../context/TimezoneContext'
+import { usePlan } from '../hooks/usePlan'
 import { TIME_ZONE_OPTIONS } from '../lib/timezone'
-import { useLanguage } from '../context/LanguageContext'
+import { useTranslation } from 'react-i18next'
 import LanguageSwitcher from './LanguageSwitcher'
 import UserAvatar from './UserAvatar'
 
@@ -56,6 +57,13 @@ const AdminIcon = () => (
   </svg>
 )
 
+const SuperAdminIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={iconClassName}>
+    <path d="M12 3.8L19.2 6.8V12.5C19.2 16.5 16.3 20.1 12 21.2C7.7 20.1 4.8 16.5 4.8 12.5V6.8L12 3.8Z" />
+    <path d="M9.3 12.1L11.2 14L14.9 10.3" />
+  </svg>
+)
+
 const ReportsIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={iconClassName}>
     <path d="M6 3.8H14.8L18 7V20.2H6V3.8Z" />
@@ -80,73 +88,105 @@ type NavSection = {
 
 const ShellLayout = ({ children }: { children: React.ReactNode }) => {
   const { profile, profileError, signOut } = useAuth()
+  const { isGrowthOrBetter } = usePlan()
   const { viewTimeZone, setViewTimeZone } = useTimeZone()
-  const { tr } = useLanguage()
+  const { t: i18nT, i18n } = useTranslation()
+  const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
+  const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
+  const isSuperAdmin = profile?.role === 'SUPERADMIN'
   const isAdmin = profile?.role === 'ADMIN' || profile?.role === 'SUPERADMIN'
   const isHr = profile?.role === 'HR'
   const isSupervisor = profile?.role === 'SUPERVISOR' || profile?.role === 'HR' || isAdmin
   const navSections: NavSection[] = [
     {
-      title: tr('General', 'Geral'),
+      title: t('General', 'Geral'),
       visible: true,
       items: [
-        { to: '/app', label: tr('Overview', 'Visao geral'), icon: <OverviewIcon />, end: true },
-        { to: '/app/relatorios', label: tr('Reports', 'Relatorios'), icon: <ReportsIcon /> },
+        { to: '/app', label: t('Overview', 'Visao geral'), icon: <OverviewIcon />, end: true },
+        { to: '/app/relatorios', label: t('Reports', 'Relatorios'), icon: <ReportsIcon /> },
       ],
     },
     {
-      title: tr('Member', 'Colaborador'),
+      title: t('Member', 'Colaborador'),
       visible: true,
       items: [
-        { to: '/app/colaborador', label: tr('Time clock', 'Ponto'), icon: <TimeClockIcon /> },
-        { to: '/app/colaborador/historico', label: tr('History', 'Historico'), icon: <HistoryIcon /> },
+        { to: '/app/colaborador', label: t('Time clock', 'Ponto'), icon: <TimeClockIcon /> },
+        { to: '/app/colaborador/historico', label: t('History', 'Historico'), icon: <HistoryIcon /> },
+        ...(isGrowthOrBetter
+          ? [
+              {
+                to: '/app/colaborador/ferias',
+                label: t('My vacations', 'Minhas Ferias'),
+                icon: <TeamVacationIcon />, // Usando o icone de equipe
+              },
+            ]
+          : []),
       ],
     },
     {
-      title: tr('Supervisor', 'Supervisor'),
+      title: t('Supervisor', 'Supervisor'),
       visible: isSupervisor,
       items: [
         {
           to: '/app/supervisor/overview',
-          label: tr('Supervisor Overview', 'Supervisor Overview'),
+          label: t('Supervisor Overview', 'Supervisor Overview'),
           icon: <SupervisorIcon />,
         },
         {
           to: '/app/supervisor/kpis',
-          label: tr('Supervisor KPIs', 'Supervisor KPIs'),
+          label: t('Supervisor KPIs', 'Supervisor KPIs'),
           icon: <SupervisorIcon />,
         },
         {
           to: '/app/supervisor/hours',
-          label: tr('Supervisor Hours', 'Supervisor Horas'),
+          label: t('Supervisor Hours', 'Supervisor Horas'),
           icon: <SupervisorIcon />,
         },
         {
           to: '/app/supervisor/pending-items',
-          label: tr('Supervisor Pendings', 'Supervisor Pendings'),
+          label: t('Supervisor Pendings', 'Supervisor Pendings'),
           icon: <SupervisorIcon />,
         },
+        ...(isGrowthOrBetter
+          ? [
+              {
+                to: '/app/ferias-equipe',
+                label: t('Team vacation', 'Ferias equipe'),
+                icon: <TeamVacationIcon />,
+              },
+            ]
+          : []),
+      ],
+    },
+    {
+      title: t('SuperAdmin', 'SuperAdmin'),
+      visible: isSuperAdmin,
+      items: [
         {
-          to: '/app/ferias-equipe',
-          label: tr('Team vacation', 'Ferias equipe'),
-          icon: <TeamVacationIcon />,
+          to: '/app/superadmin/accounts',
+          label: t('Accounts & MRR', 'Contas e MRR'),
+          icon: <SuperAdminIcon />,
         },
       ],
     },
     {
-      title: tr('Admin', 'Admin'),
+      title: t('Admin', 'Admin'),
       visible: isAdmin || isHr,
       items: [
         {
           to: '/app/admin/overview',
-          label: tr('Admin Overview', 'Admin Overview'),
+          label: t('Admin Overview', 'Admin Overview'),
           icon: <AdminIcon />,
         },
-        {
-          to: '/app/admin/qr-code',
-          label: tr('Admin QR Code', 'Admin QR Code'),
-          icon: <AdminIcon />,
-        },
+        ...(isGrowthOrBetter
+          ? [
+              {
+                to: '/app/admin/qr-code',
+                label: t('Admin QR Code', 'Admin QR Code'),
+                icon: <AdminIcon />,
+              },
+            ]
+          : []),
       ],
     },
   ]
@@ -159,12 +199,12 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
             <Link
               to="/app/perfil-completo"
               className="mb-4 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-slate-700 transition hover:bg-slate-100"
-              title={tr('Open complete profile', 'Abrir perfil completo')}
+              title={t('Open complete profile', 'Abrir perfil completo')}
             >
               <UserAvatar name={profile?.name} photoUrl={profile?.photoUrl} size="sm" />
               <div className="truncate transition-all duration-200 md:max-w-0 md:opacity-0 md:group-hover/sidebar:max-w-[170px] md:group-hover/sidebar:opacity-100 md:group-focus-within/sidebar:max-w-[170px] md:group-focus-within/sidebar:opacity-100">
                 <p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">
-                  {tr('Time tracking', 'Sistema de ponto')}
+                  {t('Time tracking', 'Sistema de ponto')}
                 </p>
                 <p className="text-sm font-semibold text-slate-800">SystemaPonto</p>
               </div>
@@ -203,7 +243,7 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
             <div className="mt-auto rounded-2xl border border-slate-200 bg-white/80 p-3 text-slate-700 transition-all duration-200 md:max-h-0 md:overflow-hidden md:opacity-0 md:group-hover/sidebar:max-h-[18rem] md:group-hover/sidebar:opacity-100 md:group-focus-within/sidebar:max-h-[18rem] md:group-focus-within/sidebar:opacity-100">
               <div className="space-y-3">
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">{tr('TZ', 'Fuso')}</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">{t('TZ', 'Fuso')}</p>
                   <select
                     value={viewTimeZone}
                     onChange={(event) => setViewTimeZone(event.target.value)}
@@ -218,7 +258,7 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
                 </div>
 
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">{tr('Language', 'Idioma')}</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">{t('Language', 'Idioma')}</p>
                   <div className="mt-1 inline-block">
                     <LanguageSwitcher />
                   </div>
@@ -228,7 +268,7 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
                   onClick={signOut}
                   className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700 hover:border-slate-300"
                 >
-                  {tr('Sign out', 'Sair')}
+                  {t('Sign out', 'Sair')}
                 </button>
               </div>
             </div>
@@ -243,10 +283,10 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
                   <button
                     type="button"
                     className="flex items-center gap-2 rounded-full border border-white/80 bg-white/85 p-1 pr-3 text-xs font-semibold text-slate-700 shadow-[0_10px_24px_-24px_rgba(15,23,42,0.85)] transition hover:border-slate-200"
-                    aria-label={tr('Profile actions', 'Acoes de perfil')}
+                    aria-label={t('Profile actions', 'Acoes de perfil')}
                   >
                     <UserAvatar name={profile?.name} photoUrl={profile?.photoUrl} size="sm" />
-                    <span>{profile?.name?.split(' ')[0] ?? tr('Profile', 'Perfil')}</span>
+                    <span>{profile?.name?.split(' ')[0] ?? t('Profile', 'Perfil')}</span>
                   </button>
 
                   <div className="pointer-events-none absolute right-0 top-[calc(100%+0.5rem)] z-40 w-48 rounded-2xl border border-slate-200 bg-white p-2 opacity-0 shadow-[0_16px_35px_-24px_rgba(15,23,42,0.65)] transition-all duration-150 group-hover/profile:pointer-events-auto group-hover/profile:translate-y-0 group-hover/profile:opacity-100 group-focus-within/profile:pointer-events-auto group-focus-within/profile:translate-y-0 group-focus-within/profile:opacity-100">
@@ -254,13 +294,13 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
                       to="/app/perfil-completo"
                       className="block rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
                     >
-                      {tr('Complete Profile', 'Perfil Completo')}
+                      {t('Complete Profile', 'Perfil Completo')}
                     </Link>
                     <button
                       onClick={signOut}
                       className="mt-1 w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100"
                     >
-                      SignOut
+                      {t('Sign out', 'Sair')}
                     </button>
                   </div>
                 </div>
@@ -291,12 +331,12 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
                 <div className="mb-3 flex items-center gap-3">
                   <UserAvatar name={profile?.name} photoUrl={profile?.photoUrl} size="sm" />
                   <div>
-                    <p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">{tr('Time tracking', 'Sistema de ponto')}</p>
+                    <p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">{t('Time tracking', 'Sistema de ponto')}</p>
                     <p className="text-sm font-semibold text-slate-800">SystemaPonto</p>
                   </div>
                 </div>
                 <div className="grid gap-2">
-                  <label className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">{tr('TZ', 'Fuso')}</label>
+                  <label className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">{t('TZ', 'Fuso')}</label>
                   <select
                     value={viewTimeZone}
                     onChange={(event) => setViewTimeZone(event.target.value)}
@@ -308,7 +348,7 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
                       </option>
                     ))}
                   </select>
-                  <label className="mt-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">{tr('Language', 'Idioma')}</label>
+                  <label className="mt-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">{t('Language', 'Idioma')}</label>
                   <div>
                     <LanguageSwitcher />
                   </div>
@@ -316,14 +356,14 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
                     onClick={signOut}
                     className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700"
                   >
-                    {tr('Sign out', 'Sair')}
+                    {t('Sign out', 'Sair')}
                   </button>
                 </div>
               </div>
 
               {profileError ? (
                 <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3 text-xs text-amber-900">
-                  {profileError} {tr('Contact the administrator to enable access.', 'Entre em contato com o administrador para habilitar o acesso.')}
+                  {profileError} {t('Contact the administrator to enable access.', 'Entre em contato com o administrador para habilitar o acesso.')}
                 </div>
               ) : null}
 

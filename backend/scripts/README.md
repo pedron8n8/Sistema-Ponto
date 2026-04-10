@@ -19,7 +19,7 @@ node scripts/get-token.js <email> <senha>
 
 **Exemplo:**
 ```bash
-node scripts/get-token.js admin@empresa.com admin123456
+node scripts/get-token.js admin@empresa.com SUA_SENHA_ROTACIONADA
 ```
 
 **O que faz:**
@@ -120,13 +120,13 @@ node scripts/get-token.js refresh
 ### "Nenhum token salvo"
 **Solução:** Faça login primeiro:
 ```bash
-node scripts/get-token.js admin@empresa.com admin123456
+node scripts/get-token.js admin@empresa.com SUA_SENHA_ROTACIONADA
 ```
 
 ### "Invalid refresh token"
 **Solução:** O refresh token também expirou (30 dias). Faça login novamente:
 ```bash
-node scripts/get-token.js admin@empresa.com admin123456
+node scripts/get-token.js admin@empresa.com SUA_SENHA_ROTACIONADA
 ```
 
 ---
