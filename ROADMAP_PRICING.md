@@ -33,9 +33,9 @@
 
 ---
 
-## 🔴 Fase 3: Diferenciais Pro (Pendente/Planejado)
+## 🔴 Fase 3: Diferenciais Pro (Concluído)
 
 - [x] **Biometria:** Código de liveness via `face-api.js` já existe na base (limiares, deltas, detecção de falsificação).
-- [ ] **Alertas Proativos em Tempo Real (Mudança necessária):** Envio garantido de alertas PUSH/WEBHOOK e email (usando as variáveis `SMTP_*` e `PUSH_WEBHOOK_URL` contidas no `.env`). O disparo preditivo precisará ser amarrado no final do expediente (worker job).
-- [ ] **API Pública:** Documentar e expor endpoints de API para o administrador `Pro` importar direto no sistema de folha sem gerar CSV.
-- [ ] **Feature Flags (Mudança necessária):** Da mesma forma que na fase Growth, criar o Middleware `requirePlan('PRO')` nas rotas do painel que configuram Liveness facial e API.
+- [x] **Alertas Proativos em Tempo Real:** Worker dedicado (`backend/src/workers/proactiveAlertWorker.js`) dispara no fim do expediente com fila/retry e envio por email/webhook usando `SMTP_*` e `PUSH_WEBHOOK_URL`.
+- [x] **API Pública:** Endpoints expostos em `/api/v1/public/payroll/*` com token assinado para integração de folha sem CSV, documentados em `backend/API_PUBLIC_PRO_PAYROLL.md`.
+- [x] **Feature Flags:** Rotas de painel PRO protegidas com `requirePlan('PRO')` para configuração de liveness e API (`/api/v1/admin/pro/*`).

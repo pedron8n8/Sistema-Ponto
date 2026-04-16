@@ -1,6 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { supabase, hasSupabaseEnv } from '../lib/supabase'
+import {
+  supabase,
+  hasSupabaseEnv,
+  isGoogleProviderEnabled,
+  googleOAuthRedirectTo,
+} from '../lib/supabase'
 import { apiFetch, resolveApiAssetUrl } from '../lib/api'
 
 type Role = 'SUPERADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'
@@ -9,6 +14,7 @@ type UserProfile = {
   id: string
   email: string
   name: string
+  phone?: string | null
   role: Role
   photoUrl?: string | null
   photoUpdatedAt?: string | null
@@ -23,13 +29,21 @@ type UserProfile = {
   currentPlanStatus?: 'ACTIVE' | 'INACTIVE' | string
 }
 
+type SignUpPayload = {
+  name: string
+  email: string
+  password: string
+  phone?: string
+  inviteToken?: string
+}
+
 type AuthState = {
   session: Session | null
   profile: UserProfile | null
   loading: boolean
   profileError: string | null
   signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string) => Promise<void>
+  signUp: (payload: SignUpPayload) => Promise<void>
   signInWithGoogle: () => Promise<void>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
@@ -110,16 +124,39 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     await fetchProfile(data.session)
   }
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async ({ name, email, password, phone, inviteToken }: SignUpPayload) => {
     if (!supabase) {
       throw new Error('Supabase nao configurado no frontend')
     }
 
+    const normalizedName = String(name || '').trim()
+    const normalizedEmail = String(email || '').trim().toLowerCase()
+    const normalizedPassword = String(password || '')
+    const normalizedPhone = String(phone || '').trim()
+    const normalizedInviteToken = String(inviteToken || '').trim()
+
+    if (normalizedName.length < 2) {
+      throw new Error('Nome deve ter pelo menos 2 caracteres')
+    }
+
+    if (!normalizedEmail.includes('@')) {
+      throw new Error('Email invalido')
+    }
+
+    if (normalizedPassword.length < 6) {
+      throw new Error('Senha deve ter pelo menos 6 caracteres')
+    }
+
     const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
+      email: normalizedEmail,
+      password: normalizedPassword,
       options: {
         emailRedirectTo: `${window.location.origin}/login`,
+        data: {
+          name: normalizedName,
+          ...(normalizedPhone ? { phone: normalizedPhone } : {}),
+          ...(normalizedInviteToken ? { teamInviteToken: normalizedInviteToken } : {}),
+        },
       },
     })
 
@@ -138,16 +175,28 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       throw new Error('Supabase nao configurado no frontend')
     }
 
-    const { error } = await supabase.auth.signInWithOAuth({
+    const googleProviderEnabled = await isGoogleProviderEnabled()
+    if (!googleProviderEnabled) {
+      throw new Error('GOOGLE_PROVIDER_DISABLED')
+    }
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/app`,
+        redirectTo: googleOAuthRedirectTo,
+        skipBrowserRedirect: true,
       },
     })
 
     if (error) {
       throw new Error(error.message)
     }
+
+    if (!data?.url) {
+      throw new Error('Nao foi possivel iniciar o login com Google')
+    }
+
+    window.location.assign(data.url)
   }
 
   const signOut = async () => {

@@ -6,6 +6,24 @@ const { mockSupabaseAdmin } = require('../mocks/supabase.mock');
 // Mock dos módulos
 jest.mock('../../src/config/database', () => mockPrisma);
 jest.mock('../../src/config/supabase', () => ({ supabaseAdmin: mockSupabaseAdmin }));
+jest.mock('../../src/utils/seatBilling', () => ({
+  createAdditionalSeatsCheckoutSession: jest.fn(),
+  verifyAdditionalSeatsCheckoutSession: jest.fn(),
+  listAdditionalSeatsCheckoutSessions: jest.fn(),
+  createBasePlanCheckoutSession: jest.fn(),
+  verifyBasePlanCheckoutSession: jest.fn(),
+}));
+jest.mock('../../src/utils/teamInviteToken', () => ({
+  INVITABLE_ROLES: ['HR', 'SUPERVISOR', 'MEMBER'],
+  issueTeamInviteToken: jest.fn(),
+  verifyTeamInviteToken: jest.fn(),
+}));
+
+const {
+  createAdditionalSeatsCheckoutSession,
+  verifyAdditionalSeatsCheckoutSession,
+} = require('../../src/utils/seatBilling');
+const { issueTeamInviteToken } = require('../../src/utils/teamInviteToken');
 
 const {
   createUser,
@@ -13,6 +31,9 @@ const {
   listUsers,
   getUserById,
   deleteUser,
+  createMyTeamInviteLink,
+  createMyAdditionalSeatsCheckout,
+  confirmAdditionalSeatsCheckout,
 } = require('../../src/controllers/user.controller');
 
 describe('User Controller', () => {
@@ -25,6 +46,10 @@ describe('User Controller', () => {
         id: 'admin-123',
         email: 'admin@test.com',
         role: 'ADMIN',
+        adminPlanId: 'plan-base-123',
+        adminPlanStatus: 'ACTIVE',
+        adminSeatLimit: 10,
+        adminExtraSeatPrice: 10,
       },
       body: {},
       query: {},
@@ -208,7 +233,11 @@ describe('User Controller', () => {
     it('should return 400 if user tries to be their own supervisor', async () => {
       mockReq.params = { id: 'user-123' };
       mockReq.body = { supervisorId: 'user-123' };
-      mockPrisma.user.findUnique.mockResolvedValue({ id: 'user-123' });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'user-123',
+        role: 'MEMBER',
+        organizationAdminId: 'admin-123',
+      });
 
       await updateUser(mockReq, mockRes);
 
@@ -227,6 +256,7 @@ describe('User Controller', () => {
         email: 'user@test.com',
         name: 'Old Name',
         role: 'MEMBER',
+        organizationAdminId: 'admin-123',
       };
 
       const updatedUser = {
@@ -323,6 +353,7 @@ describe('User Controller', () => {
         email: 'user@test.com',
         name: 'Test User',
         role: 'MEMBER',
+        organizationAdminId: 'admin-123',
         supervisor: { id: 'sup-123', name: 'Supervisor' },
         subordinates: [],
         _count: { timeEntries: 10 },
@@ -374,6 +405,7 @@ describe('User Controller', () => {
       mockPrisma.user.findUnique.mockResolvedValue({
         id: 'user-123',
         email: 'user@test.com',
+        organizationAdminId: 'admin-123',
       });
       mockSupabaseAdmin.auth.admin.deleteUser.mockResolvedValue({ error: null });
       mockPrisma.user.delete.mockResolvedValue({ id: 'user-123' });
@@ -383,6 +415,228 @@ describe('User Controller', () => {
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
           message: 'Usuário deletado com sucesso',
+        })
+      );
+    });
+  });
+
+  describe('confirmAdditionalSeatsCheckout', () => {
+    it('should return 403 for non-admin user', async () => {
+      mockReq.user.role = 'MEMBER';
+      mockReq.body = { stripeSessionId: 'cs_test_1' };
+
+      await confirmAdditionalSeatsCheckout(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+    });
+
+    it('should confirm checkout and persist seat snapshot', async () => {
+      mockReq.body = { stripeSessionId: 'cs_test_1' };
+
+      verifyAdditionalSeatsCheckoutSession.mockResolvedValue({
+        ok: true,
+        sessionId: 'cs_test_1',
+        contractedExtraSeats: 2,
+      });
+
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'admin-123',
+        email: 'admin@test.com',
+        name: 'Admin',
+        role: 'ADMIN',
+        adminPlanId: 'plan-1',
+        adminSeatLimit: 3,
+        adminPlanStatus: 'ACTIVE',
+        adminPlanLinkedAt: new Date(),
+        adminActiveSeats: 3,
+        adminExtraSeatsContracted: 0,
+        adminPlan: {
+          id: 'plan-1',
+          code: 'STARTER',
+          name: 'Starter',
+          monthlyPrice: 30,
+          isActive: true,
+        },
+      });
+      mockPrisma.user.count.mockResolvedValue(5);
+      mockPrisma.user.update.mockResolvedValue({
+        id: 'admin-123',
+        email: 'admin@test.com',
+        name: 'Admin',
+        role: 'ADMIN',
+        photoPath: null,
+        photoUpdatedAt: null,
+        organizationAdminId: 'admin-123',
+        adminSeatLimit: 5,
+        adminExtraSeatPrice: 10,
+        adminPlanStatus: 'ACTIVE',
+        adminPlanLinkedAt: new Date(),
+        adminActiveSeats: 5,
+        adminExtraSeatsContracted: 2,
+        adminPlan: {
+          id: 'plan-1',
+          code: 'STARTER',
+          name: 'Starter',
+          monthlyPrice: 30,
+          isActive: true,
+        },
+      });
+
+      await confirmAdditionalSeatsCheckout(mockReq, mockRes);
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            adminSeatLimit: 5,
+            adminActiveSeats: 5,
+            adminExtraSeatsContracted: 2,
+          }),
+        })
+      );
+
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('Cadeiras adicionais confirmadas'),
+          billing: expect.objectContaining({
+            contractedExtraSeats: 2,
+          }),
+        })
+      );
+    });
+  });
+
+  describe('createMyTeamInviteLink', () => {
+    it('should return 403 for non-admin user', async () => {
+      mockReq.user.role = 'MEMBER';
+      mockReq.body = { role: 'MEMBER', expiresInHours: 48 };
+
+      await createMyTeamInviteLink(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Forbidden',
+        })
+      );
+    });
+
+    it('should generate invite link for admin', async () => {
+      mockReq.body = { role: 'SUPERVISOR', expiresInHours: 72 };
+
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'admin-123',
+        email: 'admin@test.com',
+        role: 'ADMIN',
+        adminSeatLimit: 10,
+        adminExtraSeatPrice: 10,
+        adminPlanId: 'plan-1',
+      });
+      mockPrisma.user.count.mockResolvedValue(3);
+
+      issueTeamInviteToken.mockReturnValue({
+        token: 'invite-token-abc',
+        expiresAt: '2026-04-20T12:00:00.000Z',
+        ttlHours: 72,
+      });
+
+      await createMyTeamInviteLink(mockReq, mockRes);
+
+      expect(issueTeamInviteToken).toHaveBeenCalledWith(
+        expect.objectContaining({
+          adminId: 'admin-123',
+          role: 'SUPERVISOR',
+          issuedById: 'admin-123',
+          expiresInHours: 72,
+        })
+      );
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          invite: expect.objectContaining({
+            role: 'SUPERVISOR',
+            token: 'invite-token-abc',
+            url: expect.stringContaining('/signup?invite='),
+          }),
+        })
+      );
+    });
+
+    it('should return 409 with purchase link when there are no available seats', async () => {
+      mockReq.body = { role: 'MEMBER', expiresInHours: 24 };
+
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'admin-123',
+        email: 'admin@test.com',
+        role: 'ADMIN',
+        adminSeatLimit: 3,
+        adminExtraSeatPrice: 7.5,
+        adminPlanId: 'plan-1',
+      });
+      mockPrisma.user.count.mockResolvedValue(3);
+
+      await createMyTeamInviteLink(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(409);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Conflict',
+          code: 'NO_AVAILABLE_SEATS',
+          purchase: expect.objectContaining({
+            url: expect.stringContaining('/app/admin/comprar-assentos?required=1'),
+          }),
+        })
+      );
+      expect(issueTeamInviteToken).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('createMyAdditionalSeatsCheckout', () => {
+    it('should return 403 for non-admin user', async () => {
+      mockReq.user.role = 'MEMBER';
+      mockReq.body = { quantity: 3 };
+
+      await createMyAdditionalSeatsCheckout(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+    });
+
+    it('should create checkout session for chosen quantity', async () => {
+      mockReq.body = { quantity: 4 };
+
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'admin-123',
+        email: 'admin@test.com',
+        role: 'ADMIN',
+        adminPlanId: 'plan-1',
+        adminExtraSeatPrice: 7.5,
+      });
+
+      createAdditionalSeatsCheckoutSession.mockResolvedValue({
+        ok: true,
+        checkoutUrl: 'https://checkout.stripe.test/session-1',
+        sessionId: 'cs_test_1',
+        quantity: 4,
+      });
+
+      await createMyAdditionalSeatsCheckout(mockReq, mockRes);
+
+      expect(createAdditionalSeatsCheckoutSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          adminUserId: 'admin-123',
+          overageSeats: 4,
+          amountDue: 30,
+        })
+      );
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          billing: expect.objectContaining({
+            requestedSeats: 4,
+            monthlyTotalUsd: 30,
+          }),
+          stripe: expect.objectContaining({
+            checkoutUrl: 'https://checkout.stripe.test/session-1',
+          }),
         })
       );
     });

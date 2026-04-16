@@ -29,16 +29,17 @@ async function main() {
   const adminUserId = '70fd1122-4764-4f55-8be9-018801c4d1ce';
 
   const adminPlan = await prisma.adminPlan.upsert({
-    where: { code: 'BASE' },
+    where: { code: 'STARTER' },
     update: {
-      name: 'Plano Base',
+      name: 'Starter',
+      monthlyPrice: 30,
       isActive: true,
     },
     create: {
-      code: 'BASE',
-      name: 'Plano Base',
-      description: 'Plano padrão para administradores',
-      monthlyPrice: 0,
+      code: 'STARTER',
+      name: 'Starter',
+      description: 'Plano Starter para administradores',
+      monthlyPrice: 30,
       isActive: true,
     },
   });

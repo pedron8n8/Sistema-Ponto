@@ -51,7 +51,9 @@ model User {
   id              String        @id @default(uuid())
   email           String        @unique
   name            String?
+  phone           String?
   role            Role          @default(MEMBER)
+  isActive        Boolean       @default(true)
   facialEmbedding Json?
   facialEmbeddingUpdatedAt DateTime?
   facialThreshold Float     @default(0.45)
@@ -79,10 +81,13 @@ model User {
   organizationMembers User[]    @relation("AdminOrganization")
   adminSeatLimit Int?
   adminExtraSeatPrice Decimal?  @db.Decimal(10, 2)
+  adminActiveSeats Int          @default(0)
+  adminExtraSeatsContracted Int @default(0)
   adminPlanId      String?
   adminPlan        AdminPlan?     @relation(fields: [adminPlanId], references: [id])
   adminPlanStatus  AdminPlanStatus @default(INACTIVE)
   adminPlanLinkedAt DateTime?
+  adminBillingInvoices AdminBillingInvoice[] @relation("AdminBillingInvoices")
   timeEntries     TimeEntry[]
   bankHoursEntries BankHoursEntry[]
   vacationRequests VacationRequest[] @relation("VacationRequester")
@@ -109,6 +114,37 @@ model AdminPlan {
   admins       User[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+model AdminBillingInvoice {
+  id                    String    @id @default(uuid())
+  adminUserId           String
+  adminUser             User      @relation("AdminBillingInvoices", fields: [adminUserId], references: [id])
+  sourceType            String
+  stripeSessionId       String    @unique
+  stripeInvoiceId       String?
+  stripeSubscriptionId  String?
+  status                String?
+  paymentStatus         String?
+  mode                  String?
+  currency              String?
+  amountTotal           Decimal?  @db.Decimal(10, 2)
+  amountSubtotal        Decimal?  @db.Decimal(10, 2)
+  expectedMonthlyAmountUsd Decimal? @db.Decimal(10, 2)
+  overageSeats          Int?
+  customerEmail         String?
+  sessionCreatedAt      DateTime?
+  paidAt                DateTime?
+  syncedAt              DateTime  @default(now())
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([adminUserId])
+  @@index([adminUserId, paymentStatus])
+  @@index([adminUserId, sourceType])
+  @@index([adminUserId, paidAt])
+  @@index([stripeInvoiceId])
+  @@index([stripeSubscriptionId])
 }
 
 model TimeEntry {

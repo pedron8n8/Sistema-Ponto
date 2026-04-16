@@ -16,7 +16,8 @@
     "subscribeNow": "Assinar agora",
     "mostPopular": "Mais popular",
     "allRights": "Todos os direitos reservados.",
-    "openApp": "Abrir app"
+    "openApp": "Abrir app",
+    "here": "aqui"
   },
   "seo": {
     "landing": {
@@ -38,6 +39,10 @@
     "login": {
       "title": "Login | SystemaPonto",
       "description": "Entre com Google ou email e senha para acessar seu workspace de controle de ponto."
+    },
+    "signup": {
+      "title": "Criar conta | SystemaPonto",
+      "description": "Crie sua conta com nome, email, telefone e senha ou continue com Google."
     }
   },
   "publicNav": {
@@ -62,10 +67,10 @@
     "emailPlaceholder": "nome@empresa.com",
     "passwordLabel": "Senha",
     "passwordPlaceholder": "No minimo 6 caracteres",
-    "googleButton": "Entrar com Google",
+    "googleButton": "🔍 Entrar com Google",
     "emailButton": "Entrar com email/senha",
     "createButton": "Criar conta",
-    "googleLoading": "Redirecionando para Google...",
+    "googleLoading": "🔍 Redirecionando para Google...",
     "emailLoading": "Entrando...",
     "createLoading": "Criando conta...",
     "signupSuccess": "Conta criada. Confira seu email para verificacao, se necessario, e depois faca login.",
@@ -73,10 +78,49 @@
     "heroTitle": "Pare de perseguir planilhas.",
     "heroText": "Execute o controle de ponto com verificacao facial, geolocalizacao, QR de terminal e trilha completa de auditoria.",
     "oauthFail": "Nao foi possivel iniciar o login com Google.",
+    "googleProviderDisabled": "Login com Google desabilitado no Supabase. Ative em Authentication > Providers > Google.",
     "signinFail": "Falha ao entrar com email/senha.",
     "signupFail": "Falha ao criar conta.",
     "linksTitle": "Quer entender antes?",
     "linksSubtitle": "Explore recursos e precos antes da autenticacao."
+  },
+  "signup": {
+    "pageTag": "Criar conta",
+    "buyerOnboarding": "Onboarding de comprador",
+    "inviteEyebrow": "Onboarding por convite",
+    "title": "Crie sua conta e continue",
+    "subtitle": "Preencha os dados da conta ou continue com Google. Nome, email e senha sao obrigatorios.",
+    "inviteSubtitle": "Voce foi convidado para entrar em um time. Complete seu cadastro e sera vinculado automaticamente.",
+    "inviteDetailsTitle": "Detalhes do convite",
+    "inviteLoading": "Validando token de convite...",
+    "inviteInvalid": "Link de convite invalido ou expirado.",
+    "inviteAdminLabel": "Admin do time:",
+    "inviteRoleLabel": "Funcao atribuida:",
+    "inviteExpiresLabel": "Expira em:",
+    "inviteRoleSupervisor": "Supervisor",
+    "inviteRoleMember": "Colaborador",
+    "inviteGoogleDisabled": "Login com Google esta desabilitado para links de convite. Use email/senha para entrar no time.",
+    "googleInfoTitle": "Usando login com Google",
+    "googleInfoText": "Se voce continuar com Google, capturamos os dados disponiveis da sua conta Google.",
+    "inviteGoogleInfoText": "Por seguranca, links de convite exigem cadastro com email/senha.",
+    "formTitle": "Dados da conta",
+    "formSubtitle": "Preencha os campos obrigatorios para continuar.",
+    "googleButton": "Continuar com Google",
+    "googleLoading": "Redirecionando para Google...",
+    "nameLabel": "Nome *",
+    "namePlaceholder": "Seu nome completo",
+    "emailLabel": "Email *",
+    "emailPlaceholder": "nome@empresa.com",
+    "phoneLabel": "Telefone",
+    "phonePlaceholder": "+55 11 90000-0000",
+    "passwordLabel": "Senha *",
+    "passwordPlaceholder": "No minimo 6 caracteres",
+    "submitButton": "Criar conta",
+    "submitLoading": "Criando conta...",
+    "backToLogin": "Voltar para login",
+    "success": "Conta criada. Verifique seu email caso confirmacao seja necessaria.",
+    "createFail": "Nao foi possivel criar a conta.",
+    "googleFail": "Nao foi possivel iniciar login com Google."
   },
   "landing": {
     "hero": {

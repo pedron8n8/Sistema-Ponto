@@ -1,13 +1,22 @@
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import LanguageSwitcher from '../LanguageSwitcher'
+import { useAuth } from '../../context/AuthContext'
 
 type PublicLayoutProps = {
   children: React.ReactNode
 }
 
 const PublicLayout = ({ children }: PublicLayoutProps) => {
-  const { t } = useTranslation()
+  const { t: i18nT, i18n } = useTranslation()
+  const { session, profile } = useAuth()
+  const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
+  const t = (key: string) => i18nT(key)
+  const label = (en: string, pt: string) => i18nT(isPt ? pt : en)
+
+  const hasActivePlan = profile?.role === 'SUPERADMIN' || profile?.currentPlanStatus === 'ACTIVE'
+  const accountPath = hasActivePlan ? '/app' : '/app/escolher-plano'
+  const accountName = profile?.name?.split(' ')[0] || label('Account', 'Conta')
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_12%_10%,rgba(13,148,136,0.1),transparent_38%),radial-gradient(circle_at_90%_0%,rgba(56,189,248,0.1),transparent_32%),linear-gradient(180deg,#f8fafc_0%,#f1f5f9_58%,#ecfeff_100%)] text-slate-900">
@@ -28,19 +37,34 @@ const PublicLayout = ({ children }: PublicLayoutProps) => {
             <Link to="/pricing" className="transition hover:text-slate-900">
               {t('publicNav.pricing')}
             </Link>
-            <Link to="/login" className="transition hover:text-slate-900">
-              {t('publicNav.login')}
-            </Link>
+            {session ? (
+              <Link to={accountPath} className="transition hover:text-slate-900">
+                {label('My account', 'Minha conta')}
+              </Link>
+            ) : (
+              <Link to="/login" className="transition hover:text-slate-900">
+                {t('publicNav.login')}
+              </Link>
+            )}
           </nav>
 
           <div className="flex items-center gap-3">
             <LanguageSwitcher />
-            <Link
-              to="/login?mode=signup"
-              className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white transition hover:bg-slate-700"
-            >
-              {t('publicNav.signUp')}
-            </Link>
+            {session ? (
+              <Link
+                to={accountPath}
+                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-800 transition hover:border-slate-400"
+              >
+                {label('Account', 'Conta')}: {accountName}
+              </Link>
+            ) : (
+              <Link
+                to="/signup"
+                className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white transition hover:bg-slate-700"
+              >
+                {t('publicNav.signUp')}
+              </Link>
+            )}
           </div>
         </div>
       </header>

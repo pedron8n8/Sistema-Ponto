@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
@@ -7,20 +7,41 @@ import PageMeta from '../components/PageMeta'
 
 const Login = () => {
   const navigate = useNavigate()
-  const { signIn, signUp, signInWithGoogle } = useAuth()
+  const { signIn, signInWithGoogle, session, profile, loading } = useAuth()
   const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
   const [googleLoading, setGoogleLoading] = useState(false)
   const [emailLoading, setEmailLoading] = useState(false)
-  const [createLoading, setCreateLoading] = useState(false)
+
+  useEffect(() => {
+    if (loading || !session || !profile) return
+
+    const hasActivePlan = profile.role === 'SUPERADMIN' || profile.currentPlanStatus === 'ACTIVE'
+    navigate(hasActivePlan ? '/app' : '/app/escolher-plano', { replace: true })
+  }, [loading, navigate, profile, session])
+
+  const resolveGoogleSignInError = (err: unknown) => {
+    if (!(err instanceof Error)) {
+      return t('auth.oauthFail')
+    }
+
+    const normalizedErrorMessage = err.message.toLowerCase()
+    if (
+      normalizedErrorMessage.includes('google_provider_disabled') ||
+      normalizedErrorMessage.includes('unsupported provider') ||
+      normalizedErrorMessage.includes('provider is not enabled')
+    ) {
+      return t('auth.googleProviderDisabled')
+    }
+
+    return err.message || t('auth.oauthFail')
+  }
 
   const handleEmailSignIn = async (event: React.FormEvent) => {
     event.preventDefault()
     setError('')
-    setNotice('')
     setEmailLoading(true)
 
     try {
@@ -35,31 +56,19 @@ const Login = () => {
 
   const handleGoogleSignIn = async () => {
     setError('')
-    setNotice('')
     setGoogleLoading(true)
 
     try {
       await signInWithGoogle()
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('auth.oauthFail'))
+      setError(resolveGoogleSignInError(err))
     } finally {
       setGoogleLoading(false)
     }
   }
 
-  const handleCreateAccount = async () => {
-    setError('')
-    setNotice('')
-    setCreateLoading(true)
-
-    try {
-      await signUp(email, password)
-      setNotice(t('auth.signupSuccess'))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('auth.signupFail'))
-    } finally {
-      setCreateLoading(false)
-    }
+  const handleCreateAccount = () => {
+    navigate('/signup')
   }
 
   return (
@@ -113,7 +122,7 @@ const Login = () => {
           <button
             type="button"
             onClick={handleGoogleSignIn}
-            disabled={googleLoading || emailLoading || createLoading}
+            disabled={googleLoading || emailLoading}
             className="mt-6 w-full rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {googleLoading ? t('auth.googleLoading') : t('auth.googleButton')}
@@ -140,11 +149,10 @@ const Login = () => {
           />
 
           {error ? <p className="mt-4 text-xs text-rose-600">{error}</p> : null}
-          {notice ? <p className="mt-4 text-xs text-emerald-600">{notice}</p> : null}
 
           <button
             type="submit"
-            disabled={googleLoading || emailLoading || createLoading}
+            disabled={googleLoading || emailLoading}
             className="mt-8 w-full rounded-full bg-teal-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-60"
           >
             {emailLoading ? t('auth.emailLoading') : t('auth.emailButton')}
@@ -153,10 +161,10 @@ const Login = () => {
           <button
             type="button"
             onClick={handleCreateAccount}
-            disabled={googleLoading || emailLoading || createLoading}
+            disabled={googleLoading || emailLoading}
             className="mt-3 w-full rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500 disabled:opacity-60"
           >
-            {createLoading ? t('auth.createLoading') : t('auth.createButton')}
+            {t('auth.createButton')}
           </button>
         </form>
       </div>

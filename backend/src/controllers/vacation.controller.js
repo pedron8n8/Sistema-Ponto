@@ -479,7 +479,9 @@ const getTeamVacationRequests = async (req, res) => {
     const { status = 'ALL' } = req.query;
 
     const members = await prisma.user.findMany({
-      where: isAdmin ? { role: { notIn: ['ADMIN', 'HR'] } } : { supervisorId: req.user.id },
+      where: isAdmin
+        ? { role: { notIn: ['ADMIN', 'HR'] }, isActive: true }
+        : { supervisorId: req.user.id, isActive: true },
       select: { id: true },
     });
 
@@ -626,7 +628,9 @@ const getTeamVacationCalendar = async (req, res) => {
     const rangeEnd = new Date(year, month, 0, 23, 59, 59, 999);
 
     const teamMembers = await prisma.user.findMany({
-      where: isAdmin ? { role: { not: 'ADMIN' } } : { supervisorId },
+      where: isAdmin
+        ? { role: { not: 'ADMIN' }, isActive: true }
+        : { supervisorId, isActive: true },
       select: {
         id: true,
         name: true,

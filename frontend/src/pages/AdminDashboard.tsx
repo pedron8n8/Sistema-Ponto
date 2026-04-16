@@ -1,17 +1,20 @@
 import { useEffect, useState } from 'react'
-import { API_BASE, apiFetch, resolveApiAssetUrl } from '../lib/api'
+import { API_BASE, apiFetch, buildIdempotencyHeaders, resolveApiAssetUrl } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { usePlan } from '../hooks/usePlan'
 import { TIME_ZONE_OPTIONS } from '../lib/timezone'
 import UserAvatar from '../components/UserAvatar'
+import { useTranslation } from 'react-i18next'
 
 type Role = 'SUPERADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'
 type AdminPlanStatus = 'ACTIVE' | 'INACTIVE'
+type InvitableRole = 'HR' | 'SUPERVISOR' | 'MEMBER'
 
 type User = {
   id: string
   email: string
   name: string
+  phone?: string | null
   role: Role
   organizationAdminId?: string | null
   organizationAdmin?: {
@@ -148,6 +151,21 @@ type AdminSeatPayload = {
   }>
 }
 
+type TeamInviteLinkResponse = {
+  message?: string
+  invite?: {
+    role: InvitableRole
+    expiresAt: string
+    ttlHours: number
+    token: string
+    url: string
+  }
+  purchase?: {
+    url?: string
+    suggestedQuantity?: number
+  }
+}
+
 type UserUpdatePayload = Partial<User> & {
   supervisorId?: string | null
   organizationAdminId?: string | null
@@ -208,8 +226,13 @@ const formatMinutesLabel = (minutes: number) => {
 const AdminDashboard = () => {
   const { session, profile } = useAuth()
   const { isGrowthOrBetter } = usePlan()
+  const { t: i18nT, i18n } = useTranslation()
+  const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
+  const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
+  const locale = isPt ? 'pt-BR' : 'en-US'
   const token = session?.access_token
   const isSuperAdmin = profile?.role === 'SUPERADMIN'
+  const isAdmin = profile?.role === 'ADMIN'
   const [users, setUsers] = useState<User[]>([])
   const [adminSeatAssignments, setAdminSeatAssignments] = useState<AdminSeatPayload[]>([])
   const [selectedAdminId, setSelectedAdminId] = useState('ALL')
@@ -253,12 +276,23 @@ const AdminDashboard = () => {
   })
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [createLoading, setCreateLoading] = useState(false)
+  const [inviteRole, setInviteRole] = useState<InvitableRole>('MEMBER')
+  const [inviteTtlHours, setInviteTtlHours] = useState('72')
+  const [inviteLoading, setInviteLoading] = useState(false)
+  const [inviteError, setInviteError] = useState('')
+  const [inviteNotice, setInviteNotice] = useState('')
+  const [inviteUrl, setInviteUrl] = useState('')
+  const [invitePurchaseUrl, setInvitePurchaseUrl] = useState('')
 
   const roleOptions = isSuperAdmin ? SUPERADMIN_ROLE_OPTIONS : TEAM_ROLE_OPTIONS
   const selectedAdminSnapshot =
     selectedAdminId === 'ALL'
       ? null
       : adminSeatAssignments.find((entry) => entry.admin.id === selectedAdminId) || null
+  const currentSeatSnapshot = isSuperAdmin
+    ? selectedAdminSnapshot
+    : adminSeatAssignments[0] || null
   const visibleBankOverview =
     isSuperAdmin && selectedAdminSnapshot
       ? bankOverview.filter((row) =>
@@ -325,7 +359,7 @@ const AdminDashboard = () => {
   }
 
   const loadAdminSeatAssignments = async () => {
-    if (!token || !isSuperAdmin) return
+    if (!token) return
 
     const response = await apiFetch<{ admins: AdminSeatPayload[] }>('/users/admin-seats', { token })
     const admins = response.admins || []
@@ -424,15 +458,22 @@ const AdminDashboard = () => {
   }, [isSuperAdmin, selectedAdminId, form.role])
 
   const handleCreate = async () => {
-    if (!token) return
+    if (!token || createLoading) return
     setError('')
     setNotice('')
 
     const needsAdminOwner = isSuperAdmin && TEAM_ROLE_OPTIONS.includes(form.role)
     if (needsAdminOwner && !form.organizationAdminId) {
-      setError('Selecione qual ADMIN será responsável por este usuário.')
+      setError(
+        t(
+          'Select which ADMIN will be responsible for this user.',
+          'Selecione qual ADMIN sera responsavel por este usuario.'
+        )
+      )
       return
     }
+
+    setCreateLoading(true)
 
     try {
       const createPayload: Record<string, unknown> = {
@@ -451,33 +492,52 @@ const AdminDashboard = () => {
         createPayload.adminPlanStatus = form.adminPlanStatus
       }
 
+      const idempotencyHeaders = await buildIdempotencyHeaders(createPayload)
+
       const response = await fetch(`${API_BASE}/users`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
+          ...idempotencyHeaders,
         },
         body: JSON.stringify(createPayload),
       })
 
       const payload = await response.json().catch(() => ({}))
 
+      if (response.status === 202 && payload?.idempotency?.ignored) {
+        setNotice(
+          payload?.message ||
+            t('Duplicate request was ignored successfully.', 'Requisicao duplicada ignorada com sucesso.')
+        )
+        return
+      }
+
       if (response.status === 402) {
         const checkoutUrl = payload?.billing?.stripe?.checkoutUrl
         if (checkoutUrl) {
-          setNotice('Redirecionando para checkout das cadeiras adicionais...')
+          setNotice(
+            t(
+              'Redirecting to additional seats checkout...',
+              'Redirecionando para checkout das cadeiras adicionais...'
+            )
+          )
           window.location.assign(checkoutUrl)
           return
         }
 
         throw new Error(
           payload?.message ||
-            'Limite de cadeiras excedido. Configure Stripe no backend para redirecionamento automático.'
+            t(
+              'Seat limit exceeded. Configure Stripe on the backend for automatic redirection.',
+              'Limite de cadeiras excedido. Configure Stripe no backend para redirecionamento automatico.'
+            )
         )
       }
 
       if (!response.ok) {
-        throw new Error(payload?.message || 'Erro ao criar usuario')
+        throw new Error(payload?.message || t('Could not create user.', 'Erro ao criar usuario'))
       }
 
       setForm({
@@ -491,9 +551,114 @@ const AdminDashboard = () => {
       })
       await loadUsers()
       await loadAdminSeatAssignments()
-      setNotice('Usuario criado com sucesso.')
+      setNotice(t('User created successfully.', 'Usuario criado com sucesso.'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao criar usuario')
+      setError(err instanceof Error ? err.message : t('Could not create user.', 'Erro ao criar usuario'))
+    } finally {
+      setCreateLoading(false)
+    }
+  }
+
+  const handleGenerateInviteLink = async () => {
+    if (!token || inviteLoading) return
+
+    setInviteError('')
+    setInviteNotice('')
+    setInvitePurchaseUrl('')
+
+    const parsedTtl = Number(inviteTtlHours)
+    if (!Number.isInteger(parsedTtl) || parsedTtl < 1) {
+      setInviteError(
+        t(
+          'Invite TTL must be an integer greater than or equal to 1 hour.',
+          'TTL do convite deve ser inteiro maior ou igual a 1 hora.'
+        )
+      )
+      return
+    }
+
+    setInviteLoading(true)
+    try {
+      const requestBody = {
+        role: inviteRole,
+        expiresInHours: parsedTtl,
+      }
+
+      const response = await fetch(`${API_BASE}/users/me/team-invite-link`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(requestBody),
+      })
+
+      const payload = (await response.json().catch(() => ({}))) as TeamInviteLinkResponse
+
+      if (response.status === 202) {
+        setInviteNotice(
+          payload?.message ||
+            t(
+              'Duplicate request ignored. Click again to generate a new invite.',
+              'Requisicao duplicada ignorada. Clique novamente para gerar um novo convite.'
+            )
+        )
+        return
+      }
+
+      if (!response.ok) {
+        const purchaseUrl = String(payload?.purchase?.url || '').trim()
+        if (purchaseUrl) {
+          setInvitePurchaseUrl(purchaseUrl)
+        }
+
+        throw new Error(
+          payload?.message ||
+            t('Could not generate invite link.', 'Erro ao gerar link de convite.')
+        )
+      }
+
+      const nextInviteUrl = String(payload?.invite?.url || '').trim()
+      if (!nextInviteUrl) {
+        throw new Error(
+          t('Backend did not return invite URL.', 'Backend nao retornou URL de convite.')
+        )
+      }
+
+      setInviteUrl(nextInviteUrl)
+      setInvitePurchaseUrl('')
+      setInviteNotice(
+        t(
+          'Invite link generated. Share it with the employee.',
+          'Link de convite gerado. Compartilhe com o funcionario.'
+        )
+      )
+    } catch (err) {
+      setInviteError(
+        err instanceof Error
+          ? err.message
+          : t('Could not generate invite link.', 'Erro ao gerar link de convite.')
+      )
+    } finally {
+      setInviteLoading(false)
+    }
+  }
+
+  const handleCopyInviteLink = async () => {
+    if (!inviteUrl) return
+
+    try {
+      await navigator.clipboard.writeText(inviteUrl)
+      setInviteNotice(
+        t('Invite link copied to clipboard.', 'Link de convite copiado para a area de transferencia.')
+      )
+    } catch {
+      setInviteError(
+        t(
+          'Could not copy automatically. Copy manually from the field.',
+          'Nao foi possivel copiar automaticamente. Copie manualmente no campo.'
+        )
+      )
     }
   }
 
@@ -506,9 +671,9 @@ const AdminDashboard = () => {
       await apiFetch(`/users/${userId}`, { token, method: 'PATCH', body: updates })
       await loadUsers()
       await loadAdminSeatAssignments()
-      setNotice('Usuario atualizado com sucesso.')
+      setNotice(t('User updated successfully.', 'Usuario atualizado com sucesso.'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao atualizar usuario')
+      setError(err instanceof Error ? err.message : t('Could not update user.', 'Erro ao atualizar usuario'))
     }
   }
 
@@ -521,9 +686,9 @@ const AdminDashboard = () => {
       await apiFetch(`/users/${userId}`, { token, method: 'DELETE' })
       await loadUsers()
       await loadAdminSeatAssignments()
-      setNotice('Usuario removido com sucesso.')
+      setNotice(t('User removed successfully.', 'Usuario removido com sucesso.'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao remover usuario')
+      setError(err instanceof Error ? err.message : t('Could not remove user.', 'Erro ao remover usuario'))
     }
   }
 
@@ -543,9 +708,9 @@ const AdminDashboard = () => {
       })
 
       setPinInputs((prev) => ({ ...prev, [userId]: '' }))
-      setNotice('PIN definido com sucesso.')
+      setNotice(t('PIN set successfully.', 'PIN definido com sucesso.'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao definir PIN')
+      setError(err instanceof Error ? err.message : t('Could not set PIN.', 'Erro ao definir PIN'))
     } finally {
       setPinLoadingByUser((prev) => ({ ...prev, [userId]: false }))
     }
@@ -565,9 +730,9 @@ const AdminDashboard = () => {
       })
 
       setPinInputs((prev) => ({ ...prev, [userId]: '' }))
-      setNotice('PIN resetado com sucesso.')
+      setNotice(t('PIN reset successfully.', 'PIN resetado com sucesso.'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao resetar PIN')
+      setError(err instanceof Error ? err.message : t('Could not reset PIN.', 'Erro ao resetar PIN'))
     } finally {
       setPinLoadingByUser((prev) => ({ ...prev, [userId]: false }))
     }
@@ -593,7 +758,10 @@ const AdminDashboard = () => {
         if (parsedMinutes === null) {
           setErrorByUser((prev) => ({
             ...prev,
-            [userId]: 'Jornada inválida. Use o formato hh:mm entre 1:00 e 24:00 (ex.: 8:20).',
+            [userId]: t(
+              'Invalid workday. Use hh:mm between 1:00 and 24:00 (e.g. 8:20).',
+              'Jornada invalida. Use o formato hh:mm entre 1:00 e 24:00 (ex.: 8:20).'
+            ),
           }))
           return
         }
@@ -613,7 +781,10 @@ const AdminDashboard = () => {
         if (parsedRate === null) {
           setErrorByUser((prev) => ({
             ...prev,
-            [userId]: 'Valor-hora inválido. Use um número válido, ex.: $7 ou $7.5.',
+            [userId]: t(
+              'Invalid hourly rate. Use a valid number, e.g. $7 or $7.5.',
+              'Valor-hora invalido. Use um numero valido, ex.: $7 ou $7.5.'
+            ),
           }))
           return
         }
@@ -627,7 +798,10 @@ const AdminDashboard = () => {
       if (Object.keys(body).length === 0) {
         setErrorByUser((prev) => ({
           ...prev,
-          [userId]: 'Preencha ao menos um campo de jornada/valor-hora para salvar.',
+          [userId]: t(
+            'Fill at least one workday/hourly-rate field before saving.',
+            'Preencha ao menos um campo de jornada/valor-hora para salvar.'
+          ),
         }))
         return
       }
@@ -640,13 +814,19 @@ const AdminDashboard = () => {
 
       setNoticeByUser((prev) => ({
         ...prev,
-        [userId]: 'Jornada e valor-hora atualizados com sucesso.',
+        [userId]: t(
+          'Workday and hourly rate updated successfully.',
+          'Jornada e valor-hora atualizados com sucesso.'
+        ),
       }))
       await loadUsers()
     } catch (err) {
       setErrorByUser((prev) => ({
         ...prev,
-        [userId]: err instanceof Error ? err.message : 'Erro ao atualizar jornada/valor-hora',
+        [userId]:
+          err instanceof Error
+            ? err.message
+            : t('Could not update workday/hourly rate.', 'Erro ao atualizar jornada/valor-hora'),
       }))
     } finally {
       setWorkSettingsLoadingByUser((prev) => ({ ...prev, [userId]: false }))
@@ -666,11 +846,15 @@ const AdminDashboard = () => {
         method: 'PATCH',
         body: { payAllPending: true },
       })
-      setBankNotice(response.message || 'Baixa realizada com sucesso.')
+      setBankNotice(response.message || t('Payment posted successfully.', 'Baixa realizada com sucesso.'))
       await loadBankOverview()
       await loadUsers()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao dar baixa no banco de horas')
+      setError(
+        err instanceof Error
+          ? err.message
+          : t('Could not post bank-hours payment.', 'Erro ao dar baixa no banco de horas')
+      )
     } finally {
       setBankPayLoadingByUser((prev) => ({ ...prev, [userId]: false }))
     }
@@ -684,7 +868,12 @@ const AdminDashboard = () => {
     setVacationNotice('')
 
     if (decision === 'REJECT' && comment.trim().length < 5) {
-      setVacationError('Comentário obrigatório para rejeição do RH (mínimo 5 caracteres).')
+      setVacationError(
+        t(
+          'Comment is required for HR rejection (minimum 5 characters).',
+          'Comentario obrigatorio para rejeicao do RH (minimo 5 caracteres).'
+        )
+      )
       return
     }
 
@@ -701,13 +890,17 @@ const AdminDashboard = () => {
 
       setVacationNotice(
         decision === 'CONFIRM'
-          ? 'Solicitação confirmada pelo RH.'
-          : 'Solicitação rejeitada pelo RH.'
+          ? t('Request confirmed by HR.', 'Solicitacao confirmada pelo RH.')
+          : t('Request rejected by HR.', 'Solicitacao rejeitada pelo RH.')
       )
       await loadVacationRequests()
       setVacationReviewCommentById((prev) => ({ ...prev, [requestId]: '' }))
     } catch (err) {
-      setVacationError(err instanceof Error ? err.message : 'Erro ao revisar solicitação')
+      setVacationError(
+        err instanceof Error
+          ? err.message
+          : t('Could not review request.', 'Erro ao revisar solicitacao')
+      )
     } finally {
       setVacationActionLoadingById((prev) => ({ ...prev, [requestId]: false }))
     }
@@ -725,12 +918,17 @@ const AdminDashboard = () => {
       const radius = Number(locationSettingsForm.radiusMeters)
 
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        setError('Latitude e longitude do estabelecimento são obrigatórias e válidas.')
+        setError(
+          t(
+            'Store latitude and longitude are required and must be valid.',
+            'Latitude e longitude do estabelecimento sao obrigatorias e validas.'
+          )
+        )
         return
       }
 
       if (!Number.isFinite(radius) || radius <= 0) {
-        setError('Raio da cerca deve ser maior que zero.')
+        setError(t('Geofence radius must be greater than zero.', 'Raio da cerca deve ser maior que zero.'))
         return
       }
 
@@ -754,9 +952,19 @@ const AdminDashboard = () => {
       )
 
       setLocationSettings(response.locationSettings)
-      setNotice(response.message || 'Configuração de localização atualizada com sucesso.')
+      setNotice(
+        response.message ||
+          t(
+            'Location settings updated successfully.',
+            'Configuracao de localizacao atualizada com sucesso.'
+          )
+      )
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao salvar configuração de localização')
+      setError(
+        err instanceof Error
+          ? err.message
+          : t('Could not save location settings.', 'Erro ao salvar configuracao de localizacao')
+      )
     } finally {
       setLocationSettingsSaving(false)
     }
@@ -765,17 +973,37 @@ const AdminDashboard = () => {
   return (
     <section className="grid gap-6">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
-        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">Admin</p>
-        <h2 className="mt-4 text-3xl font-semibold text-slate-900">Gestao de usuarios centralizada.</h2>
-        <p className="mt-4 text-sm text-slate-600">Crie perfis, ajuste roles e atribua supervisores.</p>
+        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">{t('Admin', 'Admin')}</p>
+        <h2 className="mt-4 text-3xl font-semibold text-slate-900">
+          {t('Centralized user management.', 'Gestao de usuarios centralizada.')}
+        </h2>
+        <p className="mt-4 text-sm text-slate-600">
+          {t('Create profiles, adjust roles, and assign supervisors.', 'Crie perfis, ajuste roles e atribua supervisores.')}
+        </p>
       </div>
+
+      {isAdmin && currentSeatSnapshot && currentSeatSnapshot.billing.overageSeats > 0 ? (
+        <div className="rounded-3xl border border-amber-300 bg-amber-50 p-6 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
+            {t('Seat adjustment required', 'Ajuste de cadeiras necessario')}
+          </p>
+          <p className="mt-2 text-sm text-amber-900">
+            {t('Your team currently has', 'Seu time esta com')} {currentSeatSnapshot.billing.occupiedSeats}{' '}
+            {t('user(s) for a limit of', 'usuario(s) para um limite de')} {currentSeatSnapshot.billing.seatLimit}.
+            {' '}
+            {t('You need to remove', 'Voce precisa remover')} {currentSeatSnapshot.billing.overageSeats}{' '}
+            {t('person(s) from the team or purchase', 'pessoa(s) do time ou contratar')}{' '}
+            {currentSeatSnapshot.billing.overageSeats} {t('additional seat(s).', 'cadeira(s) adicional(is).')}
+          </p>
+        </div>
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         {isSuperAdmin ? (
           <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm lg:col-span-2">
             <div className="grid gap-4 md:grid-cols-[1.2fr_1fr] md:items-end">
               <label className="text-xs text-slate-600">
-                Entrar no time de um ADMIN
+                {t('Switch to an ADMIN team', 'Entrar no time de um ADMIN')}
                 <select
                   value={selectedAdminId}
                   onChange={(event) => {
@@ -787,10 +1015,10 @@ const AdminDashboard = () => {
                   }}
                   className="mt-1 w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
                 >
-                  <option value="ALL">Todos os admins</option>
+                  <option value="ALL">{t('All admins', 'Todos os admins')}</option>
                   {adminSeatAssignments.map((entry) => (
                     <option key={entry.admin.id} value={entry.admin.id}>
-                      {entry.admin.name} ({entry.team.totalMembers} no time)
+                      {entry.admin.name} ({entry.team.totalMembers} {t('in team', 'no time')})
                     </option>
                   ))}
                 </select>
@@ -801,17 +1029,20 @@ const AdminDashboard = () => {
                   <p className="font-semibold text-slate-800">{selectedAdminSnapshot.admin.name}</p>
                   <p className="text-slate-500">{selectedAdminSnapshot.admin.email}</p>
                   <p className="mt-2">
-                    Plano: {selectedAdminSnapshot.plan.name || 'Sem plano'} ({selectedAdminSnapshot.plan.status})
+                    {t('Plan:', 'Plano:')} {selectedAdminSnapshot.plan.name || t('No plan', 'Sem plano')} ({selectedAdminSnapshot.plan.status})
                   </p>
                   <p>
-                    Time: {selectedAdminSnapshot.team.totalMembers} pessoas | HR: {selectedAdminSnapshot.team.byRole.HR} |
-                    Supervisores: {selectedAdminSnapshot.team.byRole.SUPERVISOR} | Colaboradores:{' '}
+                    {t('Team:', 'Time:')} {selectedAdminSnapshot.team.totalMembers} {t('people', 'pessoas')} | HR: {selectedAdminSnapshot.team.byRole.HR} |
+                    {t('Supervisors:', 'Supervisores:')} {selectedAdminSnapshot.team.byRole.SUPERVISOR} | {t('Members:', 'Colaboradores:')}{' '}
                     {selectedAdminSnapshot.team.byRole.MEMBER}
                   </p>
                 </div>
               ) : (
                 <p className="text-xs text-slate-500">
-                  Selecione um admin para visualizar somente o time vinculado a ele.
+                  {t(
+                    'Select an admin to view only the team linked to that admin.',
+                    'Selecione um admin para visualizar somente o time vinculado a ele.'
+                  )}
                 </p>
               )}
             </div>
@@ -821,25 +1052,32 @@ const AdminDashboard = () => {
         {isGrowthOrBetter ? (
           <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm lg:col-span-2">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-lg font-semibold text-slate-900">Localização do estabelecimento</h3>
+              <h3 className="text-lg font-semibold text-slate-900">
+                {t('Store location', 'Localizacao do estabelecimento')}
+              </h3>
               <button
                 onClick={() => loadLocationSettings().catch(() => undefined)}
                 className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
               >
-                Atualizar
+                {t('Refresh', 'Atualizar')}
               </button>
             </div>
             <p className="mt-2 text-xs text-slate-500">
-              Defina se o ponto valida pelo QR do terminal ou pela geolocalização do celular, e ajuste a posição do estabelecimento.
+              {t(
+                'Choose whether attendance is validated by terminal QR or mobile geolocation, and adjust the store position.',
+                'Defina se o ponto valida pelo QR do terminal ou pela geolocalizacao do celular, e ajuste a posicao do estabelecimento.'
+              )}
             </p>
 
           {locationSettingsLoading ? (
-            <p className="mt-2 text-xs text-slate-500">Carregando configuração de localização...</p>
+            <p className="mt-2 text-xs text-slate-500">
+              {t('Loading location settings...', 'Carregando configuracao de localizacao...')}
+            </p>
           ) : null}
 
           <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
             <label className="text-xs text-slate-600">
-              Método de validação
+              {t('Validation method', 'Metodo de validacao')}
               <select
                 value={locationSettingsForm.locationValidationSource}
                 onChange={(event) =>
@@ -852,14 +1090,14 @@ const AdminDashboard = () => {
               >
                 {(locationSettings?.allowedSources || ['MOBILE', 'TERMINAL_QR']).map((source) => (
                   <option key={source} value={source}>
-                    {source === 'TERMINAL_QR' ? 'QR do terminal' : 'GPS do celular'}
+                    {source === 'TERMINAL_QR' ? t('Terminal QR', 'QR do terminal') : t('Mobile GPS', 'GPS do celular')}
                   </option>
                 ))}
               </select>
             </label>
 
             <label className="text-xs text-slate-600">
-              Modo da cerca
+              {t('Geofence mode', 'Modo da cerca')}
               <select
                 value={locationSettingsForm.mode}
                 onChange={(event) =>
@@ -870,13 +1108,13 @@ const AdminDashboard = () => {
                 }
                 className="mt-1 w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
               >
-                <option value="ALERT">ALERTA</option>
-                <option value="REJECT">BLOQUEAR</option>
+                <option value="ALERT">{t('ALERT', 'ALERTA')}</option>
+                <option value="REJECT">{t('REJECT', 'BLOQUEAR')}</option>
               </select>
             </label>
 
             <label className="text-xs text-slate-600">
-              Raio (metros)
+              {t('Radius (meters)', 'Raio (metros)')}
               <input
                 value={locationSettingsForm.radiusMeters}
                 onChange={(event) =>
@@ -889,7 +1127,7 @@ const AdminDashboard = () => {
             </label>
 
             <label className="text-xs text-slate-600">
-              Latitude
+              {t('Latitude', 'Latitude')}
               <input
                 value={locationSettingsForm.centerLat}
                 onChange={(event) =>
@@ -902,7 +1140,7 @@ const AdminDashboard = () => {
             </label>
 
             <label className="text-xs text-slate-600">
-              Longitude
+              {t('Longitude', 'Longitude')}
               <input
                 value={locationSettingsForm.centerLng}
                 onChange={(event) =>
@@ -923,7 +1161,7 @@ const AdminDashboard = () => {
                     setLocationSettingsForm((prev) => ({ ...prev, enabled: event.target.checked }))
                   }
                 />
-                Cerca virtual ativa
+                {t('Enable geofence', 'Cerca virtual ativa')}
               </label>
               <label className="inline-flex items-center gap-2">
                 <input
@@ -933,7 +1171,7 @@ const AdminDashboard = () => {
                     setLocationSettingsForm((prev) => ({ ...prev, requireLocation: event.target.checked }))
                   }
                 />
-                Exigir GPS quando modo celular
+                {t('Require GPS when using mobile mode', 'Exigir GPS quando modo celular')}
               </label>
             </div>
           </div>
@@ -944,20 +1182,22 @@ const AdminDashboard = () => {
               disabled={locationSettingsSaving}
               className="rounded-full bg-teal-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
             >
-              {locationSettingsSaving ? 'Salvando...' : 'Salvar configuração de localização'}
+              {locationSettingsSaving
+                ? t('Saving...', 'Salvando...')
+                : t('Save location settings', 'Salvar configuracao de localizacao')}
             </button>
           </div>
         </div>
         ) : null}
 
         <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900">Usuarios</h3>
+          <h3 className="text-lg font-semibold text-slate-900">{t('Users', 'Usuarios')}</h3>
           {error ? <p className="mt-2 text-xs text-rose-600">{error}</p> : null}
           {notice ? <p className="mt-2 text-xs text-emerald-600">{notice}</p> : null}
 
           <div className="mt-5 space-y-4">
             {users.length === 0 ? (
-              <p className="text-sm text-slate-500">Nenhum usuario cadastrado.</p>
+              <p className="text-sm text-slate-500">{t('No users registered.', 'Nenhum usuario cadastrado.')}</p>
             ) : (
               users.map((user) => (
                 <div key={user.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
@@ -976,7 +1216,7 @@ const AdminDashboard = () => {
                   </div>
 
                   <div className="mt-4 rounded-2xl border border-slate-200/70 bg-white p-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Conta</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{t('Account', 'Conta')}</p>
                     <div className="mt-2 grid gap-2 md:grid-cols-[1fr_auto_auto] md:items-center">
                       <select
                         value={user.role}
@@ -1000,7 +1240,10 @@ const AdminDashboard = () => {
 
                             if (!fallbackAdminId) {
                               setError(
-                                'Para remover papel ADMIN, selecione no dropdown superior o novo ADMIN responsável pelo usuário.'
+                                t(
+                                  'To remove ADMIN role, select in the top dropdown the new ADMIN responsible for this user.',
+                                  'Para remover papel ADMIN, selecione no dropdown superior o novo ADMIN responsavel pelo usuario.'
+                                )
                               )
                               return
                             }
@@ -1026,17 +1269,17 @@ const AdminDashboard = () => {
                         onClick={() => handleUpdate(user.id, { name: editNames[user.id] || user.name })}
                         className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
                       >
-                        Salvar nome
+                        {t('Save name', 'Salvar nome')}
                       </button>
                       <button
                         onClick={() => handleDelete(user.id)}
                         className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-xs text-rose-700"
                       >
-                        Remover usuário
+                        {t('Remove user', 'Remover usuario')}
                       </button>
                     </div>
                     <div className="mt-2 grid gap-2 text-xs text-slate-500 sm:grid-cols-[auto_1fr] sm:items-center">
-                      <span>Supervisor:</span>
+                      <span>{t('Supervisor:', 'Supervisor:')}</span>
                       <select
                         value={user.supervisor?.id || ''}
                         onChange={(event) =>
@@ -1044,7 +1287,7 @@ const AdminDashboard = () => {
                         }
                         className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs"
                       >
-                        <option value="">Sem supervisor</option>
+                        <option value="">{t('No supervisor', 'Sem supervisor')}</option>
                         {users
                           .filter((candidate) => candidate.role !== 'MEMBER' && candidate.id !== user.id)
                           .map((candidate) => (
@@ -1057,10 +1300,10 @@ const AdminDashboard = () => {
 
                     {isSuperAdmin && user.role !== 'SUPERADMIN' ? (
                       <div className="mt-2 grid gap-2 text-xs text-slate-500 sm:grid-cols-[auto_1fr] sm:items-center">
-                        <span>Admin dono:</span>
+                        <span>{t('Owner admin:', 'Admin dono:')}</span>
                         {user.role === 'ADMIN' ? (
                           <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700">
-                            {user.name} (self)
+                            {user.name} ({t('self', 'proprio')})
                           </span>
                         ) : (
                           <select
@@ -1072,7 +1315,7 @@ const AdminDashboard = () => {
                             }
                             className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs"
                           >
-                            <option value="">Selecione o ADMIN responsável</option>
+                            <option value="">{t('Select the responsible ADMIN', 'Selecione o ADMIN responsavel')}</option>
                             {adminSeatAssignments.map((entry) => (
                               <option key={entry.admin.id} value={entry.admin.id}>
                                 {entry.admin.name}
@@ -1085,13 +1328,13 @@ const AdminDashboard = () => {
 
                     {user.role === 'ADMIN' ? (
                       <p className="mt-2 text-xs text-slate-600">
-                        Plano: {user.adminPlan?.name || 'Sem plano'} ({user.adminPlanStatus || 'INACTIVE'})
+                        {t('Plan:', 'Plano:')} {user.adminPlan?.name || t('No plan', 'Sem plano')} ({user.adminPlanStatus || 'INACTIVE'})
                       </p>
                     ) : null}
                   </div>
 
                   <div className="mt-3 rounded-2xl border border-slate-200/70 bg-white p-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Segurança</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{t('Security', 'Seguranca')}</p>
                     <div className="mt-2 grid gap-2 text-xs text-slate-500 md:grid-cols-[1fr_auto_auto] md:items-center">
                       <input
                         type="password"
@@ -1105,7 +1348,7 @@ const AdminDashboard = () => {
                             [user.id]: event.target.value.replace(/\D/g, '').slice(0, 8),
                           }))
                         }
-                        placeholder="PIN 4 a 8 dígitos"
+                        placeholder={t('PIN 4 to 8 digits', 'PIN 4 a 8 digitos')}
                         className="w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs"
                       />
                       <button
@@ -1113,20 +1356,22 @@ const AdminDashboard = () => {
                         disabled={Boolean(pinLoadingByUser[user.id])}
                         className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 disabled:opacity-50"
                       >
-                        Definir PIN
+                        {t('Set PIN', 'Definir PIN')}
                       </button>
                       <button
                         onClick={() => handleResetPin(user.id)}
                         disabled={Boolean(pinLoadingByUser[user.id])}
                         className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-xs text-rose-700 disabled:opacity-50"
                       >
-                        Resetar PIN
+                        {t('Reset PIN', 'Resetar PIN')}
                       </button>
                     </div>
                   </div>
 
                   <div className="mt-3 rounded-2xl border border-slate-200/70 bg-white p-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Jornada e custo</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                      {t('Workday and cost', 'Jornada e custo')}
+                    </p>
                     <div className="mt-2 grid gap-2 text-xs text-slate-500 md:grid-cols-6 md:items-center">
                       <input
                         type="text"
@@ -1146,7 +1391,7 @@ const AdminDashboard = () => {
                             },
                           }))
                         }
-                        placeholder="Jornada (hh:mm) ex: 8:20"
+                        placeholder={t('Workday (hh:mm) e.g. 8:20', 'Jornada (hh:mm) ex: 8:20')}
                         className="w-full rounded-full border border-slate-200 bg-white px-3 py-1 text-xs"
                       />
                       <input
@@ -1240,7 +1485,7 @@ const AdminDashboard = () => {
                         disabled={Boolean(workSettingsLoadingByUser[user.id])}
                         className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
                       >
-                        Salvar jornada/valor
+                        {t('Save workday/rate', 'Salvar jornada/valor')}
                       </button>
                     </div>
                   </div>
@@ -1258,25 +1503,25 @@ const AdminDashboard = () => {
         </div>
 
         <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900">Novo usuario</h3>
+          <h3 className="text-lg font-semibold text-slate-900">{t('New user', 'Novo usuario')}</h3>
           <div className="mt-4 space-y-4">
             <input
               value={form.name}
               onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-              placeholder="Nome completo"
+              placeholder={t('Full name', 'Nome completo')}
               className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
             />
             <input
               value={form.email}
               onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
-              placeholder="Email"
+              placeholder={t('Email', 'Email')}
               type="email"
               className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
             />
             <input
               value={form.password}
               onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-              placeholder="Senha inicial"
+              placeholder={t('Initial password', 'Senha inicial')}
               type="password"
               className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
             />
@@ -1309,7 +1554,7 @@ const AdminDashboard = () => {
                 }
                 className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
               >
-                <option value="">Selecione o ADMIN responsável</option>
+                <option value="">{t('Select the responsible ADMIN', 'Selecione o ADMIN responsavel')}</option>
                 {adminSeatAssignments.map((entry) => (
                   <option key={entry.admin.id} value={entry.admin.id}>
                     {entry.admin.name}
@@ -1328,8 +1573,8 @@ const AdminDashboard = () => {
                 }
                 className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
               >
-                <option value="ACTIVE">Plano ACTIVE</option>
-                <option value="INACTIVE">Plano INACTIVE</option>
+                <option value="ACTIVE">{t('Plan ACTIVE', 'Plano ACTIVE')}</option>
+                <option value="INACTIVE">{t('Plan INACTIVE', 'Plano INACTIVE')}</option>
               </select>
             ) : null}
             <select
@@ -1337,7 +1582,7 @@ const AdminDashboard = () => {
               onChange={(event) => setForm((prev) => ({ ...prev, supervisorId: event.target.value }))}
               className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
             >
-              <option value="">Supervisor (opcional)</option>
+              <option value="">{t('Supervisor (optional)', 'Supervisor (opcional)')}</option>
               {users
                 .filter((user) => user.role !== 'MEMBER')
                 .map((user) => (
@@ -1348,33 +1593,124 @@ const AdminDashboard = () => {
             </select>
             <button
               onClick={handleCreate}
-              className="w-full rounded-full bg-teal-700 px-4 py-2 text-sm font-semibold text-white"
+              disabled={createLoading}
+              className="w-full rounded-full bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
             >
-              Criar usuario
+              {createLoading ? t('Creating...', 'Criando...') : t('Create user', 'Criar usuario')}
             </button>
+
+            {isAdmin ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  {t('Invite link', 'Link de convite')}
+                </p>
+                <p className="mt-2 text-xs text-slate-600">
+                  {t(
+                    'Choose the role and generate a link. Whoever signs up with this link is automatically added to your team.',
+                    'Escolha a funcao e gere um link. Quem cadastrar com esse link entra automaticamente no seu time.'
+                  )}
+                </p>
+
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <select
+                    value={inviteRole}
+                    onChange={(event) => setInviteRole(event.target.value as InvitableRole)}
+                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs"
+                  >
+                    <option value="MEMBER">{t('Member', 'Colaborador')}</option>
+                    <option value="SUPERVISOR">{t('Supervisor', 'Supervisor')}</option>
+                    <option value="HR">HR</option>
+                  </select>
+
+                  <input
+                    type="number"
+                    min="1"
+                    value={inviteTtlHours}
+                    onChange={(event) => setInviteTtlHours(event.target.value)}
+                    placeholder={t('TTL in hours', 'TTL em horas')}
+                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs"
+                  />
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleGenerateInviteLink}
+                    disabled={inviteLoading}
+                    className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                  >
+                    {inviteLoading
+                      ? t('Generating invite...', 'Gerando convite...')
+                      : t('Generate invite link', 'Gerar link de convite')}
+                  </button>
+
+                  {inviteUrl ? (
+                    <button
+                      type="button"
+                      onClick={handleCopyInviteLink}
+                      className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
+                    >
+                      {t('Copy link', 'Copiar link')}
+                    </button>
+                  ) : null}
+                </div>
+
+                {inviteUrl ? (
+                  <input
+                    readOnly
+                    value={inviteUrl}
+                    className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
+                  />
+                ) : null}
+
+                {inviteError ? <p className="mt-2 text-xs text-rose-600">{inviteError}</p> : null}
+                {invitePurchaseUrl ? (
+                  <p className="mt-1 text-xs text-rose-700">
+                    {t('Buy additional seats by clicking', 'Compre assentos adicionais clicando')}{' '}
+                    <a
+                      href={invitePurchaseUrl}
+                      className="font-semibold underline underline-offset-2"
+                    >
+                      {t('here', 'aqui')}
+                    </a>
+                    .
+                  </p>
+                ) : null}
+                {inviteNotice ? <p className="mt-2 text-xs text-emerald-600">{inviteNotice}</p> : null}
+              </div>
+            ) : null}
           </div>
         </div>
 
         <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-lg font-semibold text-slate-900">Férias (RH)</h3>
+            <h3 className="text-lg font-semibold text-slate-900">{t('Vacation (HR)', 'Ferias (RH)')}</h3>
             <button
               onClick={() => loadVacationRequests().catch(() => undefined)}
               className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
             >
-              Atualizar
+              {t('Refresh', 'Atualizar')}
             </button>
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            Solicitações aprovadas pelo supervisor aguardando confirmação final do RH.
+            {t(
+              'Requests approved by supervisor waiting for final HR confirmation.',
+              'Solicitacoes aprovadas pelo supervisor aguardando confirmacao final do RH.'
+            )}
           </p>
           {vacationError ? <p className="mt-2 text-xs text-rose-600">{vacationError}</p> : null}
           {vacationNotice ? <p className="mt-2 text-xs text-emerald-600">{vacationNotice}</p> : null}
 
           <div className="mt-4 space-y-3">
-            {vacationLoading ? <p className="text-sm text-slate-500">Carregando solicitações de férias...</p> : null}
+            {vacationLoading ? (
+              <p className="text-sm text-slate-500">
+                {t('Loading vacation requests...', 'Carregando solicitacoes de ferias...')}
+              </p>
+            ) : null}
             {!vacationLoading && visibleVacationRequests.length === 0 ? (
-              <p className="text-sm text-slate-500">Nenhuma solicitação pendente de RH.</p>
+              <p className="text-sm text-slate-500">
+                {t('No HR-pending requests.', 'Nenhuma solicitacao pendente de RH.')}
+              </p>
             ) : null}
 
             {visibleVacationRequests.map((request) => (
@@ -1382,13 +1718,19 @@ const AdminDashboard = () => {
                 <p className="text-sm font-semibold text-slate-800">{request.user.name}</p>
                 <p className="text-xs text-slate-500">{request.user.email}</p>
                 <p className="mt-2 text-xs text-slate-600">
-                  Periodo: {new Date(request.startDate).toLocaleDateString('pt-BR')} até{' '}
-                  {new Date(request.endDate).toLocaleDateString('pt-BR')}
+                  {t('Period:', 'Periodo:')} {new Date(request.startDate).toLocaleDateString(locale)} {t('to', 'ate')}{' '}
+                  {new Date(request.endDate).toLocaleDateString(locale)}
                 </p>
                 {request.supervisor ? (
-                  <p className="mt-1 text-xs text-slate-600">Supervisor: {request.supervisor.name}</p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    {t('Supervisor:', 'Supervisor:')} {request.supervisor.name}
+                  </p>
                 ) : null}
-                {request.reason ? <p className="mt-1 text-xs text-slate-600">Motivo: {request.reason}</p> : null}
+                {request.reason ? (
+                  <p className="mt-1 text-xs text-slate-600">
+                    {t('Reason:', 'Motivo:')} {request.reason}
+                  </p>
+                ) : null}
 
                 <input
                   value={vacationReviewCommentById[request.id] || ''}
@@ -1398,7 +1740,7 @@ const AdminDashboard = () => {
                       [request.id]: event.target.value,
                     }))
                   }
-                  placeholder="Comentário (obrigatório para rejeição)"
+                  placeholder={t('Comment (required for rejection)', 'Comentario (obrigatorio para rejeicao)')}
                   className="mt-3 w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
                 />
 
@@ -1408,14 +1750,14 @@ const AdminDashboard = () => {
                     disabled={Boolean(vacationActionLoadingById[request.id])}
                     className="rounded-full bg-teal-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
                   >
-                    Confirmar
+                    {t('Confirm', 'Confirmar')}
                   </button>
                   <button
                     onClick={() => handleReviewVacationByHr(request.id, 'REJECT')}
                     disabled={Boolean(vacationActionLoadingById[request.id])}
                     className="rounded-full border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
                   >
-                    Rejeitar
+                    {t('Reject', 'Rejeitar')}
                   </button>
                 </div>
               </div>
@@ -1425,23 +1767,30 @@ const AdminDashboard = () => {
 
         <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-lg font-semibold text-slate-900">Banco de horas</h3>
+            <h3 className="text-lg font-semibold text-slate-900">{t('Banked hours', 'Banco de horas')}</h3>
             <button
               onClick={() => loadBankOverview().catch(() => undefined)}
               className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
             >
-              Atualizar
+              {t('Refresh', 'Atualizar')}
             </button>
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            Visualize credito, saldo devedor e pendencias para baixa por colaborador.
+            {t(
+              'View credit, debt balance, and pending amounts to post per employee.',
+              'Visualize credito, saldo devedor e pendencias para baixa por colaborador.'
+            )}
           </p>
           {bankNotice ? <p className="mt-2 text-xs text-emerald-600">{bankNotice}</p> : null}
 
           <div className="mt-4 space-y-2">
-            {bankLoading ? <p className="text-sm text-slate-500">Carregando banco de horas...</p> : null}
+            {bankLoading ? (
+              <p className="text-sm text-slate-500">{t('Loading banked hours...', 'Carregando banco de horas...')}</p>
+            ) : null}
             {!bankLoading && visibleBankOverview.length === 0 ? (
-              <p className="text-sm text-slate-500">Nenhum dado de banco de horas disponível.</p>
+              <p className="text-sm text-slate-500">
+                {t('No banked-hours data available.', 'Nenhum dado de banco de horas disponivel.')}
+              </p>
             ) : null}
             {visibleBankOverview.map((row) => (
               <div key={row.user.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
@@ -1455,22 +1804,24 @@ const AdminDashboard = () => {
                     disabled={Boolean(bankPayLoadingByUser[row.user.id]) || row.bankHours.pendingMinutes <= 0}
                     className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
                   >
-                    {bankPayLoadingByUser[row.user.id] ? 'Processando...' : 'Dar baixa pendente'}
+                    {bankPayLoadingByUser[row.user.id]
+                      ? t('Processing...', 'Processando...')
+                      : t('Post pending amount', 'Dar baixa pendente')}
                   </button>
                 </div>
 
                 <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-4">
                   <span className="rounded-full bg-white px-3 py-1">
-                    Credito: {formatMinutesLabel(row.bankHours.creditMinutes)}
+                    {t('Credit:', 'Credito:')} {formatMinutesLabel(row.bankHours.creditMinutes)}
                   </span>
                   <span className="rounded-full bg-white px-3 py-1">
-                    Devedor: {formatMinutesLabel(row.bankHours.debtMinutes)}
+                    {t('Debt:', 'Devedor:')} {formatMinutesLabel(row.bankHours.debtMinutes)}
                   </span>
                   <span className="rounded-full bg-white px-3 py-1">
-                    Pendente: {formatMinutesLabel(row.bankHours.pendingMinutes)}
+                    {t('Pending:', 'Pendente:')} {formatMinutesLabel(row.bankHours.pendingMinutes)}
                   </span>
                   <span className="rounded-full bg-white px-3 py-1">
-                    Pago: {formatMinutesLabel(row.bankHours.paidMinutes)}
+                    {t('Paid:', 'Pago:')} {formatMinutesLabel(row.bankHours.paidMinutes)}
                   </span>
                 </div>
               </div>

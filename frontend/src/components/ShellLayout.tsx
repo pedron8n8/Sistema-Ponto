@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { useTimeZone } from '../context/TimezoneContext'
 import { usePlan } from '../hooks/usePlan'
 import { TIME_ZONE_OPTIONS } from '../lib/timezone'
+import { splitMessageLink } from '../lib/errorMessage'
 import { useTranslation } from 'react-i18next'
 import LanguageSwitcher from './LanguageSwitcher'
 import UserAvatar from './UserAvatar'
@@ -88,14 +89,17 @@ type NavSection = {
 
 const ShellLayout = ({ children }: { children: React.ReactNode }) => {
   const { profile, profileError, signOut } = useAuth()
-  const { isGrowthOrBetter } = usePlan()
+  const { isGrowthOrBetter, isPro } = usePlan()
   const { viewTimeZone, setViewTimeZone } = useTimeZone()
   const { t: i18nT, i18n } = useTranslation()
   const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
   const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
+  const parsedProfileError = splitMessageLink(profileError || '')
   const isSuperAdmin = profile?.role === 'SUPERADMIN'
   const isAdmin = profile?.role === 'ADMIN' || profile?.role === 'SUPERADMIN'
+  const isOnlyAdmin = profile?.role === 'ADMIN'
   const isHr = profile?.role === 'HR'
+  const canManageProSettings = profile?.role === 'ADMIN' || profile?.role === 'HR'
   const isSupervisor = profile?.role === 'SUPERVISOR' || profile?.role === 'HR' || isAdmin
   const navSections: NavSection[] = [
     {
@@ -171,18 +175,51 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
     },
     {
       title: t('Admin', 'Admin'),
-      visible: isAdmin || isHr,
+      visible: isOnlyAdmin || isHr,
       items: [
         {
-          to: '/app/admin/overview',
-          label: t('Admin Overview', 'Admin Overview'),
+          to: '/app/admin/users',
+          label: t('Users & seats', 'Usuarios e assentos'),
           icon: <AdminIcon />,
         },
+        {
+          to: '/app/admin/bank-hours',
+          label: t('Bank hours', 'Banco de horas'),
+          icon: <AdminIcon />,
+        },
+        {
+          to: '/app/admin/pending-approvals',
+          label: t('Pending approvals', 'Pendencias aprovacao'),
+          icon: <AdminIcon />,
+        },
+        ...(isOnlyAdmin
+          ? [
+              {
+                to: '/app/admin/financeiro',
+                label: t('Finance', 'Financeiro'),
+                icon: <AdminIcon />,
+              },
+              {
+                to: '/app/admin/comprar-assentos',
+                label: t('Buy seats', 'Comprar assentos'),
+                icon: <AdminIcon />,
+              },
+            ]
+          : []),
         ...(isGrowthOrBetter
           ? [
               {
                 to: '/app/admin/qr-code',
                 label: t('Admin QR Code', 'Admin QR Code'),
+                icon: <AdminIcon />,
+              },
+            ]
+          : []),
+        ...(isPro && canManageProSettings
+          ? [
+              {
+                to: '/app/admin/pro-settings',
+                label: t('Pro settings', 'Config PRO'),
                 icon: <AdminIcon />,
               },
             ]
@@ -363,7 +400,21 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
 
               {profileError ? (
                 <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3 text-xs text-amber-900">
-                  {profileError} {t('Contact the administrator to enable access.', 'Entre em contato com o administrador para habilitar o acesso.')}
+                  {parsedProfileError.text || profileError}
+                  {parsedProfileError.url ? (
+                    <>
+                      {' '}
+                      <a
+                        href={parsedProfileError.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-semibold underline decoration-amber-500 underline-offset-2 hover:text-amber-950"
+                      >
+                        {t('here', 'aqui')}
+                      </a>
+                    </>
+                  ) : null}{' '}
+                  {t('Contact the administrator to enable access.', 'Entre em contato com o administrador para habilitar o acesso.')}
                 </div>
               ) : null}
 

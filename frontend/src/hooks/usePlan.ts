@@ -12,7 +12,8 @@ const PLAN_LEVELS: Record<string, number> = {
 export const usePlan = () => {
   const auth = useAuth()
 
-  const currentPlan = (auth?.profile?.currentPlan as PlanCode) || 'BASE'
+  const rawCurrentPlan = (auth?.profile?.currentPlan as PlanCode) || 'STARTER'
+  const currentPlan = rawCurrentPlan === 'BASE' ? 'STARTER' : rawCurrentPlan
   const currentPlanStatus = auth?.profile?.currentPlanStatus || 'INACTIVE'
   const isSuperadmin = auth?.profile?.role === 'SUPERADMIN'
 
@@ -22,7 +23,7 @@ export const usePlan = () => {
   const hasPlan = (requiredPlan: PlanCode | PlanCode[]) => {
     if (isSuperadmin) return true
 
-    if (currentPlanStatus !== 'ACTIVE' && currentPlan !== 'BASE') {
+    if (currentPlanStatus !== 'ACTIVE') {
       return false
     }
 

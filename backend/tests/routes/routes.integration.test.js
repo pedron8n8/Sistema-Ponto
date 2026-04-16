@@ -2,6 +2,7 @@
 
 const request = require('supertest');
 const express = require('express');
+const { hashPin } = require('../../src/utils/pinAuth');
 
 // Mock completo do Prisma antes de importar as rotas
 const mockPrisma = {
@@ -11,6 +12,29 @@ const mockPrisma = {
     findMany: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+    upsert: jest.fn(),
+    delete: jest.fn(),
+    count: jest.fn(),
+    groupBy: jest.fn(),
+  },
+  adminPlan: {
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    upsert: jest.fn(),
+    delete: jest.fn(),
+    count: jest.fn(),
+    groupBy: jest.fn(),
+  },
+  adminBillingInvoice: {
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    upsert: jest.fn(),
     delete: jest.fn(),
     count: jest.fn(),
     groupBy: jest.fn(),
@@ -33,6 +57,17 @@ const mockPrisma = {
     count: jest.fn(),
     groupBy: jest.fn(),
   },
+  bankHoursEntry: {
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+    delete: jest.fn(),
+    count: jest.fn(),
+    groupBy: jest.fn(),
+  },
   $transaction: jest.fn((callbacks) => Promise.all(callbacks)),
   $connect: jest.fn(),
   $disconnect: jest.fn(),
@@ -49,13 +84,31 @@ const mockSupabaseAdmin = {
   },
 };
 
+const mockSupabase = {
+  auth: {
+    getUser: jest.fn(),
+  },
+};
+
+const mockReportQueue = {
+  add: jest.fn(),
+  getJob: jest.fn(),
+  getCompleted: jest.fn().mockResolvedValue([]),
+};
+
 // Mock dos módulos
 jest.mock('../../src/config/database', () => mockPrisma);
 jest.mock('../../src/config/supabase', () => ({
   supabaseAdmin: mockSupabaseAdmin,
+  supabase: mockSupabase,
 }));
 jest.mock('../../src/config/redis', () => ({
   on: jest.fn(),
+}));
+jest.mock('../../src/workers/reportWorker', () => ({
+  reportQueue: mockReportQueue,
+  REPORTS_DIR: 'C:/tmp/reports',
+  createReportWorker: jest.fn(),
 }));
 
 // Cria uma app Express para testes
@@ -73,11 +126,35 @@ const createTestApp = () => {
     // Simula diferentes usuários baseado no token
     const token = authHeader.split(' ')[1];
     if (token === 'admin-token') {
-      req.user = { id: 'admin-123', email: 'admin@test.com', role: 'ADMIN' };
+      req.user = {
+        id: 'admin-123',
+        email: 'admin@test.com',
+        role: 'ADMIN',
+        adminPlanId: 'plan-base-123',
+        adminPlanStatus: 'ACTIVE',
+        currentPlan: 'PRO',
+        currentPlanStatus: 'ACTIVE',
+        adminSeatLimit: 10,
+        adminExtraSeatPrice: 10,
+      };
     } else if (token === 'supervisor-token') {
-      req.user = { id: 'supervisor-123', email: 'supervisor@test.com', role: 'SUPERVISOR' };
+      req.user = {
+        id: 'supervisor-123',
+        email: 'supervisor@test.com',
+        role: 'SUPERVISOR',
+        organizationAdminId: 'admin-123',
+        currentPlan: 'PRO',
+        currentPlanStatus: 'ACTIVE',
+      };
     } else if (token === 'member-token') {
-      req.user = { id: 'member-123', email: 'member@test.com', role: 'MEMBER' };
+      req.user = {
+        id: 'member-123',
+        email: 'member@test.com',
+        role: 'MEMBER',
+        organizationAdminId: 'admin-123',
+        currentPlan: 'PRO',
+        currentPlanStatus: 'ACTIVE',
+      };
     } else {
       return res.status(401).json({ error: 'Invalid token' });
     }
@@ -143,6 +220,8 @@ describe('API Routes Integration Tests', () => {
 
   describe('Time Routes', () => {
     beforeEach(() => {
+      const { hash, salt } = hashPin('1234');
+
       mockSupabaseAdmin.auth.getUser.mockResolvedValue({
         data: { user: { id: 'member-123', email: 'member@test.com' } },
         error: null,
@@ -151,7 +230,23 @@ describe('API Routes Integration Tests', () => {
         id: 'member-123',
         email: 'member@test.com',
         role: 'MEMBER',
+        facialEmbedding: null,
+        facialThreshold: 0.6,
+        pinHash: hash,
+        pinSalt: salt,
+        pinFailedAttempts: 0,
+        pinLockedUntil: null,
+        contractDailyMinutes: 480,
+        hourlyRate: 10,
+        bankHoursBalanceMinutes: 0,
+        bankHoursLimitMinutes: null,
+        bankHoursExpiryMonths: 6,
+        bankHoursPolicyCode: 'DEFAULT',
       });
+      mockPrisma.user.update.mockResolvedValue({ bankHoursBalanceMinutes: 0 });
+      mockPrisma.bankHoursEntry.findMany.mockResolvedValue([]);
+      mockPrisma.bankHoursEntry.create.mockResolvedValue({ id: 'bhe-1' });
+      mockPrisma.bankHoursEntry.updateMany.mockResolvedValue({ count: 0 });
     });
 
     it('POST /api/v1/time/clock-in should create a time entry', async () => {
@@ -167,7 +262,7 @@ describe('API Routes Integration Tests', () => {
       const res = await request(app)
         .post('/api/v1/time/clock-in')
         .set('Authorization', 'Bearer member-token')
-        .send({ notes: 'Starting work' });
+        .send({ notes: 'Starting work', pin: '1234' });
 
       expect(res.status).toBe(201);
       expect(res.body).toHaveProperty('message', 'Clock-in registrado com sucesso');
@@ -182,7 +277,8 @@ describe('API Routes Integration Tests', () => {
 
       const res = await request(app)
         .post('/api/v1/time/clock-in')
-        .set('Authorization', 'Bearer member-token');
+        .set('Authorization', 'Bearer member-token')
+        .send({});
 
       expect(res.status).toBe(400);
       expect(res.body.message).toContain('já possui um ponto aberto');
@@ -204,7 +300,7 @@ describe('API Routes Integration Tests', () => {
       const res = await request(app)
         .post('/api/v1/time/clock-out')
         .set('Authorization', 'Bearer member-token')
-        .send({ notes: 'Ending work' });
+        .send({ notes: 'Ending work', pin: '1234' });
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('message', 'Clock-out registrado com sucesso');
@@ -234,6 +330,10 @@ describe('API Routes Integration Tests', () => {
         id: 'admin-123',
         email: 'admin@test.com',
         role: 'ADMIN',
+        adminPlanId: 'plan-base-123',
+        adminPlanStatus: 'ACTIVE',
+        adminSeatLimit: 10,
+        adminExtraSeatPrice: 10,
       });
     });
 
@@ -272,10 +372,19 @@ describe('API Routes Integration Tests', () => {
     it('POST /api/v1/users should create user', async () => {
       mockPrisma.user.findUnique.mockImplementation(({ where }) => {
         if (where.id === 'admin-123') {
-          return { id: 'admin-123', email: 'admin@test.com', role: 'ADMIN' };
+          return {
+            id: 'admin-123',
+            email: 'admin@test.com',
+            role: 'ADMIN',
+            adminPlanId: 'plan-base-123',
+            adminPlanStatus: 'ACTIVE',
+            adminSeatLimit: 10,
+            adminExtraSeatPrice: 10,
+          };
         }
         return null;
       });
+      mockPrisma.user.count.mockResolvedValue(0);
 
       mockSupabaseAdmin.auth.admin.createUser.mockResolvedValue({
         data: { user: { id: 'new-user' } },
@@ -426,6 +535,7 @@ describe('API Routes Integration Tests', () => {
 
   describe('Reports Routes', () => {
     beforeEach(() => {
+      mockReportQueue.getCompleted.mockResolvedValue([]);
       mockSupabaseAdmin.auth.getUser.mockResolvedValue({
         data: { user: { id: 'admin-123', email: 'admin@test.com' } },
         error: null,

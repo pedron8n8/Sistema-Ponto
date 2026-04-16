@@ -1,7 +1,6 @@
 const prisma = require('../config/database');
 const { adjustBankHours, settleBankHoursAccruals } = require('../utils/bankHours');
 const { normalizeMinutes, normalizeTime, normalizeTimeZone } = require('../utils/workSettings');
-const { sendOvertimeThresholdNotification } = require('../utils/notifications');
 
 const PRESENCE_REFRESH_MS = 15000;
 const DEFAULT_OVERTIME_LIMIT_MINUTES = Number(process.env.OVERTIME_DAILY_LIMIT_MINUTES || 120);
@@ -13,7 +12,6 @@ const OVERTIME_ALERT_CHANNELS = String(process.env.OVERTIME_ALERT_CHANNELS || 'I
   .split(',')
   .map((channel) => channel.trim().toUpperCase())
   .filter(Boolean);
-const overtimeAlertDispatchRegistry = new Map();
 
 const PRESENCE_STATUS = {
   PRESENT: 'PRESENT',
@@ -23,11 +21,14 @@ const PRESENCE_STATUS = {
 };
 
 const KPI_PERIODS = new Set(['daily', 'weekly', 'monthly']);
+const TEAM_MEMBER_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];
 
 const isElevatedRole = (role) => ['SUPERADMIN', 'ADMIN', 'HR'].includes(role);
 
 const buildSupervisorScopeWhere = ({ supervisorId, isAdmin }) =>
-  isAdmin ? { role: { notIn: ['ADMIN', 'HR'] } } : { supervisorId };
+  isAdmin
+    ? { role: { in: TEAM_MEMBER_ROLES }, isActive: true }
+    : { supervisorId, isActive: true };
 
 const normalizeFilterValue = (value) => {
   if (value === undefined || value === null) return null;
@@ -234,9 +235,6 @@ const resolveOvertimeAlertLimitMinutes = (member) => {
   return 120;
 };
 
-const buildOvertimeAlertRegistryKey = ({ managerId, memberId, dateKey, thresholdPercent }) =>
-  `${managerId}:${memberId}:${dateKey}:${thresholdPercent}`;
-
 const buildTeamPresenceSnapshot = async ({ supervisorId, supervisorEmail, supervisorName, isAdmin, filters }) => {
   const teamMembersRaw = await prisma.user.findMany({
     where: buildSupervisorScopeWhere({ supervisorId, isAdmin }),
@@ -405,13 +403,6 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, supervisorEmail, superv
 
       if (overtimeMinutesSoFar >= thresholdMinutes && thresholdMinutes > 0) {
         const dateKey = new Date(now).toISOString().slice(0, 10);
-        const managerId = supervisorId;
-        const registryKey = buildOvertimeAlertRegistryKey({
-          managerId,
-          memberId: member.id,
-          dateKey,
-          thresholdPercent: OVERTIME_ALERT_THRESHOLD_PERCENT,
-        });
 
         const alertPayload = {
           type: 'OVERTIME_LIMIT_THRESHOLD',
@@ -426,7 +417,7 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, supervisorEmail, superv
             email: member.email,
           },
           manager: {
-            id: managerId,
+            id: supervisorId,
             name: supervisorName || member.supervisor?.name || 'Gestor',
             email: supervisorEmail || member.supervisor?.email || null,
           },
@@ -435,13 +426,6 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, supervisorEmail, superv
         };
 
         overtimeAlerts.push(alertPayload);
-
-        if (!overtimeAlertDispatchRegistry.has(registryKey)) {
-          overtimeAlertDispatchRegistry.set(registryKey, alertPayload.triggeredAt);
-          sendOvertimeThresholdNotification(alertPayload).catch((error) => {
-            console.error('⚠️ Falha ao enviar alerta proativo de HE:', error?.message || error);
-          });
-        }
       }
     } else if (userTodayEntries.length > 0 && withinConfiguredWorkday) {
       status = PRESENCE_STATUS.ON_BREAK;
@@ -725,7 +709,8 @@ const getTeamPendingEntries = async (req, res) => {
     // Se for SUPERVISOR, visualiza apenas os subordinados
     const subordinates = await prisma.user.findMany({
       where: {
-        ...(isAdmin ? { role: { not: 'ADMIN' } } : { supervisorId: supervisorId }),
+        ...(isAdmin ? { role: { in: TEAM_MEMBER_ROLES } } : { supervisorId: supervisorId }),
+        isActive: true,
       },
       select: {
         id: true,
@@ -1246,7 +1231,8 @@ const getTeamMembers = async (req, res) => {
 
     const subordinates = await prisma.user.findMany({
       where: {
-        ...(isAdmin ? { role: { not: 'ADMIN' } } : { supervisorId: supervisorId }),
+        ...(isAdmin ? { role: { in: TEAM_MEMBER_ROLES } } : { supervisorId: supervisorId }),
+        isActive: true,
       },
       select: {
         id: true,
@@ -1618,8 +1604,8 @@ const getTeamBankHoursOverview = async (req, res) => {
 
     const team = await prisma.user.findMany({
       where: isAdmin
-        ? { role: { not: 'ADMIN' } }
-        : { supervisorId: supervisorId },
+        ? { role: { in: TEAM_MEMBER_ROLES }, isActive: true }
+        : { supervisorId: supervisorId, isActive: true },
       select: {
         id: true,
         name: true,

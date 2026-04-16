@@ -3,17 +3,25 @@ import { AuthProvider } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import ShellLayout from './components/ShellLayout'
 import Login from './pages/Login'
+import Signup from './pages/Signup'
 import LandingPage from './pages/LandingPage'
 import PricingPage from './pages/PricingPage'
 import PrivacyPage from './pages/PrivacyPage'
 import TermsPage from './pages/TermsPage'
+import PlanSelectionPage from './pages/PlanSelectionPage'
 import Overview from './pages/Overview'
 import ColaboradorDashboard from './pages/ColaboradorDashboard'
 import ColaboradorHistoryPage from './pages/ColaboradorHistoryPage'
 import SupervisorDashboard from './pages/SupervisorDashboard'
-import AdminDashboard from './pages/AdminDashboard'
+import AdminUsersPage from './pages/AdminUsersPage'
+import AdminBankHoursPage from './pages/AdminBankHoursPage'
+import AdminPendingApprovalsPage from './pages/AdminPendingApprovalsPage'
+import AdminFinancePage from './pages/AdminFinancePage'
 import AdminBillingResultPage from './pages/AdminBillingResultPage'
+import AdminCheckoutThankYouPage from './pages/AdminCheckoutThankYouPage.tsx'
+import AdminSeatPurchasePage from './pages/AdminSeatPurchasePage'
 import AdminQrCodePage from './pages/AdminQrCodePage'
+import AdminProSettingsPage from './pages/AdminProSettingsPage'
 import SupervisorKpisPage from './pages/SupervisorKpisPage'
 import SupervisorPendingItemsPage from './pages/SupervisorPendingItemsPage'
 import SupervisorHoursPage from './pages/SupervisorHoursPage'
@@ -76,6 +84,15 @@ const App = () => {
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/terms" element={<TermsPage />} />
                 <Route path="/login" element={<Login />} />
+                <Route path="/signup" element={<Signup />} />
+                <Route
+                  path="/app/escolher-plano"
+                  element={
+                    <ProtectedRoute allowInactivePlan>
+                      <PlanSelectionPage />
+                    </ProtectedRoute>
+                  }
+                />
                 <Route
                   path="/app"
                   element={
@@ -175,17 +192,65 @@ const App = () => {
                 <Route
                   path="/app/admin"
                   element={
-                    <ProtectedRoute allowedRoles={['ADMIN', 'HR', 'SUPERADMIN']}>
-                      <Navigate to="/app/admin/qr-code" replace />
+                    <ProtectedRoute allowedRoles={['ADMIN', 'HR']}>
+                      <Navigate to="/app/admin/users" replace />
                     </ProtectedRoute>
                   }
                 />
                 <Route
                   path="/app/admin/overview"
                   element={
-                    <ProtectedRoute allowedRoles={['ADMIN', 'HR', 'SUPERADMIN']}>
+                    <ProtectedRoute allowedRoles={['ADMIN', 'HR']}>
+                      <Navigate to="/app/admin/users" replace />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/admin/users"
+                  element={
+                    <ProtectedRoute allowedRoles={['ADMIN', 'HR']}>
                       <ShellLayout>
-                        <AdminDashboard />
+                        <AdminUsersPage />
+                      </ShellLayout>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/admin/bank-hours"
+                  element={
+                    <ProtectedRoute allowedRoles={['ADMIN', 'HR']}>
+                      <ShellLayout>
+                        <AdminBankHoursPage />
+                      </ShellLayout>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/admin/pending-approvals"
+                  element={
+                    <ProtectedRoute allowedRoles={['ADMIN', 'HR']}>
+                      <ShellLayout>
+                        <AdminPendingApprovalsPage />
+                      </ShellLayout>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/admin/financeiro"
+                  element={
+                    <ProtectedRoute allowedRoles={['ADMIN']}>
+                      <ShellLayout>
+                        <AdminFinancePage />
+                      </ShellLayout>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/admin/comprar-assentos"
+                  element={
+                    <ProtectedRoute allowedRoles={['ADMIN']}>
+                      <ShellLayout>
+                        <AdminSeatPurchasePage />
                       </ShellLayout>
                     </ProtectedRoute>
                   }
@@ -196,6 +261,26 @@ const App = () => {
                     <ProtectedRoute allowedRoles={['ADMIN', 'HR', 'SUPERADMIN']} allowedPlans={['GROWTH', 'PRO']}>
                       <ShellLayout>
                         <AdminQrCodePage />
+                      </ShellLayout>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/admin/pro-settings"
+                  element={
+                    <ProtectedRoute allowedRoles={['ADMIN', 'HR']} allowedPlans={['PRO']}>
+                      <ShellLayout>
+                        <AdminProSettingsPage />
+                      </ShellLayout>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/admin/obrigado"
+                  element={
+                    <ProtectedRoute allowedRoles={['ADMIN', 'HR', 'SUPERADMIN']}>
+                      <ShellLayout>
+                        <AdminCheckoutThankYouPage />
                       </ShellLayout>
                     </ProtectedRoute>
                   }

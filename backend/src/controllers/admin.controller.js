@@ -8,6 +8,8 @@ const {
   LOCATION_VALIDATION_SOURCES,
 } = require('../utils/geofence');
 
+const TEAM_MEMBER_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];
+
 /**
  * Controller para funcionalidades administrativas e auditoria
  */
@@ -979,10 +981,30 @@ const updateUserWorkSettings = async (req, res) => {
  */
 const getBankHoursOverview = async (req, res) => {
   try {
+    const where = {
+      role: { in: TEAM_MEMBER_ROLES },
+      isActive: true,
+    };
+
+    if (req.user.role === 'ADMIN') {
+      where.organizationAdminId = req.user.id;
+    }
+
+    if (req.user.role === 'HR') {
+      const currentUser = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { organizationAdminId: true },
+      });
+
+      if (!currentUser?.organizationAdminId) {
+        return res.json({ overview: [] });
+      }
+
+      where.organizationAdminId = currentUser.organizationAdminId;
+    }
+
     const users = await prisma.user.findMany({
-      where: {
-        role: { not: 'ADMIN' },
-      },
+      where,
       select: {
         id: true,
         name: true,

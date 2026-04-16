@@ -4,6 +4,7 @@ const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
 const rateLimitMiddleware = require('./middlewares/rateLimit.middleware');
+const idempotencyMiddleware = require('./middlewares/idempotency.middleware');
 const { ensureUserPhotoDir } = require('./utils/userPhoto');
 
 // Import routes
@@ -11,6 +12,7 @@ const routes = require('./routes');
 
 // Import BullMQ worker
 const { createReportWorker } = require('./workers/reportWorker');
+const { createProactiveAlertWorker } = require('./workers/proactiveAlertWorker');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -34,6 +36,7 @@ const corsOptions = {
     return callback(new Error('Origin não permitida por CORS'));
   },
   methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Idempotency-Key', 'X-Idempotency-Date'],
   credentials: true,
 };
 
@@ -47,6 +50,7 @@ app.use(cors(corsOptions));
 app.use(rateLimitMiddleware);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(idempotencyMiddleware);
 
 ensureUserPhotoDir();
 app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
@@ -103,6 +107,14 @@ app.listen(PORT, () => {
   // Inicializa o worker de relatórios
   const reportWorker = createReportWorker();
   console.log('📋 Report worker initialized');
+
+  createProactiveAlertWorker()
+    .then(() => {
+      console.log('🔔 Proactive overtime alert worker initialized');
+    })
+    .catch((error) => {
+      console.error('❌ Falha ao inicializar proactive alert worker:', error?.message || error);
+    });
 });
 
 module.exports = app;

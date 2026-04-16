@@ -8,10 +8,11 @@ type Props = {
   children: React.ReactNode
   allowedRoles?: Array<'SUPERADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'>
   allowedPlans?: PlanCode | PlanCode[]
+  allowInactivePlan?: boolean
 }
 
-const ProtectedRoute = ({ children, allowedRoles, allowedPlans }: Props) => {
-  const { session, loading, profile } = useAuth()
+const ProtectedRoute = ({ children, allowedRoles, allowedPlans, allowInactivePlan = false }: Props) => {
+  const { session, loading, profile, profileError } = useAuth()
   const { hasPlan } = usePlan()
   const { t: i18nT, i18n } = useTranslation()
   const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
@@ -27,6 +28,24 @@ const ProtectedRoute = ({ children, allowedRoles, allowedPlans }: Props) => {
 
   if (!session) {
     return <Navigate to="/login" replace />
+  }
+
+  if (!profile && !profileError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">
+        {t('Loading profile...', 'Carregando perfil...')}
+      </div>
+    )
+  }
+
+  const hasActivePlan = profile?.role === 'SUPERADMIN' || profile?.currentPlanStatus === 'ACTIVE'
+
+  if (!allowInactivePlan && !hasActivePlan) {
+    return <Navigate to="/app/escolher-plano" replace />
+  }
+
+  if (allowInactivePlan && hasActivePlan) {
+    return <Navigate to="/app" replace />
   }
 
   if (allowedRoles && (!profile || !allowedRoles.includes(profile.role))) {

@@ -1,23 +1,18 @@
-const parseBoolean = (value, defaultValue) => {
-  if (value === undefined || value === null || value === '') {
-    return defaultValue;
-  }
+const { getProFeatureConfig } = require('./proFeatureConfig');
 
-  return String(value).toLowerCase() === 'true';
+const isLivenessValidationEnabled = () => {
+  const config = getProFeatureConfig();
+  return Boolean(config.liveness.enabled);
 };
 
-const parseNumber = (value, defaultValue) => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : defaultValue;
+const livenessConfig = () => {
+  const config = getProFeatureConfig();
+  return {
+    maxAgeMs: config.liveness.maxAgeMs,
+    minFrames: config.liveness.minFrames,
+    minHeadMovementDelta: config.liveness.minHeadMovementDelta,
+  };
 };
-
-const isLivenessValidationEnabled = () => parseBoolean(process.env.FACIAL_LIVENESS_ENABLED, true);
-
-const livenessConfig = () => ({
-  maxAgeMs: parseNumber(process.env.FACIAL_LIVENESS_MAX_AGE_MS, 15000),
-  minFrames: parseNumber(process.env.FACIAL_LIVENESS_MIN_FRAMES, 8),
-  minHeadMovementDelta: parseNumber(process.env.FACIAL_LIVENESS_MIN_HEAD_DELTA, 0.08),
-});
 
 const validateLivenessEvidence = (evidence) => {
   if (!isLivenessValidationEnabled()) {

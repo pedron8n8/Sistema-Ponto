@@ -15,10 +15,11 @@ const requirePlan = (requiredPlans) => {
         return next();
       }
 
-      const currentPlan = user.currentPlan || 'BASE';
+      const rawCurrentPlan = String(user.currentPlan || 'STARTER').trim().toUpperCase();
+      const currentPlan = rawCurrentPlan === 'BASE' ? 'STARTER' : rawCurrentPlan;
       const currentPlanStatus = user.currentPlanStatus || 'INACTIVE';
 
-      if (currentPlanStatus !== 'ACTIVE' && currentPlan !== 'BASE') {
+      if (currentPlanStatus !== 'ACTIVE') {
         return res.status(403).json({
           error: 'Forbidden',
           message: 'Plano atual inativo ou com pendências.',

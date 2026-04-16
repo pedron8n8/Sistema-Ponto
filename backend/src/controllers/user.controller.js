@@ -7,8 +7,12 @@ const { validateLivenessEvidence } = require('../utils/liveness');
 const { buildUserPhotoUrl, normalizePhotoPath } = require('../utils/userPhoto');
 const {
   createAdditionalSeatsCheckoutSession,
+  verifyAdditionalSeatsCheckoutSession,
   listAdditionalSeatsCheckoutSessions,
+  createBasePlanCheckoutSession,
+  verifyBasePlanCheckoutSession,
 } = require('../utils/seatBilling');
+const { INVITABLE_ROLES, issueTeamInviteToken } = require('../utils/teamInviteToken');
 
 const withPhotoUrl = (req, user) => {
   if (!user) return user;
@@ -32,14 +36,173 @@ const removePhotoFileIfExists = (photoPath) => {
 const ALL_ROLES = ['SUPERADMIN', 'ADMIN', 'HR', 'SUPERVISOR', 'MEMBER'];
 const TEAM_MEMBER_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];
 const ADMIN_PLAN_STATUSES = ['ACTIVE', 'INACTIVE'];
-const EXTRA_ADMIN_SEAT_MONTHLY_USD = 10;
+const parsedExtraAdminSeatMonthlyUsd = Number(process.env.EXTRA_ADMIN_SEAT_MONTHLY_USD);
+const EXTRA_ADMIN_SEAT_MONTHLY_USD = Number(
+  (
+    Number.isFinite(parsedExtraAdminSeatMonthlyUsd) && parsedExtraAdminSeatMonthlyUsd >= 0
+      ? parsedExtraAdminSeatMonthlyUsd
+      : 7.5
+  ).toFixed(2)
+);
 const DEFAULT_ADMIN_PLAN_CODE =
-  String(process.env.DEFAULT_ADMIN_PLAN_CODE || 'BASE').trim().toUpperCase() || 'BASE';
-const DEFAULT_ADMIN_PLAN_NAME = String(process.env.DEFAULT_ADMIN_PLAN_NAME || 'Plano Base').trim() || 'Plano Base';
+  String(process.env.DEFAULT_ADMIN_PLAN_CODE || 'STARTER').trim().toUpperCase() || 'STARTER';
+const DEFAULT_ADMIN_PLAN_NAME = String(process.env.DEFAULT_ADMIN_PLAN_NAME || 'Starter').trim() || 'Starter';
 const parsedDefaultAdminPlanPrice = Number(process.env.DEFAULT_ADMIN_PLAN_MONTHLY_PRICE);
 const DEFAULT_ADMIN_PLAN_MONTHLY_PRICE = Number(
-  (Number.isFinite(parsedDefaultAdminPlanPrice) ? parsedDefaultAdminPlanPrice : 0).toFixed(2)
+  (Number.isFinite(parsedDefaultAdminPlanPrice) ? parsedDefaultAdminPlanPrice : 30).toFixed(2)
 );
+const SELF_SERVICE_ADMIN_PLAN_CATALOG = {
+  STARTER: {
+    code: 'STARTER',
+    name: 'Starter',
+    monthlyPrice: 30,
+    maxSeats: 3,
+  },
+  GROWTH: {
+    code: 'GROWTH',
+    name: 'Growth',
+    monthlyPrice: 40,
+    maxSeats: 5,
+  },
+  PRO: {
+    code: 'PRO',
+    name: 'Pro',
+    monthlyPrice: 50,
+    maxSeats: 7,
+  },
+};
+
+const resolveIncludedSeatsForPlan = ({ planCode, seatLimit }) => {
+  const normalizedPlanCode = String(planCode || '').trim().toUpperCase();
+  const catalogPlan = SELF_SERVICE_ADMIN_PLAN_CATALOG[normalizedPlanCode];
+
+  if (catalogPlan) {
+    return catalogPlan.maxSeats;
+  }
+
+  const parsedSeatLimit = Number(seatLimit);
+  if (Number.isFinite(parsedSeatLimit) && parsedSeatLimit >= 0) {
+    return Math.floor(parsedSeatLimit);
+  }
+
+  return 0;
+};
+
+const buildPersistedAdminSeatSnapshot = ({ planCode, seatLimit, occupiedSeats }) => {
+  const normalizedOccupiedSeats = Math.max(0, Math.floor(Number(occupiedSeats) || 0));
+  const normalizedSeatLimit = Number.isInteger(seatLimit) ? seatLimit : null;
+  const includedSeats = resolveIncludedSeatsForPlan({
+    planCode,
+    seatLimit: normalizedSeatLimit,
+  });
+
+  return {
+    seatLimit: normalizedSeatLimit,
+    activeSeats: normalizedOccupiedSeats,
+    contractedExtraSeats:
+      normalizedSeatLimit === null ? 0 : Math.max(0, normalizedSeatLimit - includedSeats),
+    availableSeats:
+      normalizedSeatLimit === null ? null : Math.max(0, normalizedSeatLimit - normalizedOccupiedSeats),
+    overageSeats:
+      normalizedSeatLimit === null ? 0 : Math.max(0, normalizedOccupiedSeats - normalizedSeatLimit),
+  };
+};
+
+const syncAdminSeatSnapshot = async (adminUserId) => {
+  if (!adminUserId) return null;
+
+  const admin = await prisma.user.findUnique({
+    where: { id: adminUserId },
+    select: {
+      id: true,
+      role: true,
+      adminSeatLimit: true,
+      adminPlan: {
+        select: {
+          code: true,
+        },
+      },
+    },
+  });
+
+  if (!admin || admin.role !== 'ADMIN') {
+    return null;
+  }
+
+  const occupiedSeats = await prisma.user.count({
+    where: {
+      organizationAdminId: admin.id,
+      role: { in: TEAM_MEMBER_ROLES },
+      isActive: true,
+    },
+  });
+
+  const snapshot = buildPersistedAdminSeatSnapshot({
+    planCode: admin.adminPlan?.code,
+    seatLimit: admin.adminSeatLimit,
+    occupiedSeats,
+  });
+
+  await prisma.user.update({
+    where: { id: admin.id },
+    data: {
+      adminActiveSeats: snapshot.activeSeats,
+      adminExtraSeatsContracted: snapshot.contractedExtraSeats,
+    },
+  });
+
+  return snapshot;
+};
+
+const parseBooleanFlag = (value) => {
+  if (value === true || value === false) return value;
+  if (value === undefined || value === null) return false;
+  const normalized = String(value).trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(normalized);
+};
+
+const parseOptionalBoolean = (value) => {
+  if (value === undefined) return { provided: false, value: null };
+  if (value === true || value === false) return { provided: true, value };
+
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return { provided: true, value: null };
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return { provided: true, value: true };
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return { provided: true, value: false };
+
+  return { provided: true, value: null };
+};
+
+const resolveSelfServicePlanSelection = ({ planCode, seatLimit, seats }) => {
+  const normalizedPlanCode = String(planCode || '').trim().toUpperCase();
+  const selectedPlan = SELF_SERVICE_ADMIN_PLAN_CATALOG[normalizedPlanCode];
+
+  if (!selectedPlan) {
+    return {
+      error: `planCode invalido. Valores aceitos: ${Object.keys(SELF_SERVICE_ADMIN_PLAN_CATALOG).join(', ')}`,
+    };
+  }
+
+  const requestedSeatLimitRaw = seatLimit === undefined ? seats : seatLimit;
+  const requestedSeatLimit = Number(requestedSeatLimitRaw);
+
+  if (!Number.isInteger(requestedSeatLimit) || requestedSeatLimit < 1) {
+    return {
+      error: 'seatLimit deve ser um numero inteiro maior ou igual a 1.',
+    };
+  }
+
+  if (requestedSeatLimit > selectedPlan.maxSeats) {
+    return {
+      error: `O plano ${selectedPlan.code} permite no maximo ${selectedPlan.maxSeats} cadeiras.`,
+    };
+  }
+
+  return {
+    selectedPlan,
+    requestedSeatLimit,
+  };
+};
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -57,6 +220,14 @@ const toIsoFromUnixSeconds = (value) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
   return new Date(parsed * 1000).toISOString();
+};
+
+const isUnknownPhoneSelectError = (error) => {
+  const message = String(error?.message || '');
+  return (
+    message.includes('Unknown field `phone` for select statement on model `User`') ||
+    message.includes('Unknown field `phone`')
+  );
 };
 
 const fromMinorCurrencyToMajor = (value) => {
@@ -95,6 +266,23 @@ const buildSeatSummary = ({ adminUser, currentTeamSize, nextTeamSize }) => {
   };
 };
 
+const resolveSeatAvailability = ({ seatSummary, occupiedSeats }) => {
+  if (seatSummary.seatLimit === null || seatSummary.seatLimit === undefined) {
+    return null;
+  }
+
+  return Math.max(0, seatSummary.seatLimit - occupiedSeats);
+};
+
+const buildFrontendAppUrl = (pathWithQuery = '') => {
+  const frontendUrl = String(process.env.FRONTEND_URL || 'http://localhost:5173').trim();
+  const normalizedPath = String(pathWithQuery || '').startsWith('/')
+    ? String(pathWithQuery || '')
+    : `/${String(pathWithQuery || '').trim()}`;
+
+  return `${frontendUrl}${normalizedPath}`;
+};
+
 const resolveAdminSeatConfig = ({ adminSeatLimit, adminExtraSeatPrice }) => {
   const nextSeatLimit = adminSeatLimit === undefined ? 10 : Number(adminSeatLimit);
   if (!Number.isInteger(nextSeatLimit) || nextSeatLimit < 1) {
@@ -104,7 +292,9 @@ const resolveAdminSeatConfig = ({ adminSeatLimit, adminExtraSeatPrice }) => {
   }
 
   const nextExtraSeatPrice =
-    adminExtraSeatPrice === undefined ? 0 : Number(adminExtraSeatPrice);
+    adminExtraSeatPrice === undefined || adminExtraSeatPrice === null || adminExtraSeatPrice === ''
+      ? EXTRA_ADMIN_SEAT_MONTHLY_USD
+      : Number(adminExtraSeatPrice);
 
   if (!Number.isFinite(nextExtraSeatPrice) || nextExtraSeatPrice < 0) {
     return {
@@ -375,6 +565,12 @@ const createUser = async (req, res) => {
       adminSeatConfigData = {
         adminSeatLimit: seatConfig.adminSeatLimit,
         adminExtraSeatPrice: seatConfig.adminExtraSeatPrice,
+        adminActiveSeats: 0,
+        adminExtraSeatsContracted: buildPersistedAdminSeatSnapshot({
+          planCode: planRecord.plan.code,
+          seatLimit: seatConfig.adminSeatLimit,
+          occupiedSeats: 0,
+        }).contractedExtraSeats,
       };
 
       adminPlanConfigData = {
@@ -409,6 +605,7 @@ const createUser = async (req, res) => {
         where: {
           organizationAdminId: targetOrganizationAdminId,
           role: { in: TEAM_MEMBER_ROLES },
+          isActive: true,
         },
       });
 
@@ -485,6 +682,7 @@ const createUser = async (req, res) => {
         email,
         name: name.trim(),
         role: requestedRole,
+        isActive: true,
         supervisorId: supervisorId || null,
         organizationAdminId: effectiveOrganizationAdminId,
         ...adminSeatConfigData,
@@ -525,10 +723,26 @@ const createUser = async (req, res) => {
           name: user.name,
           role: user.role,
           organizationAdminId: user.organizationAdminId,
+          isActive: user.isActive,
         },
       });
     } catch (metadataError) {
       console.warn('⚠️ Falha ao sincronizar metadados no Supabase para usuário criado:', metadataError.message);
+    }
+
+    const adminToSyncAfterCreate =
+      requestedRole === 'ADMIN'
+        ? user.id
+        : TEAM_MEMBER_ROLES.includes(requestedRole)
+          ? effectiveOrganizationAdminId
+          : null;
+
+    if (adminToSyncAfterCreate) {
+      try {
+        await syncAdminSeatSnapshot(adminToSyncAfterCreate);
+      } catch (syncError) {
+        console.warn('⚠️ Falha ao sincronizar snapshot de cadeiras após criação:', syncError.message);
+      }
     }
 
     console.log(`✅ Usuário criado com sucesso: ${user.email} (${user.role})`);
@@ -540,10 +754,13 @@ const createUser = async (req, res) => {
         email: user.email,
         name: user.name,
         role: user.role,
+        isActive: user.isActive,
         organizationAdminId: user.organizationAdminId,
         organizationAdmin: user.organizationAdmin,
         adminSeatLimit: user.adminSeatLimit,
         adminExtraSeatPrice: user.adminExtraSeatPrice,
+        adminActiveSeats: user.adminActiveSeats,
+        adminExtraSeatsContracted: user.adminExtraSeatsContracted,
         adminPlanStatus: user.adminPlanStatus,
         adminPlanLinkedAt: user.adminPlanLinkedAt,
         adminPlan: user.adminPlan,
@@ -587,6 +804,7 @@ const updateUser = async (req, res) => {
     const {
       name,
       role,
+      isActive,
       supervisorId,
       organizationAdminId,
       adminSeatLimit,
@@ -619,6 +837,18 @@ const updateUser = async (req, res) => {
 
     const actorIsSuperAdmin = req.user.role === 'SUPERADMIN';
     const nextRole = role || existingUser.role;
+    const parsedIsActive = parseOptionalBoolean(isActive);
+
+    if (parsedIsActive.provided && parsedIsActive.value === null) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'isActive invalido. Use true ou false.',
+      });
+    }
+
+    const nextIsActive = parsedIsActive.provided
+      ? parsedIsActive.value
+      : existingUser.isActive;
 
     if (
       req.user.role === 'ADMIN' &&
@@ -635,6 +865,23 @@ const updateUser = async (req, res) => {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Admin só pode definir papéis do time (HR, SUPERVISOR, MEMBER)',
+      });
+    }
+
+    if (
+      parsedIsActive.provided &&
+      !TEAM_MEMBER_ROLES.includes(existingUser.role)
+    ) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Somente usuarios do time (HR, SUPERVISOR, MEMBER) podem ser desativados/reativados.',
+      });
+    }
+
+    if (parsedIsActive.provided && nextIsActive === false && existingUser.id === req.user.id) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Voce nao pode desativar sua propria conta.',
       });
     }
 
@@ -872,9 +1119,22 @@ const updateUser = async (req, res) => {
         adminSeatConfigData = {
           adminSeatLimit: null,
           adminExtraSeatPrice: null,
+          adminActiveSeats: 0,
+          adminExtraSeatsContracted: 0,
         };
       }
     }
+
+    const adminIdsToSync = Array.from(
+      new Set(
+        [
+          existingUser.role === 'ADMIN' ? existingUser.id : null,
+          existingUser.organizationAdminId,
+          nextRole === 'ADMIN' ? id : null,
+          nextOrganizationAdminId,
+        ].filter(Boolean)
+      )
+    );
 
     // Atualiza usuário
     const updatedUser = await prisma.user.update({
@@ -882,6 +1142,7 @@ const updateUser = async (req, res) => {
       data: {
         ...(name && { name: name.trim() }),
         role: nextRole,
+        ...(nextIsActive !== existingUser.isActive && { isActive: nextIsActive }),
         ...(supervisorId !== undefined && { supervisorId }),
         organizationAdminId: nextOrganizationAdminId,
         ...adminSeatConfigData,
@@ -916,10 +1177,46 @@ const updateUser = async (req, res) => {
       },
     });
 
+    const syncedSeatSnapshots = {};
+    for (const adminId of adminIdsToSync) {
+      try {
+        const snapshot = await syncAdminSeatSnapshot(adminId);
+        if (snapshot) {
+          syncedSeatSnapshots[adminId] = snapshot;
+        }
+      } catch (syncError) {
+        console.warn('⚠️ Falha ao sincronizar snapshot de cadeiras após atualização:', syncError.message);
+      }
+    }
+
+    let seatValidation = null;
+    if (updatedUser.role === 'ADMIN') {
+      const snapshot =
+        syncedSeatSnapshots[updatedUser.id] ||
+        buildPersistedAdminSeatSnapshot({
+          planCode: updatedUser.adminPlan?.code,
+          seatLimit: updatedUser.adminSeatLimit,
+          occupiedSeats: updatedUser.adminActiveSeats,
+        });
+
+      seatValidation = {
+        seatLimit: snapshot.seatLimit,
+        occupiedSeats: snapshot.activeSeats,
+        overageSeats: snapshot.overageSeats,
+        contractedExtraSeats: snapshot.contractedExtraSeats,
+        requiresDownsizeOrUpgrade: snapshot.overageSeats > 0,
+        message:
+          snapshot.overageSeats > 0
+            ? `O ADMIN ficou com ${snapshot.overageSeats} cadeira(s) excedente(s). Ele precisa remover membros do time ou contratar cadeiras adicionais.`
+            : 'Configuracao de cadeiras valida para o tamanho atual do time.',
+      };
+    }
+
     // Atualiza metadados no Supabase quando houver alteração relevante
     const shouldSyncMetadata =
       role !== undefined ||
       name !== undefined ||
+      nextIsActive !== existingUser.isActive ||
       nextOrganizationAdminId !== existingUser.organizationAdminId;
 
     if (shouldSyncMetadata) {
@@ -928,6 +1225,7 @@ const updateUser = async (req, res) => {
           name: updatedUser.name,
           role: updatedUser.role,
           organizationAdminId: updatedUser.organizationAdminId,
+          isActive: updatedUser.isActive,
         },
       });
     }
@@ -945,12 +1243,16 @@ const updateUser = async (req, res) => {
         organizationAdmin: updatedUser.organizationAdmin,
         adminSeatLimit: updatedUser.adminSeatLimit,
         adminExtraSeatPrice: updatedUser.adminExtraSeatPrice,
+        adminActiveSeats: syncedSeatSnapshots[updatedUser.id]?.activeSeats ?? updatedUser.adminActiveSeats,
+        adminExtraSeatsContracted:
+          syncedSeatSnapshots[updatedUser.id]?.contractedExtraSeats ?? updatedUser.adminExtraSeatsContracted,
         adminPlanStatus: updatedUser.adminPlanStatus,
         adminPlanLinkedAt: updatedUser.adminPlanLinkedAt,
         adminPlan: updatedUser.adminPlan,
         supervisor: updatedUser.supervisor,
         createdAt: updatedUser.createdAt,
       }),
+      ...(seatValidation && { seatValidation }),
     });
   } catch (error) {
     console.error('❌ Erro ao atualizar usuário:', error);
@@ -1043,57 +1345,79 @@ const listUsers = async (req, res) => {
       where.AND = [...(where.AND || []), ...accessFilters];
     }
 
-    const [users, total] = await Promise.all([
-      prisma.user.findMany({
-        where,
+    const baseUserSelect = {
+      id: true,
+      email: true,
+      name: true,
+      role: true,
+      isActive: true,
+      photoPath: true,
+      photoUpdatedAt: true,
+      contractDailyMinutes: true,
+      workdayStartTime: true,
+      workdayEndTime: true,
+      hourlyRate: true,
+      timeZone: true,
+      organizationAdminId: true,
+      adminPlanStatus: true,
+      adminPlanLinkedAt: true,
+      supervisor: {
         select: {
           id: true,
           email: true,
           name: true,
           role: true,
-          photoPath: true,
-          photoUpdatedAt: true,
-          contractDailyMinutes: true,
-          workdayStartTime: true,
-          workdayEndTime: true,
-          hourlyRate: true,
-          timeZone: true,
-          organizationAdminId: true,
-          adminPlanStatus: true,
-          adminPlanLinkedAt: true,
-          supervisor: {
-            select: {
-              id: true,
-              email: true,
-              name: true,
-              role: true,
-            },
-          },
-          organizationAdmin: {
-            select: {
-              id: true,
-              email: true,
-              name: true,
-              role: true,
-            },
-          },
-          adminPlan: {
-            select: {
-              id: true,
-              code: true,
-              name: true,
-              monthlyPrice: true,
-              isActive: true,
-            },
-          },
-          createdAt: true,
+        },
+      },
+      organizationAdmin: {
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+        },
+      },
+      adminPlan: {
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          monthlyPrice: true,
+          isActive: true,
+        },
+      },
+      createdAt: true,
+    };
+
+    let users;
+    try {
+      users = await prisma.user.findMany({
+        where,
+        select: {
+          ...baseUserSelect,
+          phone: true,
         },
         skip,
         take: parseInt(limit),
         orderBy: { createdAt: 'desc' },
-      }),
-      prisma.user.count({ where }),
-    ]);
+      });
+    } catch (error) {
+      if (!isUnknownPhoneSelectError(error)) {
+        throw error;
+      }
+
+      console.warn('⚠️ Prisma client sem campo phone. Aplicando fallback de listUsers sem phone.');
+
+      users = await prisma.user.findMany({
+        where,
+        select: baseUserSelect,
+        skip,
+        take: parseInt(limit),
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+
+    const total = await prisma.user.count({ where });
 
     const usersWithPhoto = users.map((user) => withPhotoUrl(req, user));
 
@@ -1156,6 +1480,7 @@ const getUserById = async (req, res) => {
             email: true,
             name: true,
             role: true,
+            isActive: true,
           },
         },
         _count: {
@@ -1238,6 +1563,8 @@ const listAdminSeatAssignments = async (req, res) => {
         email: true,
         adminSeatLimit: true,
         adminExtraSeatPrice: true,
+        adminActiveSeats: true,
+        adminExtraSeatsContracted: true,
         adminPlanStatus: true,
         adminPlanLinkedAt: true,
         adminPlan: {
@@ -1268,22 +1595,32 @@ const listAdminSeatAssignments = async (req, res) => {
         name: true,
         email: true,
         role: true,
+        isActive: true,
         organizationAdminId: true,
       },
       orderBy: { createdAt: 'asc' },
     });
 
-    const membersByAdmin = members.reduce((acc, member) => {
+    const activeMembersByAdmin = members.reduce((acc, member) => {
       const ownerId = member.organizationAdminId;
-      if (!ownerId) return acc;
+      if (!ownerId || member.isActive === false) return acc;
+      if (!acc[ownerId]) acc[ownerId] = [];
+      acc[ownerId].push(member);
+      return acc;
+    }, {});
+
+    const inactiveMembersByAdmin = members.reduce((acc, member) => {
+      const ownerId = member.organizationAdminId;
+      if (!ownerId || member.isActive !== false) return acc;
       if (!acc[ownerId]) acc[ownerId] = [];
       acc[ownerId].push(member);
       return acc;
     }, {});
 
     const payload = admins.map((admin) => {
-      const teamMembers = membersByAdmin[admin.id] || [];
-      const teamByRole = teamMembers.reduce(
+      const activeTeamMembers = activeMembersByAdmin[admin.id] || [];
+      const inactiveTeamMembers = inactiveMembersByAdmin[admin.id] || [];
+      const teamByRole = activeTeamMembers.reduce(
         (acc, member) => {
           acc[member.role] = (acc[member.role] || 0) + 1;
           return acc;
@@ -1291,23 +1628,24 @@ const listAdminSeatAssignments = async (req, res) => {
         { HR: 0, SUPERVISOR: 0, MEMBER: 0 }
       );
       const seatLimit = admin.adminSeatLimit;
-      const occupiedSeats = teamMembers.length;
+      const occupiedSeats = activeTeamMembers.length;
+      const seatSnapshot = buildPersistedAdminSeatSnapshot({
+        planCode: admin.adminPlan?.code,
+        seatLimit,
+        occupiedSeats,
+      });
       const totalSeats = Number.isInteger(seatLimit)
         ? Math.max(seatLimit, occupiedSeats)
         : occupiedSeats;
 
       const seats = Array.from({ length: totalSeats }, (_, index) => {
-        const occupant = teamMembers[index] || null;
+        const occupant = activeTeamMembers[index] || null;
         return {
           seatNumber: index + 1,
           occupied: Boolean(occupant),
           occupant,
         };
       });
-
-      const overageSeats = Number.isInteger(seatLimit)
-        ? Math.max(0, occupiedSeats - seatLimit)
-        : 0;
 
       return {
         admin: {
@@ -1327,13 +1665,18 @@ const listAdminSeatAssignments = async (req, res) => {
         billing: {
           seatLimit,
           occupiedSeats,
-          availableSeats: Number.isInteger(seatLimit) ? Math.max(0, seatLimit - occupiedSeats) : null,
-          overageSeats,
-          extraSeatPriceUsd: Number(admin.adminExtraSeatPrice ?? 10),
+          activeSeats: seatSnapshot.activeSeats,
+          contractedExtraSeats: seatSnapshot.contractedExtraSeats,
+          availableSeats: seatSnapshot.availableSeats,
+          overageSeats: seatSnapshot.overageSeats,
+          extraSeatPriceUsd: Number(admin.adminExtraSeatPrice ?? EXTRA_ADMIN_SEAT_MONTHLY_USD),
         },
         team: {
-          totalMembers: occupiedSeats,
+          totalMembers: activeTeamMembers.length + inactiveTeamMembers.length,
+          activeMembers: activeTeamMembers.length,
+          inactiveMembers: inactiveTeamMembers.length,
           byRole: teamByRole,
+          deactivatedMembers: inactiveTeamMembers,
         },
         seats,
       };
@@ -1361,6 +1704,38 @@ const listSuperAdminAccountsOverview = async (req, res) => {
     const stripePerPage = Math.min(100, toPositiveInteger(req.query.stripePerPage, 100));
     const createdGte = Math.floor(Date.now() / 1000) - stripeLookbackDays * 24 * 60 * 60;
 
+    const planCatalogRows = await prisma.adminPlan.findMany({
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        monthlyPrice: true,
+        isActive: true,
+      },
+      orderBy: [{ isActive: 'desc' }, { code: 'asc' }],
+    });
+
+    const planCatalogRowsByCode = planCatalogRows.reduce((acc, plan) => {
+      const normalizedCode = String(plan.code || '').trim().toUpperCase();
+      if (!normalizedCode) return acc;
+      acc[normalizedCode] = plan;
+      return acc;
+    }, {});
+
+    const planCatalog = Object.values(SELF_SERVICE_ADMIN_PLAN_CATALOG).map((catalogPlan) => {
+      const dbPlan = planCatalogRowsByCode[catalogPlan.code];
+
+      return {
+        id: dbPlan?.id || catalogPlan.code,
+        code: catalogPlan.code,
+        name: catalogPlan.name,
+        monthlyPriceUsd: Number(
+          toNumber(dbPlan?.monthlyPrice, catalogPlan.monthlyPrice).toFixed(2)
+        ),
+        isActive: dbPlan?.isActive ?? true,
+      };
+    });
+
     const admins = await prisma.user.findMany({
       where: { role: 'ADMIN' },
       select: {
@@ -1370,6 +1745,8 @@ const listSuperAdminAccountsOverview = async (req, res) => {
         createdAt: true,
         adminSeatLimit: true,
         adminExtraSeatPrice: true,
+        adminActiveSeats: true,
+        adminExtraSeatsContracted: true,
         adminPlanStatus: true,
         adminPlanLinkedAt: true,
         adminPlan: {
@@ -1402,6 +1779,7 @@ const listSuperAdminAccountsOverview = async (req, res) => {
           totalUsersIncludingAdmins: 0,
           totalMrrUsd: 0,
         },
+        planCatalog,
         accounts: [],
       });
     }
@@ -1412,6 +1790,7 @@ const listSuperAdminAccountsOverview = async (req, res) => {
       where: {
         organizationAdminId: { in: adminIds },
         role: { in: TEAM_MEMBER_ROLES },
+        isActive: true,
       },
       select: {
         id: true,
@@ -1511,12 +1890,14 @@ const listSuperAdminAccountsOverview = async (req, res) => {
 
       const seatLimit = admin.adminSeatLimit;
       const occupiedSeats = teamMembers.length;
-      const overageSeats = Number.isInteger(seatLimit)
-        ? Math.max(0, occupiedSeats - seatLimit)
-        : 0;
-      const availableSeats = Number.isInteger(seatLimit)
-        ? Math.max(0, seatLimit - occupiedSeats)
-        : null;
+      const seatSnapshot = buildPersistedAdminSeatSnapshot({
+        planCode: admin.adminPlan?.code,
+        seatLimit,
+        occupiedSeats,
+      });
+
+      const overageSeats = seatSnapshot.overageSeats;
+      const availableSeats = seatSnapshot.availableSeats;
 
       const extraSeatPriceUsd = Number(
         toNumber(admin.adminExtraSeatPrice, EXTRA_ADMIN_SEAT_MONTHLY_USD).toFixed(2)
@@ -1556,6 +1937,8 @@ const listSuperAdminAccountsOverview = async (req, res) => {
         billing: {
           seatLimit,
           occupiedSeats,
+          activeSeats: seatSnapshot.activeSeats,
+          contractedExtraSeats: seatSnapshot.contractedExtraSeats,
           availableSeats,
           overageSeats,
           extraSeatPriceUsd,
@@ -1603,6 +1986,7 @@ const listSuperAdminAccountsOverview = async (req, res) => {
         lookbackDays: stripeLookbackDays,
       },
       summary,
+      planCatalog,
       accounts,
     });
   } catch (error) {
@@ -1657,18 +2041,19 @@ const getMyCompleteProfile = async (req, res) => {
  */
 const updateMyAccount = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, phone } = req.body;
 
-    if (name === undefined && email === undefined && password === undefined) {
+    if (name === undefined && email === undefined && password === undefined && phone === undefined) {
       return res.status(400).json({
         error: 'Bad Request',
-        message: 'Informe ao menos um campo para atualizar: name, email ou password.',
+        message: 'Informe ao menos um campo para atualizar: name, email, phone ou password.',
       });
     }
 
     const normalizedName = name !== undefined ? String(name).trim() : undefined;
     const normalizedEmail = email !== undefined ? String(email).trim().toLowerCase() : undefined;
     const normalizedPassword = password !== undefined ? String(password) : undefined;
+    const normalizedPhone = phone !== undefined ? String(phone || '').trim() : undefined;
 
     if (normalizedName !== undefined && normalizedName.length < 2) {
       return res.status(400).json({
@@ -1694,6 +2079,13 @@ const updateMyAccount = async (req, res) => {
       });
     }
 
+    if (normalizedPhone !== undefined && normalizedPhone.length > 0 && normalizedPhone.length < 3) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Telefone invalido',
+      });
+    }
+
     if (normalizedEmail !== undefined && normalizedEmail !== req.user.email) {
       const existingUserWithEmail = await prisma.user.findUnique({
         where: { email: normalizedEmail },
@@ -1709,6 +2101,7 @@ const updateMyAccount = async (req, res) => {
     }
 
     const nextName = normalizedName !== undefined ? normalizedName : req.user.name;
+    const nextPhone = normalizedPhone !== undefined ? normalizedPhone : req.user.phone;
 
     const supabasePayload = {
       ...(normalizedEmail !== undefined ? { email: normalizedEmail } : {}),
@@ -1718,6 +2111,7 @@ const updateMyAccount = async (req, res) => {
       user_metadata: {
         name: nextName,
         role: req.user.role,
+        phone: nextPhone || null,
       },
     };
 
@@ -1735,6 +2129,7 @@ const updateMyAccount = async (req, res) => {
       data: {
         ...(normalizedName !== undefined ? { name: normalizedName } : {}),
         ...(normalizedEmail !== undefined ? { email: normalizedEmail } : {}),
+        ...(normalizedPhone !== undefined ? { phone: normalizedPhone || null } : {}),
       },
       include: {
         supervisor: {
@@ -1765,6 +2160,643 @@ const updateMyAccount = async (req, res) => {
     return res.status(500).json({
       error: 'Internal Server Error',
       message: 'Erro ao atualizar dados da conta',
+    });
+  }
+};
+
+/**
+ * POST /users/me/team-invite-link
+ * Gera link de convite para o ADMIN convidar funcionarios para o proprio time.
+ */
+const createMyTeamInviteLink = async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Apenas ADMIN pode gerar convite de equipe.',
+      });
+    }
+
+    const { role, expiresInHours } = req.body || {};
+    const normalizedRole = String(role || '').trim().toUpperCase();
+
+    if (!INVITABLE_ROLES.includes(normalizedRole)) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: `role invalida. Valores aceitos: ${INVITABLE_ROLES.join(', ')}`,
+      });
+    }
+
+    const adminOwner = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        adminSeatLimit: true,
+        adminExtraSeatPrice: true,
+        adminPlanId: true,
+      },
+    });
+
+    if (!adminOwner || adminOwner.role !== 'ADMIN') {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Conta ADMIN nao encontrada.',
+      });
+    }
+
+    if (!adminOwner.adminPlanId) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Nao e possivel gerar convite sem plano ADMIN ativo/vinculado.',
+      });
+    }
+
+    const currentTeamSize = await prisma.user.count({
+      where: {
+        organizationAdminId: req.user.id,
+        role: { in: TEAM_MEMBER_ROLES },
+        isActive: true,
+      },
+    });
+
+    const seatSummary = buildSeatSummary({
+      adminUser: adminOwner,
+      currentTeamSize,
+      nextTeamSize: currentTeamSize + 1,
+    });
+
+    if (seatSummary.requiresPayment) {
+      const requiredAdditionalSeats = Math.max(1, seatSummary.overageSeats);
+      const purchaseUrl = buildFrontendAppUrl(
+        `/app/admin/comprar-assentos?required=${requiredAdditionalSeats}`
+      );
+
+      return res.status(409).json({
+        error: 'Conflict',
+        code: 'NO_AVAILABLE_SEATS',
+        message: 'Nao ha mais assentos disponiveis para gerar novos convites.',
+        seatAvailability: {
+          seatLimit: seatSummary.seatLimit,
+          occupiedSeats: currentTeamSize,
+          availableSeats: resolveSeatAvailability({
+            seatSummary,
+            occupiedSeats: currentTeamSize,
+          }),
+          requiredAdditionalSeats,
+        },
+        purchase: {
+          url: purchaseUrl,
+          suggestedQuantity: requiredAdditionalSeats,
+        },
+      });
+    }
+
+    const invite = issueTeamInviteToken({
+      adminId: req.user.id,
+      role: normalizedRole,
+      issuedById: req.user.id,
+      expiresInHours,
+    });
+
+    const inviteUrl = buildFrontendAppUrl(`/signup?invite=${encodeURIComponent(invite.token)}`);
+
+    return res.status(201).json({
+      message: 'Link de convite gerado com sucesso.',
+      invite: {
+        role: normalizedRole,
+        expiresAt: invite.expiresAt,
+        ttlHours: invite.ttlHours,
+        token: invite.token,
+        url: inviteUrl,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Erro ao gerar link de convite da equipe:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao gerar convite da equipe',
+    });
+  }
+};
+
+/**
+ * POST /users/me/additional-seats/checkout
+ * Inicia checkout Stripe para compra manual de cadeiras adicionais.
+ */
+const createMyAdditionalSeatsCheckout = async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Apenas ADMIN pode comprar cadeiras adicionais.',
+      });
+    }
+
+    const quantityRaw = req.body?.quantity;
+    const quantity = Number(quantityRaw);
+
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'quantity deve ser um numero inteiro maior ou igual a 1.',
+      });
+    }
+
+    if (quantity > 500) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'quantity nao pode ser maior que 500 por checkout.',
+      });
+    }
+
+    const adminOwner = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        adminPlanId: true,
+        adminExtraSeatPrice: true,
+      },
+    });
+
+    if (!adminOwner || adminOwner.role !== 'ADMIN') {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Conta ADMIN nao encontrada.',
+      });
+    }
+
+    if (!adminOwner.adminPlanId) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Nao e possivel comprar cadeiras adicionais sem plano vinculado.',
+      });
+    }
+
+    const unitPriceUsd = Number(
+      toNumber(adminOwner.adminExtraSeatPrice, EXTRA_ADMIN_SEAT_MONTHLY_USD).toFixed(2)
+    );
+    const monthlyTotalUsd = Number((quantity * unitPriceUsd).toFixed(2));
+
+    const checkout = await createAdditionalSeatsCheckoutSession({
+      adminUserId: adminOwner.id,
+      adminEmail: adminOwner.email || req.user.email,
+      overageSeats: quantity,
+      amountDue: monthlyTotalUsd,
+    });
+
+    if (!checkout.ok || !checkout.checkoutUrl) {
+      return res.status(409).json({
+        error: 'Conflict',
+        message: 'Checkout Stripe de cadeiras adicionais nao configurado no backend.',
+        reason: checkout.reason || 'STRIPE_NOT_CONFIGURED',
+      });
+    }
+
+    return res.status(201).json({
+      message: 'Checkout de cadeiras adicionais iniciado com sucesso.',
+      billing: {
+        requestedSeats: quantity,
+        unitPriceUsd,
+        monthlyTotalUsd,
+      },
+      stripe: {
+        configured: true,
+        checkoutUrl: checkout.checkoutUrl,
+        sessionId: checkout.sessionId || null,
+        quantity: checkout.quantity || quantity,
+        currency: 'usd',
+      },
+    });
+  } catch (error) {
+    console.error('❌ Erro ao iniciar checkout manual de cadeiras adicionais:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao iniciar checkout de cadeiras adicionais',
+    });
+  }
+};
+
+/**
+ * PATCH /users/me/plan
+ * Permite que o ADMIN escolha plano e quantidade de cadeiras para a propria conta.
+ */
+const chooseMyPlan = async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Apenas ADMIN pode escolher o proprio plano.',
+      });
+    }
+
+    const { planCode, seatLimit, seats, startCheckout, stripeSessionId } = req.body || {};
+    const shouldStartCheckout = parseBooleanFlag(startCheckout);
+
+    let selectedPlan;
+    let requestedSeatLimit;
+
+    if (stripeSessionId) {
+      const verification = await verifyBasePlanCheckoutSession({
+        sessionId: stripeSessionId,
+        adminUserId: req.user.id,
+      });
+
+      if (!verification.ok) {
+        if (verification.reason === 'STRIPE_NOT_CONFIGURED') {
+          return res.status(409).json({
+            error: 'Conflict',
+            message: 'Checkout Stripe nao configurado no backend.',
+            reason: verification.reason,
+          });
+        }
+
+        if (verification.reason === 'ADMIN_MISMATCH') {
+          return res.status(403).json({
+            error: 'Forbidden',
+            message: 'Sessao de checkout nao pertence ao ADMIN autenticado.',
+            reason: verification.reason,
+          });
+        }
+
+        if (verification.reason === 'SESSION_NOT_PAID') {
+          return res.status(402).json({
+            error: 'Payment Required',
+            message: 'Sessao Stripe ainda nao foi concluida/paga.',
+            reason: verification.reason,
+            status: verification.status,
+            paymentStatus: verification.paymentStatus,
+          });
+        }
+
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'Sessao Stripe invalida para ativacao do plano.',
+          reason: verification.reason,
+        });
+      }
+
+      selectedPlan = SELF_SERVICE_ADMIN_PLAN_CATALOG[verification.planCode];
+      requestedSeatLimit = verification.seatLimit;
+
+      if (!selectedPlan) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'Plano retornado pelo Stripe nao e suportado.',
+        });
+      }
+
+    } else {
+      const selection = resolveSelfServicePlanSelection({ planCode, seatLimit, seats });
+
+      if (selection.error) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: selection.error,
+        });
+      }
+
+      selectedPlan = selection.selectedPlan;
+      requestedSeatLimit = selection.requestedSeatLimit;
+
+      if (shouldStartCheckout) {
+        const checkout = await createBasePlanCheckoutSession({
+          adminUserId: req.user.id,
+          adminEmail: req.user.email,
+          planCode: selectedPlan.code,
+          planName: selectedPlan.name,
+          planMonthlyPriceUsd: selectedPlan.monthlyPrice,
+          seatLimit: requestedSeatLimit,
+        });
+
+        if (!checkout.ok || !checkout.checkoutUrl) {
+          const messageByReason = {
+            STRIPE_NOT_CONFIGURED: 'Checkout Stripe nao configurado no backend.',
+            STRIPE_PLAN_NOT_CONFIGURED: `Preco Stripe do plano ${selectedPlan.code} nao configurado no backend.`,
+          };
+
+          return res.status(409).json({
+            error: 'Conflict',
+            message:
+              messageByReason[checkout.reason] ||
+              'Nao foi possivel iniciar checkout Stripe para o plano selecionado.',
+            reason: checkout.reason || 'STRIPE_CHECKOUT_NOT_AVAILABLE',
+          });
+        }
+
+        return res.status(202).json({
+          message: 'Checkout Stripe iniciado. Redirecione o usuario para concluir a compra.',
+          checkout: {
+            url: checkout.checkoutUrl,
+            sessionId: checkout.sessionId,
+            provider: 'STRIPE',
+          },
+          planSelection: {
+            code: selectedPlan.code,
+            name: selectedPlan.name,
+            monthlyPriceUsd: Number(selectedPlan.monthlyPrice.toFixed(2)),
+            seatLimit: requestedSeatLimit,
+            maxSeats: selectedPlan.maxSeats,
+            status: 'INACTIVE',
+          },
+        });
+      }
+    }
+
+    const planRecord = await ensureAdminPlanRecord({
+      code: selectedPlan.code,
+      name: selectedPlan.name,
+      monthlyPrice: selectedPlan.monthlyPrice,
+    });
+
+    if (planRecord.error) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: planRecord.error,
+      });
+    }
+
+    const occupiedSeats = await prisma.user.count({
+      where: {
+        organizationAdminId: req.user.id,
+        role: { in: TEAM_MEMBER_ROLES },
+        isActive: true,
+      },
+    });
+
+    const seatSnapshot = buildPersistedAdminSeatSnapshot({
+      planCode: selectedPlan.code,
+      seatLimit: requestedSeatLimit,
+      occupiedSeats,
+    });
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        adminPlanId: planRecord.plan.id,
+        adminPlanStatus: 'ACTIVE',
+        adminPlanLinkedAt: new Date(),
+        adminSeatLimit: requestedSeatLimit,
+        adminExtraSeatPrice: Number(EXTRA_ADMIN_SEAT_MONTHLY_USD.toFixed(2)),
+        adminActiveSeats: seatSnapshot.activeSeats,
+        adminExtraSeatsContracted: seatSnapshot.contractedExtraSeats,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        photoPath: true,
+        photoUpdatedAt: true,
+        organizationAdminId: true,
+        adminSeatLimit: true,
+        adminExtraSeatPrice: true,
+        adminActiveSeats: true,
+        adminExtraSeatsContracted: true,
+        adminPlanStatus: true,
+        adminPlanLinkedAt: true,
+        adminPlan: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            monthlyPrice: true,
+            isActive: true,
+          },
+        },
+      },
+    });
+
+    return res.json({
+      message: 'Plano atualizado com sucesso.',
+      planSelection: {
+        code: selectedPlan.code,
+        name: selectedPlan.name,
+        monthlyPriceUsd: Number(selectedPlan.monthlyPrice.toFixed(2)),
+        seatLimit: updatedUser.adminSeatLimit,
+        maxSeats: selectedPlan.maxSeats,
+        activeSeats: updatedUser.adminActiveSeats,
+        contractedExtraSeats: updatedUser.adminExtraSeatsContracted,
+        status: updatedUser.adminPlanStatus,
+      },
+      user: withPhotoUrl(req, {
+        id: updatedUser.id,
+        email: updatedUser.email,
+        name: updatedUser.name,
+        role: updatedUser.role,
+        photoPath: updatedUser.photoPath,
+        photoUpdatedAt: updatedUser.photoUpdatedAt,
+        organizationAdminId: updatedUser.organizationAdminId,
+        adminSeatLimit: updatedUser.adminSeatLimit,
+        adminExtraSeatPrice: updatedUser.adminExtraSeatPrice,
+        adminActiveSeats: updatedUser.adminActiveSeats,
+        adminExtraSeatsContracted: updatedUser.adminExtraSeatsContracted,
+        adminPlanStatus: updatedUser.adminPlanStatus,
+        adminPlanLinkedAt: updatedUser.adminPlanLinkedAt,
+        adminPlan: updatedUser.adminPlan,
+      }),
+    });
+  } catch (error) {
+    console.error('❌ Erro ao escolher plano do ADMIN:', error);
+
+    if (error.code === 'P2025') {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Usuario ADMIN nao encontrado.',
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao selecionar plano da conta',
+    });
+  }
+};
+
+/**
+ * PATCH /users/me/additional-seats/confirm
+ * Confirma checkout de cadeiras adicionais no Stripe e persiste snapshot no banco.
+ */
+const confirmAdditionalSeatsCheckout = async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Apenas ADMIN pode confirmar checkout de cadeiras adicionais.',
+      });
+    }
+
+    const { stripeSessionId } = req.body || {};
+
+    const verification = await verifyAdditionalSeatsCheckoutSession({
+      sessionId: stripeSessionId,
+      adminUserId: req.user.id,
+    });
+
+    if (!verification.ok) {
+      if (verification.reason === 'STRIPE_NOT_CONFIGURED') {
+        return res.status(409).json({
+          error: 'Conflict',
+          message: 'Checkout Stripe nao configurado no backend.',
+          reason: verification.reason,
+        });
+      }
+
+      if (verification.reason === 'ADMIN_MISMATCH') {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Sessao de checkout nao pertence ao ADMIN autenticado.',
+          reason: verification.reason,
+        });
+      }
+
+      if (verification.reason === 'SESSION_NOT_PAID') {
+        return res.status(402).json({
+          error: 'Payment Required',
+          message: 'Sessao Stripe ainda nao foi concluida/paga.',
+          reason: verification.reason,
+          status: verification.status,
+          paymentStatus: verification.paymentStatus,
+        });
+      }
+
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Sessao Stripe invalida para confirmar cadeiras adicionais.',
+        reason: verification.reason,
+      });
+    }
+
+    const currentAdmin = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        photoPath: true,
+        photoUpdatedAt: true,
+        organizationAdminId: true,
+        adminPlanId: true,
+        adminSeatLimit: true,
+        adminExtraSeatPrice: true,
+        adminPlanStatus: true,
+        adminPlanLinkedAt: true,
+        adminActiveSeats: true,
+        adminExtraSeatsContracted: true,
+        adminPlan: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            monthlyPrice: true,
+            isActive: true,
+          },
+        },
+      },
+    });
+
+    if (!currentAdmin) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Usuario ADMIN nao encontrado.',
+      });
+    }
+
+    if (!currentAdmin.adminPlanId) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Nao e possivel contratar cadeiras extras sem plano vinculado.',
+      });
+    }
+
+    const currentSeatLimit = Number.isInteger(currentAdmin.adminSeatLimit)
+      ? currentAdmin.adminSeatLimit
+      : 0;
+    const nextSeatLimit = currentSeatLimit + verification.contractedExtraSeats;
+
+    const occupiedSeats = await prisma.user.count({
+      where: {
+        organizationAdminId: req.user.id,
+        role: { in: TEAM_MEMBER_ROLES },
+        isActive: true,
+      },
+    });
+
+    const seatSnapshot = buildPersistedAdminSeatSnapshot({
+      planCode: currentAdmin.adminPlan?.code,
+      seatLimit: nextSeatLimit,
+      occupiedSeats,
+    });
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        adminSeatLimit: nextSeatLimit,
+        adminActiveSeats: seatSnapshot.activeSeats,
+        adminExtraSeatsContracted: seatSnapshot.contractedExtraSeats,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        photoPath: true,
+        photoUpdatedAt: true,
+        organizationAdminId: true,
+        adminSeatLimit: true,
+        adminExtraSeatPrice: true,
+        adminPlanStatus: true,
+        adminPlanLinkedAt: true,
+        adminActiveSeats: true,
+        adminExtraSeatsContracted: true,
+        adminPlan: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            monthlyPrice: true,
+            isActive: true,
+          },
+        },
+      },
+    });
+
+    return res.json({
+      message: 'Cadeiras adicionais confirmadas e salvas no banco com sucesso.',
+      billing: {
+        sessionId: verification.sessionId,
+        seatLimit: updatedUser.adminSeatLimit,
+        activeSeats: updatedUser.adminActiveSeats,
+        contractedExtraSeats: updatedUser.adminExtraSeatsContracted,
+        newlyContractedSeats: verification.contractedExtraSeats,
+      },
+      user: withPhotoUrl(req, {
+        id: updatedUser.id,
+        email: updatedUser.email,
+        name: updatedUser.name,
+        role: updatedUser.role,
+        photoPath: updatedUser.photoPath,
+        photoUpdatedAt: updatedUser.photoUpdatedAt,
+        organizationAdminId: updatedUser.organizationAdminId,
+        adminSeatLimit: updatedUser.adminSeatLimit,
+        adminExtraSeatPrice: updatedUser.adminExtraSeatPrice,
+        adminActiveSeats: updatedUser.adminActiveSeats,
+        adminExtraSeatsContracted: updatedUser.adminExtraSeatsContracted,
+        adminPlanStatus: updatedUser.adminPlanStatus,
+        adminPlanLinkedAt: updatedUser.adminPlanLinkedAt,
+        adminPlan: updatedUser.adminPlan,
+      }),
+    });
+  } catch (error) {
+    console.error('❌ Erro ao confirmar checkout de cadeiras adicionais:', error);
+
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao confirmar checkout de cadeiras adicionais',
     });
   }
 };
@@ -1923,6 +2955,14 @@ const deleteUser = async (req, res) => {
     await prisma.user.delete({
       where: { id },
     });
+
+    if (TEAM_MEMBER_ROLES.includes(user.role) && user.organizationAdminId) {
+      try {
+        await syncAdminSeatSnapshot(user.organizationAdminId);
+      } catch (syncError) {
+        console.warn('⚠️ Falha ao sincronizar snapshot de cadeiras após remoção:', syncError.message);
+      }
+    }
 
     console.log(`✅ Usuário deletado: ${user.email}`);
 
@@ -2094,6 +3134,10 @@ module.exports = {
   deleteUser,
   getMyCompleteProfile,
   updateMyAccount,
+  createMyTeamInviteLink,
+  createMyAdditionalSeatsCheckout,
+  chooseMyPlan,
+  confirmAdditionalSeatsCheckout,
   uploadMyPhoto,
   deleteMyPhoto,
   getMyFaceStatus,

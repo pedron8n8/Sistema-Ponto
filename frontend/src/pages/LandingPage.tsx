@@ -152,7 +152,7 @@ const LandingPage = () => {
 
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <Link
-                  to="/login?mode=signup"
+                  to="/signup"
                   className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold uppercase tracking-[0.16em] text-white transition hover:bg-slate-700"
                 >
                   {t('landing.hero.primary')}
@@ -296,7 +296,7 @@ const LandingPage = () => {
 
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
             <Link
-              to="/login?mode=signup"
+              to="/signup"
               className="rounded-full bg-white px-6 py-3 text-sm font-semibold uppercase tracking-[0.16em] text-slate-900 transition hover:bg-teal-50"
             >
               {t('landing.finalCta.primary')}

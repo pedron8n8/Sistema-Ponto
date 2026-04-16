@@ -6,11 +6,15 @@ const supervisorRoutes = require('./supervisor.routes');
 const reportRoutes = require('./report.routes');
 const adminRoutes = require('./admin.routes');
 const vacationRoutes = require('./vacation.routes');
+const publicRoutes = require('./public.routes');
 
 const router = express.Router();
 
 // Rotas de autenticação
 router.use('/auth', authRoutes);
+
+// API pública com token assinado (integrações externas)
+router.use('/public', publicRoutes);
 
 // Rotas de usuários
 router.use('/users', userRoutes);

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
+import { useTranslation } from 'react-i18next'
 
 type Entry = {
   id: string
@@ -28,6 +29,10 @@ const defaultStats: Stats = { PENDING: 0, APPROVED: 0, REJECTED: 0 }
 
 const SupervisorPendingItemsPage = () => {
   const { session } = useAuth()
+  const { t: i18nT, i18n } = useTranslation()
+  const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
+  const locale = isPt ? 'pt-BR' : 'en-US'
+  const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
   const token = session?.access_token
 
   const [entries, setEntries] = useState<Entry[]>([])
@@ -70,7 +75,7 @@ const SupervisorPendingItemsPage = () => {
     } catch (err) {
       setEntries([])
       setStats(defaultStats)
-      setError(err instanceof Error ? err.message : 'Erro ao carregar pendências')
+      setError(err instanceof Error ? err.message : t('Could not load pending items.', 'Erro ao carregar pendencias'))
     } finally {
       setLoading(false)
     }
@@ -92,7 +97,12 @@ const SupervisorPendingItemsPage = () => {
     const comment = (commentByEntry[entryId] || '').trim()
     if ((action === 'REJECT' || action === 'REQUEST_EDIT') && comment.length < 3) {
       setActionLoadingByEntry((prev) => ({ ...prev, [entryId]: false }))
-      setError('Para rejeitar ou solicitar ajuste, informe comentário com pelo menos 3 caracteres.')
+      setError(
+        t(
+          'For reject or request-edit, provide a comment with at least 3 characters.',
+          'Para rejeitar ou solicitar ajuste, informe comentario com pelo menos 3 caracteres.'
+        )
+      )
       return
     }
 
@@ -111,16 +121,16 @@ const SupervisorPendingItemsPage = () => {
 
       setNotice(
         action === 'APPROVE'
-          ? 'Registro aprovado com sucesso.'
+          ? t('Entry approved successfully.', 'Registro aprovado com sucesso.')
           : action === 'REJECT'
-            ? 'Registro rejeitado com sucesso.'
-            : 'Solicitação de ajuste enviada para o colaborador.'
+            ? t('Entry rejected successfully.', 'Registro rejeitado com sucesso.')
+            : t('Edit request sent to employee.', 'Solicitacao de ajuste enviada para o colaborador.')
       )
 
       setCommentByEntry((prev) => ({ ...prev, [entryId]: '' }))
       await loadData()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao revisar item pendente')
+      setError(err instanceof Error ? err.message : t('Could not review pending item.', 'Erro ao revisar item pendente'))
     } finally {
       setActionLoadingByEntry((prev) => ({ ...prev, [entryId]: false }))
     }
@@ -129,17 +139,22 @@ const SupervisorPendingItemsPage = () => {
   return (
     <section className="grid gap-6">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
-        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">Supervisor</p>
-        <h2 className="mt-4 text-3xl font-semibold text-slate-900">Pending Items</h2>
-        <p className="mt-3 text-sm text-slate-600">Gerencie aprovações, rejeições e solicitações de ajuste da equipe.</p>
+        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">{t('Supervisor', 'Supervisor')}</p>
+        <h2 className="mt-4 text-3xl font-semibold text-slate-900">{t('Pending items', 'Pendencias')}</h2>
+        <p className="mt-3 text-sm text-slate-600">
+          {t(
+            'Manage team approvals, rejections and edit requests.',
+            'Gerencie aprovacoes, rejeicoes e solicitacoes de ajuste da equipe.'
+          )}
+        </p>
       </div>
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
         <div className="flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.2em] text-slate-500">
-          <span className="rounded-full bg-slate-100 px-3 py-1">Pendentes {stats.PENDING}</span>
-          <span className="rounded-full bg-slate-100 px-3 py-1">Aprovados {stats.APPROVED}</span>
-          <span className="rounded-full bg-slate-100 px-3 py-1">Rejeitados {stats.REJECTED}</span>
-          <span className="rounded-full bg-slate-100 px-3 py-1">Em aberto {pendingCount}</span>
+          <span className="rounded-full bg-slate-100 px-3 py-1">{t('Pending', 'Pendentes')} {stats.PENDING}</span>
+          <span className="rounded-full bg-slate-100 px-3 py-1">{t('Approved', 'Aprovados')} {stats.APPROVED}</span>
+          <span className="rounded-full bg-slate-100 px-3 py-1">{t('Rejected', 'Rejeitados')} {stats.REJECTED}</span>
+          <span className="rounded-full bg-slate-100 px-3 py-1">{t('Open', 'Em aberto')} {pendingCount}</span>
         </div>
 
         <div className="mt-4 grid gap-2 md:grid-cols-4">
@@ -148,10 +163,10 @@ const SupervisorPendingItemsPage = () => {
             onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))}
             className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
           >
-            <option value="PENDING">Pendentes</option>
-            <option value="APPROVED">Aprovados</option>
-            <option value="REJECTED">Rejeitados</option>
-            <option value="ALL">Todos</option>
+            <option value="PENDING">{t('Pending', 'Pendentes')}</option>
+            <option value="APPROVED">{t('Approved', 'Aprovados')}</option>
+            <option value="REJECTED">{t('Rejected', 'Rejeitados')}</option>
+            <option value="ALL">{t('All', 'Todos')}</option>
           </select>
 
           <select
@@ -159,7 +174,7 @@ const SupervisorPendingItemsPage = () => {
             onChange={(event) => setFilters((prev) => ({ ...prev, userId: event.target.value }))}
             className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
           >
-            <option value="">Todos os colaboradores</option>
+            <option value="">{t('All employees', 'Todos os colaboradores')}</option>
             {subordinates.map((subordinate) => (
               <option key={subordinate.id} value={subordinate.id}>
                 {subordinate.name}
@@ -187,31 +202,33 @@ const SupervisorPendingItemsPage = () => {
             onClick={() => loadData().catch(() => undefined)}
             className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
           >
-            Atualizar
+            {t('Refresh', 'Atualizar')}
           </button>
         </div>
 
-        {loading ? <p className="mt-3 text-sm text-slate-500">Carregando pendências...</p> : null}
+        {loading ? <p className="mt-3 text-sm text-slate-500">{t('Loading pending items...', 'Carregando pendencias...')}</p> : null}
         {error ? <p className="mt-3 text-xs text-rose-600">{error}</p> : null}
         {notice ? <p className="mt-3 text-xs text-emerald-600">{notice}</p> : null}
       </div>
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-slate-900">Itens</h3>
+        <h3 className="text-lg font-semibold text-slate-900">{t('Items', 'Itens')}</h3>
 
         <div className="mt-4 space-y-4">
           {entries.length === 0 ? (
-            <p className="text-sm text-slate-500">Nenhuma pendência no filtro atual.</p>
+            <p className="text-sm text-slate-500">{t('No pending item for current filters.', 'Nenhuma pendencia no filtro atual.')}</p>
           ) : (
             entries.map((entry) => (
               <div key={entry.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
                 <p className="text-sm font-semibold text-slate-900">{entry.user.name}</p>
                 <p className="text-xs text-slate-500">{entry.user.email}</p>
                 <p className="mt-2 text-xs text-slate-600">
-                  Entrada: {new Date(entry.clockIn).toLocaleString('pt-BR')}
-                  {entry.clockOut ? ` | Saída: ${new Date(entry.clockOut).toLocaleString('pt-BR')}` : ' | Em aberto'}
+                  {t('Clock-in:', 'Entrada:')} {new Date(entry.clockIn).toLocaleString(locale)}
+                  {entry.clockOut
+                    ? ` | ${t('Clock-out:', 'Saida:')} ${new Date(entry.clockOut).toLocaleString(locale)}`
+                    : ` | ${t('Open', 'Em aberto')}`}
                 </p>
-                {entry.notes ? <p className="mt-1 text-xs text-slate-600">Notas: {entry.notes}</p> : null}
+                {entry.notes ? <p className="mt-1 text-xs text-slate-600">{t('Notes:', 'Notas:')} {entry.notes}</p> : null}
 
                 <textarea
                   value={commentByEntry[entry.id] || ''}
@@ -221,7 +238,10 @@ const SupervisorPendingItemsPage = () => {
                       [entry.id]: event.target.value,
                     }))
                   }
-                  placeholder="Comentário (obrigatório para rejeitar/solicitar ajuste)"
+                  placeholder={t(
+                    'Comment (required to reject/request edit)',
+                    'Comentario (obrigatorio para rejeitar/solicitar ajuste)'
+                  )}
                   className="mt-3 h-20 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs"
                 />
 
@@ -231,7 +251,7 @@ const SupervisorPendingItemsPage = () => {
                     disabled={Boolean(actionLoadingByEntry[entry.id])}
                     className="rounded-full bg-teal-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
                   >
-                    Aprovar
+                    {t('Approve', 'Aprovar')}
                   </button>
 
                   <button
@@ -239,7 +259,7 @@ const SupervisorPendingItemsPage = () => {
                     disabled={Boolean(actionLoadingByEntry[entry.id])}
                     className="rounded-full border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-700 disabled:opacity-50"
                   >
-                    Solicitar ajuste
+                    {t('Request edit', 'Solicitar ajuste')}
                   </button>
 
                   <button
@@ -247,7 +267,7 @@ const SupervisorPendingItemsPage = () => {
                     disabled={Boolean(actionLoadingByEntry[entry.id])}
                     className="rounded-full border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
                   >
-                    Rejeitar
+                    {t('Reject', 'Rejeitar')}
                   </button>
                 </div>
               </div>

@@ -2,6 +2,7 @@ import { useEffect, useState, type ChangeEvent } from 'react'
 import { apiFetch, apiFetchFormData, resolveApiAssetUrl } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import UserAvatar from '../components/UserAvatar'
+import { useTranslation } from 'react-i18next'
 
 type Role = 'SUPERADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'
 
@@ -26,15 +27,19 @@ type CompleteProfile = {
   createdAt?: string
 }
 
-const formatDateTime = (iso?: string | null) => {
-  if (!iso) return 'Nao informado'
+const formatDateTime = (iso: string | null | undefined, locale: string, notInformedLabel: string) => {
+  if (!iso) return notInformedLabel
   const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return 'Nao informado'
-  return date.toLocaleString('pt-BR')
+  if (Number.isNaN(date.getTime())) return notInformedLabel
+  return date.toLocaleString(locale)
 }
 
 const ProfileComplete = () => {
   const { session, refreshProfile } = useAuth()
+  const { t: i18nT, i18n } = useTranslation()
+  const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
+  const locale = isPt ? 'pt-BR' : 'en-US'
+  const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
   const token = session?.access_token
 
   const [profile, setProfile] = useState<CompleteProfile | null>(null)
@@ -72,7 +77,7 @@ const ProfileComplete = () => {
         email: response.user.email || '',
       }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao carregar perfil')
+      setError(err instanceof Error ? err.message : t('Could not load profile.', 'Erro ao carregar perfil'))
     } finally {
       setLoading(false)
     }
@@ -91,7 +96,7 @@ const ProfileComplete = () => {
 
     const maxBytes = 5 * 1024 * 1024
     if (file.size > maxBytes) {
-      setError('Arquivo maior que 5MB. Escolha uma imagem menor.')
+      setError(t('File larger than 5MB. Choose a smaller image.', 'Arquivo maior que 5MB. Escolha uma imagem menor.'))
       return
     }
 
@@ -108,9 +113,9 @@ const ProfileComplete = () => {
 
       await loadProfile()
       await refreshProfile()
-      setNotice('Foto atualizada com sucesso.')
+      setNotice(t('Photo updated successfully.', 'Foto atualizada com sucesso.'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao enviar foto')
+      setError(err instanceof Error ? err.message : t('Could not upload photo.', 'Erro ao enviar foto'))
     } finally {
       setUploading(false)
       event.target.value = ''
@@ -131,9 +136,9 @@ const ProfileComplete = () => {
       })
       await loadProfile()
       await refreshProfile()
-      setNotice('Foto removida com sucesso.')
+      setNotice(t('Photo removed successfully.', 'Foto removida com sucesso.'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao remover foto')
+      setError(err instanceof Error ? err.message : t('Could not remove photo.', 'Erro ao remover foto'))
     } finally {
       setUploading(false)
     }
@@ -158,22 +163,22 @@ const ProfileComplete = () => {
     const confirmPassword = accountForm.confirmPassword
 
     if (nextName.length < 2) {
-      setAccountError('Nome deve ter pelo menos 2 caracteres.')
+      setAccountError(t('Name must have at least 2 characters.', 'Nome deve ter pelo menos 2 caracteres.'))
       return
     }
 
     if (!nextEmail.includes('@')) {
-      setAccountError('Informe um email valido.')
+      setAccountError(t('Provide a valid email.', 'Informe um email valido.'))
       return
     }
 
     if (nextPassword.length > 0 && nextPassword.length < 6) {
-      setAccountError('Senha deve ter pelo menos 6 caracteres.')
+      setAccountError(t('Password must have at least 6 characters.', 'Senha deve ter pelo menos 6 caracteres.'))
       return
     }
 
     if (nextPassword.length > 0 && nextPassword !== confirmPassword) {
-      setAccountError('A confirmacao de senha nao confere.')
+      setAccountError(t('Password confirmation does not match.', 'A confirmacao de senha nao confere.'))
       return
     }
 
@@ -184,7 +189,7 @@ const ProfileComplete = () => {
     if (nextPassword.length > 0) payload.password = nextPassword
 
     if (Object.keys(payload).length === 0) {
-      setAccountNotice('Nenhuma alteracao para salvar.')
+      setAccountNotice(t('No changes to save.', 'Nenhuma alteracao para salvar.'))
       return
     }
 
@@ -205,9 +210,13 @@ const ProfileComplete = () => {
         confirmPassword: '',
       }))
       setIsEditingAccount(false)
-      setAccountNotice('Dados da conta atualizados com sucesso.')
+      setAccountNotice(t('Account data updated successfully.', 'Dados da conta atualizados com sucesso.'))
     } catch (err) {
-      setAccountError(err instanceof Error ? err.message : 'Erro ao atualizar dados da conta')
+      setAccountError(
+        err instanceof Error
+          ? err.message
+          : t('Could not update account data.', 'Erro ao atualizar dados da conta')
+      )
     } finally {
       setSavingAccount(false)
     }
@@ -216,30 +225,34 @@ const ProfileComplete = () => {
   return (
     <section className="grid gap-6">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
-        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">Perfil</p>
-        <h2 className="mt-4 text-3xl font-semibold text-slate-900">Perfil completo</h2>
+        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">{t('Profile', 'Perfil')}</p>
+        <h2 className="mt-4 text-3xl font-semibold text-slate-900">{t('Complete profile', 'Perfil completo')}</h2>
         <p className="mt-3 text-sm text-slate-600">
-          Gerencie sua foto e visualize os dados completos da sua conta.
+          {t(
+            'Manage your photo and view complete account details.',
+            'Gerencie sua foto e visualize os dados completos da sua conta.'
+          )}
         </p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900">Foto do usuario</h3>
+          <h3 className="text-lg font-semibold text-slate-900">{t('User photo', 'Foto do usuario')}</h3>
           <div className="mt-4 flex items-center gap-4">
             <UserAvatar name={profile?.name} photoUrl={profile?.photoUrl} size="lg" />
             <div>
               <p className="text-sm font-semibold text-slate-800">{profile?.name || '-'}</p>
               <p className="text-xs text-slate-500">{profile?.email || '-'}</p>
               <p className="mt-1 text-[11px] text-slate-500">
-                Ultima atualizacao: {formatDateTime(profile?.photoUpdatedAt)}
+                {t('Last update:', 'Ultima atualizacao:')}{' '}
+                {formatDateTime(profile?.photoUpdatedAt, locale, t('Not informed', 'Nao informado'))}
               </p>
             </div>
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">
             <label className="cursor-pointer rounded-full bg-teal-700 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-800">
-              {uploading ? 'Enviando...' : 'Enviar foto'}
+              {uploading ? t('Uploading...', 'Enviando...') : t('Upload photo', 'Enviar foto')}
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
@@ -253,10 +266,12 @@ const ProfileComplete = () => {
               disabled={uploading || !profile?.photoUrl}
               className="rounded-full border border-rose-200 bg-white px-4 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
             >
-              Remover foto
+              {t('Remove photo', 'Remover foto')}
             </button>
           </div>
-          <p className="mt-3 text-[11px] text-slate-500">Formatos aceitos: JPG, PNG, WEBP. Tamanho maximo: 5MB.</p>
+          <p className="mt-3 text-[11px] text-slate-500">
+            {t('Accepted formats: JPG, PNG, WEBP. Max size: 5MB.', 'Formatos aceitos: JPG, PNG, WEBP. Tamanho maximo: 5MB.')}
+          </p>
 
           {error ? <p className="mt-3 text-xs text-rose-600">{error}</p> : null}
           {notice ? <p className="mt-3 text-xs text-emerald-600">{notice}</p> : null}
@@ -264,7 +279,7 @@ const ProfileComplete = () => {
 
         <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-lg font-semibold text-slate-900">Dados da conta</h3>
+            <h3 className="text-lg font-semibold text-slate-900">{t('Account data', 'Dados da conta')}</h3>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => {
@@ -285,60 +300,68 @@ const ProfileComplete = () => {
                 }}
                 className="rounded-full border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700"
               >
-                {isEditingAccount ? 'Cancelar' : 'Editar'}
+                {isEditingAccount ? t('Cancel', 'Cancelar') : t('Edit', 'Editar')}
               </button>
               <button
                 onClick={() => loadProfile().catch(() => undefined)}
                 className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
               >
-                Atualizar
+                {t('Refresh', 'Atualizar')}
               </button>
             </div>
           </div>
 
-          {loading ? <p className="mt-3 text-sm text-slate-500">Carregando perfil...</p> : null}
+          {loading ? <p className="mt-3 text-sm text-slate-500">{t('Loading profile...', 'Carregando perfil...')}</p> : null}
 
           <div className="mt-4 grid gap-3 text-sm text-slate-700 sm:grid-cols-2">
             <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Nome</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('Name', 'Nome')}</p>
               <p className="mt-1 font-semibold text-slate-900">{profile?.name || '-'}</p>
             </div>
             <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Email</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('Email', 'Email')}</p>
               <p className="mt-1 font-semibold text-slate-900">{profile?.email || '-'}</p>
             </div>
             <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Cargo</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('Role', 'Cargo')}</p>
               <p className="mt-1 font-semibold text-slate-900">{profile?.role || '-'}</p>
             </div>
             <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Supervisor</p>
-              <p className="mt-1 font-semibold text-slate-900">{profile?.supervisor?.name || 'Nao informado'}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('Supervisor', 'Supervisor')}</p>
+              <p className="mt-1 font-semibold text-slate-900">
+                {profile?.supervisor?.name || t('Not informed', 'Nao informado')}
+              </p>
             </div>
             <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Jornada diaria</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('Daily workload', 'Jornada diaria')}</p>
               <p className="mt-1 font-semibold text-slate-900">{profile?.contractDailyMinutes || 0} min</p>
             </div>
             <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Fuso horario</p>
-              <p className="mt-1 font-semibold text-slate-900">{profile?.timeZone || 'Nao informado'}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('Time zone', 'Fuso horario')}</p>
+              <p className="mt-1 font-semibold text-slate-900">{profile?.timeZone || t('Not informed', 'Nao informado')}</p>
             </div>
             <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Entrada padrao</p>
-              <p className="mt-1 font-semibold text-slate-900">{profile?.workdayStartTime || 'Nao informado'}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('Default start', 'Entrada padrao')}</p>
+              <p className="mt-1 font-semibold text-slate-900">
+                {profile?.workdayStartTime || t('Not informed', 'Nao informado')}
+              </p>
             </div>
             <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Saida padrao</p>
-              <p className="mt-1 font-semibold text-slate-900">{profile?.workdayEndTime || 'Nao informado'}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('Default end', 'Saida padrao')}</p>
+              <p className="mt-1 font-semibold text-slate-900">
+                {profile?.workdayEndTime || t('Not informed', 'Nao informado')}
+              </p>
             </div>
           </div>
 
           {isEditingAccount ? (
             <div className="mt-5 rounded-2xl border border-teal-100 bg-teal-50/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-700">Editar dados</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-700">
+                {t('Edit data', 'Editar dados')}
+              </p>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <label className="grid gap-1 text-xs text-slate-600">
-                  Nome
+                  {t('Name', 'Nome')}
                   <input
                     type="text"
                     value={accountForm.name}
@@ -348,7 +371,7 @@ const ProfileComplete = () => {
                 </label>
 
                 <label className="grid gap-1 text-xs text-slate-600">
-                  Email
+                  {t('Email', 'Email')}
                   <input
                     type="email"
                     value={accountForm.email}
@@ -358,23 +381,23 @@ const ProfileComplete = () => {
                 </label>
 
                 <label className="grid gap-1 text-xs text-slate-600">
-                  Nova senha
+                  {t('New password', 'Nova senha')}
                   <input
                     type="password"
                     value={accountForm.password}
                     onChange={(event) => handleAccountInput('password', event.target.value)}
-                    placeholder="Opcional"
+                    placeholder={t('Optional', 'Opcional')}
                     className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
                   />
                 </label>
 
                 <label className="grid gap-1 text-xs text-slate-600">
-                  Confirmar senha
+                  {t('Confirm password', 'Confirmar senha')}
                   <input
                     type="password"
                     value={accountForm.confirmPassword}
                     onChange={(event) => handleAccountInput('confirmPassword', event.target.value)}
-                    placeholder="Repita a senha"
+                    placeholder={t('Repeat password', 'Repita a senha')}
                     className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
                   />
                 </label>
@@ -386,7 +409,7 @@ const ProfileComplete = () => {
                   disabled={savingAccount}
                   className="rounded-full bg-teal-700 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
                 >
-                  {savingAccount ? 'Salvando...' : 'Salvar alteracoes'}
+                  {savingAccount ? t('Saving...', 'Salvando...') : t('Save changes', 'Salvar alteracoes')}
                 </button>
               </div>
 

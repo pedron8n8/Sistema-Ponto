@@ -112,6 +112,16 @@ backend/
 
 O sistema utiliza Supabase para autenticação. Os tokens JWT são validados nos middlewares antes de acessar rotas protegidas.
 
+## 🔴 Recursos PRO
+
+- **Alertas proativos de hora extra:** worker dedicado (`src/workers/proactiveAlertWorker.js`) com fila e retry para envio no fim do expediente.
+- **Configuração PRO no painel:** rotas administrativas em `GET/PATCH /api/v1/admin/pro/*` protegidas por `requirePlan('PRO')`.
+- **API pública de folha:** endpoints em `/api/v1/public/payroll/*` com token assinado HMAC.
+
+Documentação da integração pública:
+
+- `API_PUBLIC_PRO_PAYROLL.md`
+
 ## 📊 Banco de Dados
 
 ### Modelos principais:

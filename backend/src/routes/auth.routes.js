@@ -1,8 +1,64 @@
 const express = require('express');
 const { authMiddleware, roleCheck } = require('../middlewares');
 const { buildUserPhotoUrl } = require('../utils/userPhoto');
+const prisma = require('../config/database');
+const { verifyTeamInviteToken } = require('../utils/teamInviteToken');
 
 const router = express.Router();
+
+/**
+ * GET /api/v1/auth/invite/preview?token=...
+ * Valida convite de equipe e retorna contexto para tela de cadastro.
+ */
+router.get('/invite/preview', async (req, res) => {
+  try {
+    const rawToken = String(req.query.token || '').trim();
+
+    if (!rawToken) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Token de convite nao informado.',
+      });
+    }
+
+    const invite = verifyTeamInviteToken(rawToken);
+
+    const admin = await prisma.user.findUnique({
+      where: { id: invite.adminId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+      },
+    });
+
+    if (!admin || admin.role !== 'ADMIN' || admin.isActive === false) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Administrador do convite nao encontrado.',
+      });
+    }
+
+    return res.json({
+      invite: {
+        role: invite.role,
+        expiresAt: invite.expiresAt,
+        admin: {
+          id: admin.id,
+          name: admin.name,
+          email: admin.email,
+        },
+      },
+    });
+  } catch (error) {
+    return res.status(400).json({
+      error: 'Bad Request',
+      message: error.message || 'Convite invalido ou expirado.',
+    });
+  }
+});
 
 /**
  * GET /api/v1/auth/me
@@ -16,6 +72,7 @@ router.get('/me', authMiddleware, (req, res) => {
       id: req.user.id,
       email: req.user.email,
       name: req.user.name,
+      phone: req.user.phone,
       role: req.user.role,
       supervisor: req.user.supervisor,
       photoUrl,

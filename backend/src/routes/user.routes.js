@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const { authMiddleware, roleCheck, requirePlan } = require('../middlewares');
 const userController = require('../controllers/user.controller');
+const financeController = require('../controllers/finance.controller');
 const { photoUpload, MAX_PHOTO_SIZE_BYTES } = require('../middlewares/upload.middleware');
 
 const router = express.Router();
@@ -42,6 +43,56 @@ router.get('/me/profile-complete', userController.getMyCompleteProfile);
  * Atualiza nome, email e senha da conta autenticada
  */
 router.patch('/me/account', userController.updateMyAccount);
+
+/**
+ * POST /api/v1/users/me/team-invite-link
+ * Gera link de convite para o ADMIN montar time com role predefinida
+ */
+router.post('/me/team-invite-link', roleCheck(['ADMIN']), userController.createMyTeamInviteLink);
+
+/**
+ * PATCH /api/v1/users/me/plan
+ * Permite ao ADMIN escolher plano e quantidade de cadeiras para a propria conta
+ */
+router.patch('/me/plan', roleCheck(['ADMIN']), userController.chooseMyPlan);
+
+/**
+ * POST /api/v1/users/me/additional-seats/checkout
+ * Inicia checkout para compra manual de cadeiras extras
+ */
+router.post(
+	'/me/additional-seats/checkout',
+	roleCheck(['ADMIN']),
+	userController.createMyAdditionalSeatsCheckout
+);
+
+/**
+ * PATCH /api/v1/users/me/additional-seats/confirm
+ * Confirma checkout de cadeiras extras no Stripe e atualiza snapshot persistido
+ */
+router.patch(
+	'/me/additional-seats/confirm',
+	roleCheck(['ADMIN']),
+	userController.confirmAdditionalSeatsCheckout
+);
+
+/**
+ * GET /api/v1/users/me/finance/overview
+ * Retorna visão financeira do ADMIN (plano, vencimento e cadeiras)
+ */
+router.get('/me/finance/overview', roleCheck(['ADMIN']), financeController.getMyFinanceOverview);
+
+/**
+ * POST /api/v1/users/me/finance/invoices/sync
+ * Sincroniza faturas/sessões Stripe do ADMIN e persiste no banco
+ */
+router.post('/me/finance/invoices/sync', roleCheck(['ADMIN']), financeController.syncMyFinanceInvoices);
+
+/**
+ * GET /api/v1/users/me/finance/invoices
+ * Lista faturas financeiras persistidas no banco
+ */
+router.get('/me/finance/invoices', roleCheck(['ADMIN']), financeController.listMyFinanceInvoices);
 
 /**
  * POST /api/v1/users/me/photo

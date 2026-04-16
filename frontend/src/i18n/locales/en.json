@@ -16,7 +16,8 @@
     "subscribeNow": "Subscribe now",
     "mostPopular": "Most Popular",
     "allRights": "All rights reserved.",
-    "openApp": "Open app"
+    "openApp": "Open app",
+    "here": "here"
   },
   "seo": {
     "landing": {
@@ -38,6 +39,10 @@
     "login": {
       "title": "Login | SystemaPonto",
       "description": "Sign in with Google or email and password to access your attendance workspace."
+    },
+    "signup": {
+      "title": "Create account | SystemaPonto",
+      "description": "Create your account with name, email, phone, and password or continue with Google."
     }
   },
   "publicNav": {
@@ -62,10 +67,10 @@
     "emailPlaceholder": "name@company.com",
     "passwordLabel": "Password",
     "passwordPlaceholder": "At least 6 characters",
-    "googleButton": "Sign in with Google",
+    "googleButton": "🔍 Sign in with Google",
     "emailButton": "Sign in with email/password",
     "createButton": "Create account",
-    "googleLoading": "Redirecting to Google...",
+    "googleLoading": "🔍 Redirecting to Google...",
     "emailLoading": "Signing in...",
     "createLoading": "Creating account...",
     "signupSuccess": "Account created. Check your inbox for verification if required, then sign in.",
@@ -73,10 +78,49 @@
     "heroTitle": "Stop chasing timesheets.",
     "heroText": "Run attendance with face verification, geolocation checks, terminal QR validation, and complete audit trails.",
     "oauthFail": "Unable to start Google sign-in flow.",
+    "googleProviderDisabled": "Google sign-in is disabled in Supabase. Enable it in Authentication > Providers > Google.",
     "signinFail": "Failed to sign in with email/password.",
     "signupFail": "Failed to create account.",
     "linksTitle": "Need context first?",
     "linksSubtitle": "Explore product capabilities and pricing before authentication."
+  },
+  "signup": {
+    "pageTag": "Create account",
+    "buyerOnboarding": "Buyer onboarding",
+    "inviteEyebrow": "Team invite onboarding",
+    "title": "Create your account and continue",
+    "subtitle": "Fill in account details or continue with Google. Name, email, and password are required.",
+    "inviteSubtitle": "You were invited to join a team. Complete your account and you will be added automatically.",
+    "inviteDetailsTitle": "Invite details",
+    "inviteLoading": "Validating invite token...",
+    "inviteInvalid": "Invalid or expired invite link.",
+    "inviteAdminLabel": "Team admin:",
+    "inviteRoleLabel": "Assigned role:",
+    "inviteExpiresLabel": "Expires at:",
+    "inviteRoleSupervisor": "Supervisor",
+    "inviteRoleMember": "Member",
+    "inviteGoogleDisabled": "Google sign in is disabled for invite links. Use email/password to join the team.",
+    "googleInfoTitle": "Using Google sign in",
+    "googleInfoText": "If you continue with Google, we capture available account data from your Google profile.",
+    "inviteGoogleInfoText": "For security, invite links currently require email/password signup.",
+    "formTitle": "Account details",
+    "formSubtitle": "Complete required fields to continue.",
+    "googleButton": "Continue with Google",
+    "googleLoading": "Redirecting to Google...",
+    "nameLabel": "Name *",
+    "namePlaceholder": "Your full name",
+    "emailLabel": "Email *",
+    "emailPlaceholder": "name@company.com",
+    "phoneLabel": "Phone",
+    "phonePlaceholder": "+55 11 90000-0000",
+    "passwordLabel": "Password *",
+    "passwordPlaceholder": "At least 6 characters",
+    "submitButton": "Create account",
+    "submitLoading": "Creating account...",
+    "backToLogin": "Back to login",
+    "success": "Account created. Check your email if confirmation is required.",
+    "createFail": "Could not create account.",
+    "googleFail": "Could not start Google sign in."
   },
   "landing": {
     "hero": {

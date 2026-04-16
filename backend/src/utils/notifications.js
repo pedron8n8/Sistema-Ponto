@@ -34,8 +34,25 @@ const createEmailTransporter = () => {
   return cachedTransporter;
 };
 
+const isEmailConfigured = () => Boolean(process.env.SMTP_URL || process.env.SMTP_HOST);
+
+const isPushConfigured = () => Boolean(process.env.PUSH_WEBHOOK_URL);
+
+const isEmailEnabled = () =>
+  parseBoolean(process.env.OVERTIME_ALERT_EMAIL_ENABLED, isEmailConfigured());
+
+const isPushEnabled = () =>
+  parseBoolean(process.env.OVERTIME_ALERT_PUSH_ENABLED, isPushConfigured());
+
+const getEnabledOvertimeChannels = () => {
+  const channels = [];
+  if (isEmailEnabled()) channels.push('EMAIL');
+  if (isPushEnabled()) channels.push('PUSH');
+  return channels;
+};
+
 const sendEmail = async ({ to, subject, text }) => {
-  const emailEnabled = parseBoolean(process.env.OVERTIME_ALERT_EMAIL_ENABLED, false);
+  const emailEnabled = isEmailEnabled();
   if (!emailEnabled) {
     return { channel: 'EMAIL', delivered: false, reason: 'DISABLED' };
   }
@@ -63,7 +80,7 @@ const sendEmail = async ({ to, subject, text }) => {
 };
 
 const sendPush = async ({ payload }) => {
-  const pushEnabled = parseBoolean(process.env.OVERTIME_ALERT_PUSH_ENABLED, false);
+  const pushEnabled = isPushEnabled();
   if (!pushEnabled) {
     return { channel: 'PUSH', delivered: false, reason: 'DISABLED' };
   }
@@ -89,8 +106,12 @@ const sendPush = async ({ payload }) => {
   return { channel: 'PUSH', delivered: true };
 };
 
-const sendOvertimeThresholdNotification = async (alert) => {
-  const channels = Array.isArray(alert?.channels) ? alert.channels : ['IN_APP'];
+const sendOvertimeThresholdNotification = async (alert, options = {}) => {
+  const strictMode = Boolean(options.strict);
+  const fallbackChannels = getEnabledOvertimeChannels();
+  const channels = Array.isArray(alert?.channels) && alert.channels.length > 0
+    ? alert.channels
+    : fallbackChannels;
 
   const summaryText = [
     `Colaborador: ${alert.member.name} (${alert.member.email})`,
@@ -105,31 +126,59 @@ const sendOvertimeThresholdNotification = async (alert) => {
   const results = [];
 
   if (channels.includes('EMAIL')) {
-    results.push(
-      await sendEmail({
-        to: alert.manager?.email || null,
-        subject,
-        text: summaryText,
-      })
-    );
+    try {
+      results.push(
+        await sendEmail({
+          to: alert.manager?.email || null,
+          subject,
+          text: summaryText,
+        })
+      );
+    } catch (error) {
+      results.push({
+        channel: 'EMAIL',
+        delivered: false,
+        reason: 'ERROR',
+        details: error.message,
+      });
+    }
   }
 
   if (channels.includes('PUSH')) {
-    results.push(
-      await sendPush({
-        payload: {
-          type: 'OVERTIME_LIMIT_THRESHOLD',
-          manager: alert.manager,
-          member: alert.member,
-          thresholdPercent: alert.thresholdPercent,
-          thresholdMinutes: alert.thresholdMinutes,
-          overtimeMinutes: alert.overtimeMinutes,
-          overtimeLimitMinutes: alert.overtimeLimitMinutes,
-          dateKey: alert.dateKey,
-          triggeredAt: alert.triggeredAt,
-        },
-      })
-    );
+    try {
+      results.push(
+        await sendPush({
+          payload: {
+            type: 'OVERTIME_LIMIT_THRESHOLD',
+            manager: alert.manager,
+            member: alert.member,
+            thresholdPercent: alert.thresholdPercent,
+            thresholdMinutes: alert.thresholdMinutes,
+            overtimeMinutes: alert.overtimeMinutes,
+            overtimeLimitMinutes: alert.overtimeLimitMinutes,
+            dateKey: alert.dateKey,
+            triggeredAt: alert.triggeredAt,
+          },
+        })
+      );
+    } catch (error) {
+      results.push({
+        channel: 'PUSH',
+        delivered: false,
+        reason: 'ERROR',
+        details: error.message,
+      });
+    }
+  }
+
+  if (strictMode) {
+    const failedChannels = results.filter((result) => !result.delivered);
+    if (failedChannels.length > 0) {
+      const details = failedChannels
+        .map((result) => `${result.channel}:${result.reason || 'UNKNOWN'}`)
+        .join(', ');
+      throw new Error(`Falha no envio de alerta proativo: ${details}`);
+    }
   }
 
   return {
@@ -141,4 +190,5 @@ const sendOvertimeThresholdNotification = async (alert) => {
 
 module.exports = {
   sendOvertimeThresholdNotification,
+  getEnabledOvertimeChannels,
 };

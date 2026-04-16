@@ -15,6 +15,12 @@ const {
   getLocationSettings,
   updateLocationSettings,
 } = require('../controllers/admin.controller');
+const {
+  getProFeatureSettings,
+  updateProLivenessSettings,
+  updateProPublicApiSettings,
+  issueProPublicApiToken,
+} = require('../controllers/pro.controller');
 
 const router = express.Router();
 
@@ -106,5 +112,29 @@ router.get('/location-settings', requirePlan(['GROWTH', 'PRO']), getLocationSett
  * Atualiza método de validação e localização do estabelecimento
  */
 router.patch('/location-settings', requirePlan(['GROWTH', 'PRO']), updateLocationSettings);
+
+/**
+ * GET /admin/pro/settings
+ * Configurações do pacote PRO (liveness + API pública)
+ */
+router.get('/pro/settings', requirePlan('PRO'), getProFeatureSettings);
+
+/**
+ * PATCH /admin/pro/liveness
+ * Atualiza parâmetros de liveness facial em runtime
+ */
+router.patch('/pro/liveness', requirePlan('PRO'), updateProLivenessSettings);
+
+/**
+ * PATCH /admin/pro/public-api
+ * Atualiza configurações da API pública PRO
+ */
+router.patch('/pro/public-api', requirePlan('PRO'), updateProPublicApiSettings);
+
+/**
+ * POST /admin/pro/public-api/token
+ * Emite token assinado para integração externa de folha
+ */
+router.post('/pro/public-api/token', requirePlan('PRO'), roleCheck(['ADMIN']), issueProPublicApiToken);
 
 module.exports = router;
