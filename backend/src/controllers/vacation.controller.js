@@ -3,6 +3,50 @@ const { buildUserPhotoUrl } = require('../utils/userPhoto');
 
 const ACTIVE_VACATION_STATUSES = ['REQUESTED', 'SUPERVISOR_APPROVED', 'HR_CONFIRMED'];
 const isElevatedVacationViewer = (role) => ['SUPERADMIN', 'ADMIN', 'HR'].includes(role);
+const VACATION_REQUEST_TYPES = ['VACATION', 'DAY_OFF'];
+const DAY_OFF_REASON_PREFIX = '[DAY_OFF]';
+
+const normalizeVacationRequestType = (value) => {
+  const normalized = String(value || 'VACATION').trim().toUpperCase();
+  return VACATION_REQUEST_TYPES.includes(normalized) ? normalized : null;
+};
+
+const parseVacationRequestTypeFromReason = (value) => {
+  const normalized = String(value || '').trim();
+
+  if (!normalized) {
+    return {
+      requestType: 'VACATION',
+      reason: null,
+    };
+  }
+
+  if (normalized === DAY_OFF_REASON_PREFIX || normalized.startsWith(`${DAY_OFF_REASON_PREFIX} `)) {
+    const cleanedReason = normalized.replace(DAY_OFF_REASON_PREFIX, '').trim();
+    return {
+      requestType: 'DAY_OFF',
+      reason: cleanedReason || null,
+    };
+  }
+
+  return {
+    requestType: 'VACATION',
+    reason: normalized,
+  };
+};
+
+const encodeVacationReasonWithType = ({ requestType, reason }) => {
+  const normalizedReason = String(reason || '').trim();
+  const normalizedType = normalizeVacationRequestType(requestType) || 'VACATION';
+
+  if (normalizedType === 'DAY_OFF') {
+    return normalizedReason ? `${DAY_OFF_REASON_PREFIX} ${normalizedReason}` : DAY_OFF_REASON_PREFIX;
+  }
+
+  return normalizedReason || null;
+};
+
+const getRequestTypeLabelPt = (requestType) => (requestType === 'DAY_OFF' ? 'folga' : 'férias');
 
 const withUserPhoto = (req, user) => {
   if (!user) return user;
@@ -12,18 +56,24 @@ const withUserPhoto = (req, user) => {
   };
 };
 
-const withRequestPhoto = (req, request) => ({
-  ...request,
-  user: withUserPhoto(req, request.user),
-  supervisor: withUserPhoto(req, request.supervisor),
-  hrReviewer: withUserPhoto(req, request.hrReviewer),
-  logs: Array.isArray(request.logs)
-    ? request.logs.map((log) => ({
-        ...log,
-        actor: withUserPhoto(req, log.actor),
-      }))
-    : request.logs,
-});
+const withRequestPhoto = (req, request) => {
+  const parsedReason = parseVacationRequestTypeFromReason(request.reason);
+
+  return {
+    ...request,
+    requestType: parsedReason.requestType,
+    reason: parsedReason.reason,
+    user: withUserPhoto(req, request.user),
+    supervisor: withUserPhoto(req, request.supervisor),
+    hrReviewer: withUserPhoto(req, request.hrReviewer),
+    logs: Array.isArray(request.logs)
+      ? request.logs.map((log) => ({
+          ...log,
+          actor: withUserPhoto(req, log.actor),
+        }))
+      : request.logs,
+  };
+};
 
 const parseDate = (value) => {
   const date = new Date(value);
@@ -72,8 +122,16 @@ const validateVacationDateRange = ({ startDate, endDate }) => {
 
 const createVacationRequest = async (req, res) => {
   try {
-    const { startDate, endDate, reason } = req.body || {};
+    const { startDate, endDate, reason, requestType } = req.body || {};
     const userId = req.user.id;
+    const normalizedRequestType = normalizeVacationRequestType(requestType);
+
+    if (!normalizedRequestType) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Tipo de solicitação inválido. Use VACATION ou DAY_OFF.',
+      });
+    }
 
     const dateValidation = validateVacationDateRange({ startDate, endDate });
     if (!dateValidation.valid) {
@@ -82,6 +140,23 @@ const createVacationRequest = async (req, res) => {
         message: dateValidation.message,
       });
     }
+
+    const startDayKey = `${dateValidation.startDate.getFullYear()}-${dateValidation.startDate.getMonth()}-${dateValidation.startDate.getDate()}`;
+    const endDayKey = `${dateValidation.endDate.getFullYear()}-${dateValidation.endDate.getMonth()}-${dateValidation.endDate.getDate()}`;
+
+    if (normalizedRequestType === 'DAY_OFF' && startDayKey !== endDayKey) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Solicitação de folga deve ser para um único dia.',
+      });
+    }
+
+    const normalizedReason = String(reason || '').trim();
+    const encodedReason = encodeVacationReasonWithType({
+      requestType: normalizedRequestType,
+      reason: normalizedReason,
+    });
+    const requestTypeLabelPt = getRequestTypeLabelPt(normalizedRequestType);
 
     if (!req.user.supervisorId) {
       return res.status(400).json({
@@ -116,7 +191,7 @@ const createVacationRequest = async (req, res) => {
           supervisorId: req.user.supervisorId,
           startDate: dateValidation.startDate,
           endDate: dateValidation.endDate,
-          reason: reason ? String(reason).trim() : null,
+          reason: encodedReason,
           status: 'REQUESTED',
         },
         include: {
@@ -142,7 +217,7 @@ const createVacationRequest = async (req, res) => {
           vacationRequestId: request.id,
           actorId: userId,
           action: 'REQUESTED',
-          comment: reason ? String(reason).trim() : null,
+          comment: normalizedReason || (normalizedRequestType === 'DAY_OFF' ? 'Solicitação de folga' : null),
           toStatus: 'REQUESTED',
         },
       });
@@ -153,20 +228,23 @@ const createVacationRequest = async (req, res) => {
     if (created.supervisor?.email) {
       sendVacationEmailNotification({
         to: created.supervisor.email,
-        subject: 'Nova solicitação de férias pendente',
-        body: `${created.user.name || created.user.email} solicitou férias de ${created.startDate.toISOString()} até ${created.endDate.toISOString()}.`,
+        subject: `Nova solicitação de ${requestTypeLabelPt} pendente`,
+        body: `${created.user.name || created.user.email} solicitou ${requestTypeLabelPt} de ${created.startDate.toISOString()} até ${created.endDate.toISOString()}.`,
       });
     }
 
     sendVacationEmailNotification({
       to: created.user.email,
-      subject: 'Solicitação de férias registrada',
-      body: 'Sua solicitação foi registrada e aguarda aprovação do supervisor.',
+      subject: `Solicitação de ${requestTypeLabelPt} registrada`,
+      body: `Sua solicitação de ${requestTypeLabelPt} foi registrada e aguarda aprovação do supervisor.`,
     });
 
     return res.status(201).json({
-      message: 'Solicitação de férias enviada com sucesso.',
-      request: created,
+      message:
+        normalizedRequestType === 'DAY_OFF'
+          ? 'Solicitação de folga enviada com sucesso.'
+          : 'Solicitação de férias enviada com sucesso.',
+      request: withRequestPhoto(req, created),
     });
   } catch (error) {
     console.error('❌ Erro ao criar solicitação de férias:', error);
@@ -333,13 +411,16 @@ const reviewVacationBySupervisor = async (req, res) => {
       return updatedRequest;
     });
 
+    const parsedReason = parseVacationRequestTypeFromReason(request.reason);
+    const requestTypeLabelPt = getRequestTypeLabelPt(parsedReason.requestType);
+
     sendVacationEmailNotification({
       to: updated.user.email,
-      subject: 'Atualização da solicitação de férias',
+      subject: `Atualização da solicitação de ${requestTypeLabelPt}`,
       body:
         decision === 'APPROVE'
-          ? 'Sua solicitação foi aprovada pelo supervisor e enviada para confirmação do RH.'
-          : 'Sua solicitação de férias foi rejeitada pelo supervisor.',
+          ? `Sua solicitação de ${requestTypeLabelPt} foi aprovada pelo supervisor e enviada para confirmação do RH.`
+          : `Sua solicitação de ${requestTypeLabelPt} foi rejeitada pelo supervisor.`,
     });
 
     return res.json({
@@ -347,7 +428,7 @@ const reviewVacationBySupervisor = async (req, res) => {
         decision === 'APPROVE'
           ? 'Solicitação aprovada pelo supervisor.'
           : 'Solicitação rejeitada pelo supervisor.',
-      request: updated,
+      request: withRequestPhoto(req, updated),
     });
   } catch (error) {
     console.error('❌ Erro ao revisar solicitação de férias pelo supervisor:', error);
@@ -447,13 +528,16 @@ const reviewVacationByHr = async (req, res) => {
       return updatedRequest;
     });
 
+    const parsedReason = parseVacationRequestTypeFromReason(request.reason);
+    const requestTypeLabelPt = getRequestTypeLabelPt(parsedReason.requestType);
+
     sendVacationEmailNotification({
       to: updated.user.email,
-      subject: 'Resposta final do RH sobre férias',
+      subject: `Resposta final do RH sobre ${requestTypeLabelPt}`,
       body:
         decision === 'CONFIRM'
-          ? 'Sua solicitação de férias foi confirmada pelo RH.'
-          : 'Sua solicitação de férias foi rejeitada pelo RH.',
+          ? `Sua solicitação de ${requestTypeLabelPt} foi confirmada pelo RH.`
+          : `Sua solicitação de ${requestTypeLabelPt} foi rejeitada pelo RH.`,
     });
 
     return res.json({
@@ -461,7 +545,7 @@ const reviewVacationByHr = async (req, res) => {
         decision === 'CONFIRM'
           ? 'Solicitação confirmada pelo RH.'
           : 'Solicitação rejeitada pelo RH.',
-      request: updated,
+      request: withRequestPhoto(req, updated),
     });
   } catch (error) {
     console.error('❌ Erro ao revisar solicitação de férias pelo RH:', error);
@@ -668,6 +752,7 @@ const getTeamVacationCalendar = async (req, res) => {
         userId: true,
         startDate: true,
         endDate: true,
+        reason: true,
         status: true,
         user: {
           select: {
@@ -704,6 +789,7 @@ const getTeamVacationCalendar = async (req, res) => {
         presencePercent: Number(presencePercent.toFixed(2)),
         belowThreshold: presencePercent < minPresencePercent,
         membersOnVacation: overlapping.map((item) => ({
+          ...parseVacationRequestTypeFromReason(item.reason),
           id: item.user.id,
           name: item.user.name,
           email: item.user.email,
@@ -749,7 +835,10 @@ const getTeamVacationCalendar = async (req, res) => {
       teamSize: teamMembers.length,
       days,
       annual,
-      requests,
+      requests: requests.map((request) => ({
+        ...request,
+        ...parseVacationRequestTypeFromReason(request.reason),
+      })),
     });
   } catch (error) {
     console.error('❌ Erro ao montar calendário de férias da equipe:', error);

@@ -116,15 +116,11 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
       items: [
         { to: '/app/colaborador', label: t('Time clock', 'Ponto'), icon: <TimeClockIcon /> },
         { to: '/app/colaborador/historico', label: t('History', 'Historico'), icon: <HistoryIcon /> },
-        ...(isGrowthOrBetter
-          ? [
-              {
-                to: '/app/colaborador/ferias',
-                label: t('My vacations', 'Minhas Ferias'),
-                icon: <TeamVacationIcon />, // Usando o icone de equipe
-              },
-            ]
-          : []),
+        {
+          to: '/app/colaborador/ferias',
+          label: t('My vacation/day off', 'Minhas ferias/folgas'),
+          icon: <TeamVacationIcon />, // Usando o icone de equipe
+        },
       ],
     },
     {
@@ -151,15 +147,11 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
           label: t('Supervisor Pendings', 'Supervisor Pendings'),
           icon: <SupervisorIcon />,
         },
-        ...(isGrowthOrBetter
-          ? [
-              {
-                to: '/app/ferias-equipe',
-                label: t('Team vacation', 'Ferias equipe'),
-                icon: <TeamVacationIcon />,
-              },
-            ]
-          : []),
+        {
+          to: '/app/ferias-equipe',
+          label: t('Team vacation/day off', 'Ferias/folgas da equipe'),
+          icon: <TeamVacationIcon />,
+        },
       ],
     },
     {

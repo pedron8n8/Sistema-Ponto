@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { API_BASE, apiFetch } from '../lib/api'
+import { API_BASE, apiFetch, translateApiMessage } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTimeZone } from '../context/TimezoneContext'
 import { useTranslation } from 'react-i18next'
@@ -196,13 +196,6 @@ const getTodayBucket = (nowMs: number) => {
   return `${day}/${month}`
 }
 
-const presenceStatusLabel: Record<PresenceStatus, string> = {
-  PRESENT: 'Presente',
-  ABSENT: 'Ausente',
-  ON_BREAK: 'Em intervalo',
-  OVERTIME_ACTIVE: 'HE ativa',
-}
-
 const presenceStatusClass: Record<PresenceStatus, string> = {
   PRESENT: 'bg-emerald-100 text-emerald-800',
   ABSENT: 'bg-slate-200 text-slate-700',
@@ -215,6 +208,12 @@ const SupervisorDashboard = () => {
   const { t: i18nT, i18n } = useTranslation()
   const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
   const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
+  const presenceStatusLabel: Record<PresenceStatus, string> = {
+    PRESENT: t('Present', 'Presente'),
+    ABSENT: t('Absent', 'Ausente'),
+    ON_BREAK: t('On break', 'Em intervalo'),
+    OVERTIME_ACTIVE: t('OT active', 'HE ativa'),
+  }
   const { viewTimeZone } = useTimeZone()
   const token = session?.access_token
   const [entries, setEntries] = useState<Entry[]>([])
@@ -443,7 +442,11 @@ const SupervisorDashboard = () => {
       })
       setHoursKpi(response)
     } catch (err) {
-      setHoursKpiError(err instanceof Error ? err.message : 'Erro ao carregar KPIs de horas')
+      setHoursKpiError(
+        err instanceof Error
+          ? err.message
+          : t('Failed to load hour KPIs.', 'Erro ao carregar KPIs de horas')
+      )
       setHoursKpi(null)
     } finally {
       setHoursKpiLoading(false)
@@ -486,7 +489,7 @@ const SupervisorDashboard = () => {
         })
 
         if (!response.ok || !response.body) {
-          throw new Error('Falha ao conectar stream de presença')
+          throw new Error(t('Failed to connect to presence stream.', 'Falha ao conectar stream de presença'))
         }
 
         setPresenceConnected(true)
@@ -529,14 +532,22 @@ const SupervisorDashboard = () => {
 
             if (eventName === 'error' && dataLines.length > 0) {
               const payload = JSON.parse(dataLines.join('\n')) as { message?: string }
-              setPresenceError(payload.message || 'Erro no stream de presença')
+              setPresenceError(
+                payload.message
+                  ? translateApiMessage(payload.message)
+                  : t('Presence stream error.', 'Erro no stream de presença')
+              )
             }
           }
         }
       } catch (err) {
         if (abortSignal.aborted) return
         setPresenceConnected(false)
-        setPresenceError(err instanceof Error ? err.message : 'Erro ao conectar presença em tempo real')
+        setPresenceError(
+          err instanceof Error
+            ? err.message
+            : t('Failed to connect real-time presence.', 'Erro ao conectar presença em tempo real')
+        )
       }
 
       await new Promise((resolve) => setTimeout(resolve, 1500))
@@ -554,7 +565,7 @@ const SupervisorDashboard = () => {
 
   useEffect(() => {
     loadTeamMembers().catch((err) => {
-      setError(err instanceof Error ? err.message : 'Erro ao carregar equipe')
+      setError(err instanceof Error ? err.message : t('Failed to load team.', 'Erro ao carregar equipe'))
       setTeamMembers([])
     })
   }, [token])
@@ -679,7 +690,7 @@ const SupervisorDashboard = () => {
       closeReview()
       await loadEntries()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao registrar revisao')
+      setError(err instanceof Error ? err.message : t('Failed to save review.', 'Falha ao registrar revisao'))
     }
   }
 
@@ -703,7 +714,10 @@ const SupervisorDashboard = () => {
         if (parsedMinutes === null) {
           setTeamErrorByUser((prev) => ({
             ...prev,
-            [userId]: 'Jornada inválida. Use o formato hh:mm (ex.: 8:20).',
+            [userId]: t(
+              'Invalid workday. Use hh:mm format (e.g. 8:20).',
+              'Jornada inválida. Use o formato hh:mm (ex.: 8:20).'
+            ),
           }))
           return
         }
@@ -722,7 +736,10 @@ const SupervisorDashboard = () => {
       if (Object.keys(body).length === 0) {
         setTeamErrorByUser((prev) => ({
           ...prev,
-          [userId]: 'Preencha ao menos um campo de jornada para salvar.',
+          [userId]: t(
+            'Fill at least one workday field before saving.',
+            'Preencha ao menos um campo de jornada para salvar.'
+          ),
         }))
         return
       }
@@ -735,13 +752,19 @@ const SupervisorDashboard = () => {
 
       setTeamNoticeByUser((prev) => ({
         ...prev,
-        [userId]: 'Jornada do colaborador atualizada com sucesso.',
+        [userId]: t(
+          'Collaborator workday updated successfully.',
+          'Jornada do colaborador atualizada com sucesso.'
+        ),
       }))
       await loadTeamMembers()
     } catch (err) {
       setTeamErrorByUser((prev) => ({
         ...prev,
-        [userId]: err instanceof Error ? err.message : 'Erro ao atualizar jornada do colaborador',
+        [userId]:
+          err instanceof Error
+            ? err.message
+            : t('Failed to update collaborator workday.', 'Erro ao atualizar jornada do colaborador'),
       }))
     } finally {
       setTeamWorkSettingsLoadingByUser((prev) => ({ ...prev, [userId]: false }))
@@ -762,11 +785,19 @@ const SupervisorDashboard = () => {
         method: 'PATCH',
         body: { payAllPending: true },
       })
-      setTeamBankNotice(response.message || 'Baixa realizada com sucesso.')
+      setTeamBankNotice(
+        response.message
+          ? translateApiMessage(response.message)
+          : t('Payment posted successfully.', 'Baixa realizada com sucesso.')
+      )
       await loadTeamBankOverview()
       await loadTeamMembers()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao dar baixa no banco de horas')
+      setError(
+        err instanceof Error
+          ? err.message
+          : t('Failed to post banked-hours payment.', 'Erro ao dar baixa no banco de horas')
+      )
     } finally {
       setTeamBankPayLoadingByUser((prev) => ({ ...prev, [userId]: false }))
     }
@@ -777,7 +808,7 @@ const SupervisorDashboard = () => {
   return (
     <section className="grid gap-6">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
-        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">Supervisor</p>
+        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">{t('Supervisor', 'Supervisor')}</p>
         <h2 className="mt-4 text-3xl font-semibold text-slate-900">{t('Pending approvals in one panel.', 'Aprovacoes pendentes em um painel.')}</h2>
         <p className="mt-4 text-sm text-slate-600">
           {t('Review team work logs and register comments without leaving the flow.', 'Revise as jornadas da equipe e registre comentarios sem sair do fluxo.')}
@@ -786,18 +817,23 @@ const SupervisorDashboard = () => {
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold text-slate-900">Presença em tempo real</h3>
+          <h3 className="text-lg font-semibold text-slate-900">
+            {t('Real-time presence', 'Presença em tempo real')}
+          </h3>
           <span
             className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${
               presenceConnected ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
             }`}
           >
-            {presenceConnected ? 'Online' : 'Reconectando'}
+            {presenceConnected ? t('Online', 'Online') : t('Reconnecting', 'Reconectando')}
           </span>
         </div>
 
         <p className="mt-2 text-xs text-slate-500">
-          Atualizacao continua via SSE sem recarregar a pagina.
+          {t(
+            'Continuous updates through SSE without reloading the page.',
+            'Atualizacao continua via SSE sem recarregar a pagina.'
+          )}
         </p>
         {presenceError ? <p className="mt-2 text-xs text-rose-600">{presenceError}</p> : null}
 
@@ -809,10 +845,15 @@ const SupervisorDashboard = () => {
                 className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
               >
                 <p>
-                  <span className="font-semibold">Alerta proativo HE:</span> {alert.member.name} atingiu {alert.overtimeMinutes}min de HE no dia ({alert.thresholdPercent}% do limite de {alert.overtimeLimitMinutes}min).
+                  <span className="font-semibold">{t('Proactive OT alert:', 'Alerta proativo HE:')}</span>{' '}
+                  {alert.member.name}{' '}
+                  {t('reached', 'atingiu')} {alert.overtimeMinutes}
+                  {t('min of OT today', 'min de HE no dia')} ({alert.thresholdPercent}%{' '}
+                  {t('of limit', 'do limite')} {alert.overtimeLimitMinutes}min).
                 </p>
                 <p className="mt-1 text-[11px] text-amber-800">
-                  Disparado às {formatDateTimeWithTimeZone(alert.triggeredAt, viewTimeZone)} via {alert.channels.join(', ')}.
+                  {t('Triggered at', 'Disparado às')} {formatDateTimeWithTimeZone(alert.triggeredAt, viewTimeZone)}{' '}
+                  {t('via', 'via')} {alert.channels.join(', ')}.
                 </p>
               </div>
             ))}
@@ -827,7 +868,7 @@ const SupervisorDashboard = () => {
                 className="flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800"
               >
                 <p>
-                  <span className="font-semibold">Hora extra ativa:</span> {alert.memberName} ({alert.memberEmail}) desde{' '}
+                  <span className="font-semibold">{t('Active overtime:', 'Hora extra ativa:')}</span> {alert.memberName} ({alert.memberEmail}) {t('since', 'desde')}{' '}
                   {formatTimeWithTimeZone(alert.triggeredAt, viewTimeZone)}.
                 </p>
                 <button
@@ -836,7 +877,7 @@ const SupervisorDashboard = () => {
                   }
                   className="rounded-full border border-rose-300 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-rose-700"
                 >
-                  Fechar
+                  {t('Close', 'Fechar')}
                 </button>
               </div>
             ))}
@@ -854,7 +895,7 @@ const SupervisorDashboard = () => {
             }
             className="rounded-full border border-slate-200 bg-white px-3 py-2"
           >
-            <option value="">Todas as filiais</option>
+            <option value="">{t('All branches', 'Todas as filiais')}</option>
             {(presenceSnapshot?.filters.branch || []).map((option) => (
               <option key={option} value={option}>
                 {option}
@@ -871,7 +912,7 @@ const SupervisorDashboard = () => {
             }
             className="rounded-full border border-slate-200 bg-white px-3 py-2"
           >
-            <option value="">Todos os departamentos</option>
+            <option value="">{t('All departments', 'Todos os departamentos')}</option>
             {(presenceSnapshot?.filters.department || []).map((option) => (
               <option key={option} value={option}>
                 {option}
@@ -888,7 +929,7 @@ const SupervisorDashboard = () => {
             }
             className="rounded-full border border-slate-200 bg-white px-3 py-2"
           >
-            <option value="">Todas as equipes</option>
+            <option value="">{t('All teams', 'Todas as equipes')}</option>
             {(presenceSnapshot?.filters.team || []).map((option) => (
               <option key={option} value={option}>
                 {option}
@@ -898,15 +939,17 @@ const SupervisorDashboard = () => {
         </div>
 
         <div className="mt-4 grid gap-2 text-xs text-slate-600 md:grid-cols-4">
-          <span className="rounded-full bg-slate-100 px-3 py-1">Total {presenceSnapshot?.summary.total || 0}</span>
+          <span className="rounded-full bg-slate-100 px-3 py-1">
+            {t('Total', 'Total')} {presenceSnapshot?.summary.total || 0}
+          </span>
           <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-800">
-            Presentes {presenceSnapshot?.summary.present || 0}
+            {t('Present', 'Presentes')} {presenceSnapshot?.summary.present || 0}
           </span>
           <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-800">
-            Em intervalo {presenceSnapshot?.summary.onBreak || 0}
+            {t('On break', 'Em intervalo')} {presenceSnapshot?.summary.onBreak || 0}
           </span>
           <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-700">
-            HE ativa {presenceSnapshot?.summary.overtimeActive || 0}
+            {t('OT active', 'HE ativa')} {presenceSnapshot?.summary.overtimeActive || 0}
           </span>
         </div>
 
@@ -923,30 +966,36 @@ const SupervisorDashboard = () => {
                 </span>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600">
-                <span className="rounded-full bg-white px-2 py-1">Filial: {row.metadata.branch}</span>
-                <span className="rounded-full bg-white px-2 py-1">Equipe: {row.metadata.team}</span>
+                <span className="rounded-full bg-white px-2 py-1">{t('Branch:', 'Filial:')} {row.metadata.branch}</span>
+                <span className="rounded-full bg-white px-2 py-1">{t('Team:', 'Equipe:')} {row.metadata.team}</span>
               </div>
               {row.since ? (
                 <p className="mt-2 text-[11px] text-slate-500">
-                  Desde {formatDateTimeWithTimeZone(row.since, viewTimeZone)}
+                  {t('Since', 'Desde')} {formatDateTimeWithTimeZone(row.since, viewTimeZone)}
                 </p>
               ) : null}
               {row.lastLocation ? (
                 <p className="mt-1 text-[11px] text-slate-500">
-                  Última posição: {row.lastLocation.lat.toFixed(5)}, {row.lastLocation.lng.toFixed(5)} ({row.lastLocation.source})
+                  {t('Last location:', 'Última posição:')} {row.lastLocation.lat.toFixed(5)}, {row.lastLocation.lng.toFixed(5)} ({row.lastLocation.source})
                 </p>
               ) : null}
             </div>
           ))}
           {presenceSnapshot && presenceSnapshot.members.length === 0 ? (
-            <p className="text-sm text-slate-500">Nenhum colaborador para os filtros atuais.</p>
+            <p className="text-sm text-slate-500">
+              {t('No collaborators for the current filters.', 'Nenhum colaborador para os filtros atuais.')}
+            </p>
           ) : null}
         </div>
 
         <div className="mt-5 rounded-2xl border border-slate-100 bg-white p-3">
           <div className="mb-2 flex items-center justify-between">
-            <h4 className="text-sm font-semibold text-slate-800">Mapa de colaboradores (última localização)</h4>
-            <span className="text-[11px] text-slate-500">{membersWithLocation.length} com posição</span>
+            <h4 className="text-sm font-semibold text-slate-800">
+              {t('Collaborator map (latest location)', 'Mapa de colaboradores (última localização)')}
+            </h4>
+            <span className="text-[11px] text-slate-500">
+              {membersWithLocation.length} {t('with location', 'com posição')}
+            </span>
           </div>
           <div className="overflow-hidden rounded-xl border border-slate-100">
             <MapContainer center={mapCenter} zoom={11} style={{ height: '280px', width: '100%' }}>
@@ -966,9 +1015,9 @@ const SupervisorDashboard = () => {
                     <div className="text-xs">
                       <p className="font-semibold">{row.member.name}</p>
                       <p>{row.member.email}</p>
-                      <p>Status: {presenceStatusLabel[row.status]}</p>
+                      <p>{t('Status:', 'Status:')} {presenceStatusLabel[row.status]}</p>
                       <p>
-                        Atualizado:{' '}
+                        {t('Updated:', 'Atualizado:')}{' '}
                         {formatDateTimeWithTimeZone(
                           row.lastLocation?.updatedAt || row.lastLocation?.recordedAt || new Date(),
                           viewTimeZone
@@ -981,14 +1030,16 @@ const SupervisorDashboard = () => {
             </MapContainer>
           </div>
           {membersWithLocation.length === 0 ? (
-            <p className="mt-2 text-xs text-slate-500">Nenhuma posição disponível para os filtros atuais.</p>
+            <p className="mt-2 text-xs text-slate-500">
+              {t('No location available for the current filters.', 'Nenhuma posição disponível para os filtros atuais.')}
+            </p>
           ) : null}
         </div>
       </div>
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold text-slate-900">KPIs de horas</h3>
+          <h3 className="text-lg font-semibold text-slate-900">{t('Hour KPIs', 'KPIs de horas')}</h3>
           <select
             value={hoursKpiPeriod}
             onChange={(event) =>
@@ -996,26 +1047,26 @@ const SupervisorDashboard = () => {
             }
             className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
           >
-            <option value="daily">Diario</option>
-            <option value="weekly">Semanal</option>
-            <option value="monthly">Mensal</option>
+            <option value="daily">{t('Daily', 'Diario')}</option>
+            <option value="weekly">{t('Weekly', 'Semanal')}</option>
+            <option value="monthly">{t('Monthly', 'Mensal')}</option>
           </select>
         </div>
 
         <div className="mt-4 grid gap-2 text-xs text-slate-600 md:grid-cols-3">
           <span className="rounded-full bg-slate-100 px-3 py-1">
-            Previsto {formatShortDuration(hoursKpiWithOpen?.summary.expectedMinutes || 0)}
+            {t('Expected', 'Previsto')} {formatShortDuration(hoursKpiWithOpen?.summary.expectedMinutes || 0)}
           </span>
           <span className="rounded-full bg-teal-100 px-3 py-1 text-teal-800">
-            Realizado {formatShortDuration(hoursKpiWithOpen?.summary.workedMinutes || 0)}
+            {t('Worked', 'Realizado')} {formatShortDuration(hoursKpiWithOpen?.summary.workedMinutes || 0)}
           </span>
           <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-700">
-            Extras {formatShortDuration(hoursKpiWithOpen?.summary.overtimeMinutes || 0)}
+            {t('Overtime', 'Extras')} {formatShortDuration(hoursKpiWithOpen?.summary.overtimeMinutes || 0)}
           </span>
         </div>
 
         {hoursKpiError ? <p className="mt-2 text-xs text-rose-600">{hoursKpiError}</p> : null}
-        {hoursKpiLoading ? <p className="mt-3 text-sm text-slate-500">Carregando KPIs...</p> : null}
+        {hoursKpiLoading ? <p className="mt-3 text-sm text-slate-500">{t('Loading KPIs...', 'Carregando KPIs...')}</p> : null}
 
         {!hoursKpiLoading && hoursKpiWithOpen?.timeline?.length ? (
           <div className="mt-4 grid gap-3">
@@ -1055,161 +1106,19 @@ const SupervisorDashboard = () => {
               <div key={item.member.id} className="rounded-2xl border border-slate-100 bg-white p-3 text-xs text-slate-600">
                 <p className="font-semibold text-slate-800">{item.member.name}</p>
                 <p className="mt-1 text-slate-500">{item.member.email}</p>
-                <p className="mt-2">Previsto: {formatShortDuration(item.expectedMinutes)}</p>
-                <p>Realizado: {formatShortDuration(item.workedMinutes)}</p>
-                <p>Extras: {formatShortDuration(item.overtimeMinutes)}</p>
+                <p className="mt-2">{t('Expected:', 'Previsto:')} {formatShortDuration(item.expectedMinutes)}</p>
+                <p>{t('Worked:', 'Realizado:')} {formatShortDuration(item.workedMinutes)}</p>
+                <p>{t('Overtime:', 'Extras:')} {formatShortDuration(item.overtimeMinutes)}</p>
                 {'openMinutes' in item && Number(item.openMinutes || 0) > 0 ? (
-                  <p className="text-teal-700">Em aberto agora: {formatShortDuration(Number(item.openMinutes || 0))}</p>
+                  <p className="text-teal-700">
+                    {t('Open now:', 'Em aberto agora:')} {formatShortDuration(Number(item.openMinutes || 0))}
+                  </p>
                 ) : null}
               </div>
             ))}
           </div>
         ) : null}
       </div>
-
-      {/* <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold text-slate-900">Férias da equipe</h3>
-          <button
-            onClick={() => {
-              loadVacationRequests().catch(() => undefined)
-              loadVacationCalendar().catch(() => undefined)
-            }}
-            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
-          >
-            Atualizar
-          </button>
-        </div>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-4">
-          <input
-            type="number"
-            min={2000}
-            value={vacationCalendarMonth.year}
-            onChange={(event) =>
-              setVacationCalendarMonth((prev) => ({
-                ...prev,
-                year: Number(event.target.value) || prev.year,
-              }))
-            }
-            className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
-            placeholder="Ano"
-          />
-          <input
-            type="number"
-            min={1}
-            max={12}
-            value={vacationCalendarMonth.month}
-            onChange={(event) =>
-              setVacationCalendarMonth((prev) => ({
-                ...prev,
-                month: Math.min(12, Math.max(1, Number(event.target.value) || prev.month)),
-              }))
-            }
-            className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
-            placeholder="Mês"
-          />
-          <input
-            type="number"
-            min={0}
-            max={100}
-            value={vacationMinPresencePercent}
-            onChange={(event) => setVacationMinPresencePercent(Math.min(100, Math.max(0, Number(event.target.value) || 0)))}
-            className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
-            placeholder="Min. presença (%)"
-          />
-        </div>
-
-        {vacationError ? <p className="mt-2 text-xs text-rose-600">{vacationError}</p> : null}
-        {vacationNotice ? <p className="mt-2 text-xs text-emerald-600">{vacationNotice}</p> : null}
-
-        <div className="mt-4 space-y-3">
-          {vacationRequestsLoading ? <p className="text-sm text-slate-500">Carregando solicitações...</p> : null}
-          {!vacationRequestsLoading && vacationRequests.filter((item) => item.status === 'REQUESTED').length === 0 ? (
-            <p className="text-sm text-slate-500">Nenhuma solicitação pendente de supervisor.</p>
-          ) : null}
-
-          {vacationRequests
-            .filter((item) => item.status === 'REQUESTED')
-            .map((request) => (
-              <div key={request.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
-                <p className="text-sm font-semibold text-slate-800">{request.user.name}</p>
-                <p className="text-xs text-slate-500">{request.user.email}</p>
-                <p className="mt-2 text-xs text-slate-600">
-                  {formatDateWithTimeZone(request.startDate, viewTimeZone)} até{' '}
-                  {formatDateWithTimeZone(request.endDate, viewTimeZone)}
-                </p>
-                {request.reason ? <p className="mt-1 text-xs text-slate-600">Motivo: {request.reason}</p> : null}
-
-                <input
-                  value={vacationReviewCommentById[request.id] || ''}
-                  onChange={(event) =>
-                    setVacationReviewCommentById((prev) => ({
-                      ...prev,
-                      [request.id]: event.target.value,
-                    }))
-                  }
-                  placeholder="Comentário (obrigatório para rejeição)"
-                  className="mt-3 w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
-                />
-
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <button
-                    onClick={() => handleReviewVacationBySupervisor(request.id, 'APPROVE')}
-                    disabled={Boolean(vacationActionLoadingById[request.id])}
-                    className="rounded-full bg-teal-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
-                  >
-                    Aprovar
-                  </button>
-                  <button
-                    onClick={() => handleReviewVacationBySupervisor(request.id, 'REJECT')}
-                    disabled={Boolean(vacationActionLoadingById[request.id])}
-                    className="rounded-full border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
-                  >
-                    Rejeitar
-                  </button>
-                </div>
-              </div>
-            ))}
-        </div>
-
-        <div className="mt-6">
-          <h4 className="text-sm font-semibold text-slate-800">Calendário da equipe (mensal)</h4>
-          {vacationCalendarLoading ? <p className="mt-2 text-sm text-slate-500">Carregando calendário...</p> : null}
-          {!vacationCalendarLoading && vacationCalendar ? (
-            <div className="mt-3 space-y-2">
-              {vacationCalendar.days.map((day) => (
-                <div
-                  key={day.date}
-                  className={`rounded-2xl border p-3 text-xs ${
-                    day.belowThreshold
-                      ? 'border-rose-200 bg-rose-50 text-rose-700'
-                      : 'border-slate-100 bg-slate-50/70 text-slate-600'
-                  }`}
-                >
-                  <p className="font-semibold">{day.date}</p>
-                  <p>
-                    Ausentes: {day.absentCount} • Disponíveis: {day.availableCount} • Presença: {day.presencePercent}%
-                  </p>
-                  {day.belowThreshold ? <p>Alerta: equipe abaixo do limite mínimo configurado.</p> : null}
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          {!vacationCalendarLoading && vacationCalendar?.annual?.length ? (
-            <div className="mt-4 grid gap-2 md:grid-cols-3">
-              {vacationCalendar.annual.map((item) => (
-                <div key={`${item.year}-${item.month}`} className="rounded-2xl border border-slate-100 bg-white p-3 text-xs text-slate-600">
-                  <p className="font-semibold text-slate-800">{String(item.month).padStart(2, '0')}/{item.year}</p>
-                  <p>Solicitações: {item.requestsCount}</p>
-                  <p>Colaboradores em férias: {item.membersScheduled}</p>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </div> */}
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1287,16 +1196,22 @@ const SupervisorDashboard = () => {
                   <div className="text-xs text-slate-600">
                     {formatDateWithTimeZone(entry.clockIn, viewTimeZone)} •{' '}
                     {formatTimeWithTimeZone(entry.clockIn, viewTimeZone)} -{' '}
-                    {entry.clockOut ? formatTimeWithTimeZone(entry.clockOut, viewTimeZone) : 'Em aberto'}
+                    {entry.clockOut
+                      ? formatTimeWithTimeZone(entry.clockOut, viewTimeZone)
+                      : t('Open', 'Em aberto')}
                   </div>
                 </div>
-                {entry.notes ? <p className="mt-2 text-xs text-slate-600">Notas: {entry.notes}</p> : null}
+                {entry.notes ? (
+                  <p className="mt-2 text-xs text-slate-600">{t('Notes:', 'Notas:')} {entry.notes}</p>
+                ) : null}
                 {!entry.clockOut ? (
                   <p className="mt-2 text-xs text-teal-700">
-                    Aberta ha {formatShortDuration(getElapsedMinutes(entry.clockIn, nowMs))}
+                    {t('Open for', 'Aberta ha')} {formatShortDuration(getElapsedMinutes(entry.clockIn, nowMs))}
                   </p>
                 ) : null}
-                <p className="mt-2 text-[11px] uppercase tracking-[0.2em] text-teal-700">Clique para abrir em tela maior</p>
+                <p className="mt-2 text-[11px] uppercase tracking-[0.2em] text-teal-700">
+                  {t('Click to open in large view', 'Clique para abrir em tela maior')}
+                </p>
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   <button
                     onClick={(event) => {
@@ -1305,7 +1220,7 @@ const SupervisorDashboard = () => {
                     }}
                     className="rounded-full bg-teal-700 px-4 py-2 text-xs font-semibold text-white"
                   >
-                    Aprovar
+                    {t('Approve', 'Aprovar')}
                   </button>
                   <button
                     onClick={(event) => {
@@ -1314,7 +1229,7 @@ const SupervisorDashboard = () => {
                     }}
                     className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
                   >
-                    Solicitar ajuste
+                    {t('Request edit', 'Solicitar ajuste')}
                   </button>
                 </div>
               </div>
@@ -1324,13 +1239,16 @@ const SupervisorDashboard = () => {
       </div>
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-slate-900">Jornada da equipe</h3>
+        <h3 className="text-lg font-semibold text-slate-900">{t('Team workday', 'Jornada da equipe')}</h3>
         <p className="mt-2 text-xs text-slate-500">
-          Defina a jornada contratual e horários esperados dos colaboradores.
+          {t(
+            'Define contracted workday and expected schedules for collaborators.',
+            'Defina a jornada contratual e horários esperados dos colaboradores.'
+          )}
         </p>
         <div className="mt-5 space-y-3">
           {teamMembers.length === 0 ? (
-            <p className="text-sm text-slate-500">Nenhum colaborador disponível.</p>
+            <p className="text-sm text-slate-500">{t('No collaborators available.', 'Nenhum colaborador disponível.')}</p>
           ) : (
             teamMembers.map((member) => (
               <div key={member.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
@@ -1356,7 +1274,7 @@ const SupervisorDashboard = () => {
                         },
                       }))
                     }
-                    placeholder="Jornada (hh:mm) ex: 8:20"
+                    placeholder={t('Workday (hh:mm), e.g. 8:20', 'Jornada (hh:mm) ex: 8:20')}
                     className="w-full rounded-full border border-slate-200 bg-white px-3 py-1 text-xs"
                   />
                   <input
@@ -1426,7 +1344,7 @@ const SupervisorDashboard = () => {
                     disabled={Boolean(teamWorkSettingsLoadingByUser[member.id])}
                     className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
                   >
-                    Salvar jornada
+                    {t('Save workday', 'Salvar jornada')}
                   </button>
                 </div>
                 {teamErrorByUser[member.id] ? (
@@ -1443,23 +1361,30 @@ const SupervisorDashboard = () => {
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold text-slate-900">Banco de horas da equipe</h3>
+          <h3 className="text-lg font-semibold text-slate-900">{t('Team banked hours', 'Banco de horas da equipe')}</h3>
           <button
             onClick={() => loadTeamBankOverview().catch(() => undefined)}
             className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
           >
-            Atualizar
+            {t('Refresh', 'Atualizar')}
           </button>
         </div>
         <p className="mt-2 text-xs text-slate-500">
-          Consulte credito, saldo devedor, pendente e pago. Use baixa para liquidar pendencias.
+          {t(
+            'Check credit, debt, pending and paid balances. Post payments to settle pending amounts.',
+            'Consulte credito, saldo devedor, pendente e pago. Use baixa para liquidar pendencias.'
+          )}
         </p>
         {teamBankNotice ? <p className="mt-2 text-xs text-emerald-600">{teamBankNotice}</p> : null}
 
         <div className="mt-4 space-y-2">
-          {teamBankLoading ? <p className="text-sm text-slate-500">Carregando banco de horas...</p> : null}
+          {teamBankLoading ? (
+            <p className="text-sm text-slate-500">{t('Loading banked hours...', 'Carregando banco de horas...')}</p>
+          ) : null}
           {!teamBankLoading && teamBankOverview.length === 0 ? (
-            <p className="text-sm text-slate-500">Nenhum colaborador com dados de banco de horas.</p>
+            <p className="text-sm text-slate-500">
+              {t('No collaborators with banked-hours data.', 'Nenhum colaborador com dados de banco de horas.')}
+            </p>
           ) : null}
           {teamBankOverview.map((row) => (
             <div key={row.member.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
@@ -1473,21 +1398,23 @@ const SupervisorDashboard = () => {
                   disabled={Boolean(teamBankPayLoadingByUser[row.member.id]) || row.bankHours.pendingMinutes <= 0}
                   className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
                 >
-                  {teamBankPayLoadingByUser[row.member.id] ? 'Processando...' : 'Dar baixa pendente'}
+                  {teamBankPayLoadingByUser[row.member.id]
+                    ? t('Processing...', 'Processando...')
+                    : t('Post pending amount', 'Dar baixa pendente')}
                 </button>
               </div>
               <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-4">
                 <span className="rounded-full bg-white px-3 py-1">
-                  Credito: {formatMinutesLabel(row.bankHours.creditMinutes)}
+                  {t('Credit:', 'Credito:')} {formatMinutesLabel(row.bankHours.creditMinutes)}
                 </span>
                 <span className="rounded-full bg-white px-3 py-1">
-                  Devedor: {formatMinutesLabel(row.bankHours.debtMinutes)}
+                  {t('Debt:', 'Devedor:')} {formatMinutesLabel(row.bankHours.debtMinutes)}
                 </span>
                 <span className="rounded-full bg-white px-3 py-1">
-                  Pendente: {formatMinutesLabel(row.bankHours.pendingMinutes)}
+                  {t('Pending:', 'Pendente:')} {formatMinutesLabel(row.bankHours.pendingMinutes)}
                 </span>
                 <span className="rounded-full bg-white px-3 py-1">
-                  Pago: {formatMinutesLabel(row.bankHours.paidMinutes)}
+                  {t('Paid:', 'Pago:')} {formatMinutesLabel(row.bankHours.paidMinutes)}
                 </span>
               </div>
             </div>
@@ -1499,39 +1426,40 @@ const SupervisorDashboard = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-6">
           <div className="w-full max-w-3xl rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
             <div className="flex items-center justify-between gap-3">
-              <h4 className="text-lg font-semibold text-slate-900">Detalhes do registro</h4>
+              <h4 className="text-lg font-semibold text-slate-900">{t('Entry details', 'Detalhes do registro')}</h4>
               <button
                 onClick={closeEntryDetail}
                 className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600"
               >
-                Fechar
+                {t('Close', 'Fechar')}
               </button>
             </div>
 
             <div className="mt-4 grid gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 p-4 text-sm text-slate-700 md:grid-cols-2">
               <p>
-                <span className="font-semibold text-slate-900">Colaborador:</span> {entryDetail.entry.user.name}
+                <span className="font-semibold text-slate-900">{t('Collaborator:', 'Colaborador:')}</span>{' '}
+                {entryDetail.entry.user.name}
               </p>
               <p>
-                <span className="font-semibold text-slate-900">E-mail:</span> {entryDetail.entry.user.email}
+                <span className="font-semibold text-slate-900">{t('Email:', 'E-mail:')}</span> {entryDetail.entry.user.email}
               </p>
               <p>
-                <span className="font-semibold text-slate-900">Data:</span>{' '}
+                <span className="font-semibold text-slate-900">{t('Date:', 'Data:')}</span>{' '}
                 {formatDateWithTimeZone(entryDetail.entry.clockIn, viewTimeZone)}
               </p>
               <p>
-                <span className="font-semibold text-slate-900">Intervalo:</span>{' '}
+                <span className="font-semibold text-slate-900">{t('Interval:', 'Intervalo:')}</span>{' '}
                 {formatTimeWithTimeZone(entryDetail.entry.clockIn, viewTimeZone)} -{' '}
                 {entryDetail.entry.clockOut
                   ? formatTimeWithTimeZone(entryDetail.entry.clockOut, viewTimeZone)
-                  : 'Em aberto'}
+                  : t('Open', 'Em aberto')}
               </p>
             </div>
 
             <div className="mt-4 rounded-2xl border border-slate-100 bg-white p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Notas</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{t('Notes', 'Notas')}</p>
               <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
-                {entryDetail.entry.notes?.trim() || 'Sem notas no registro.'}
+                {entryDetail.entry.notes?.trim() || t('No notes for this entry.', 'Sem notas no registro.')}
               </p>
             </div>
 
@@ -1543,7 +1471,7 @@ const SupervisorDashboard = () => {
                 }}
                 className="rounded-full bg-teal-700 px-4 py-2 text-xs font-semibold text-white"
               >
-                Aprovar este registro
+                {t('Approve this entry', 'Aprovar este registro')}
               </button>
               <button
                 onClick={() => {
@@ -1552,7 +1480,7 @@ const SupervisorDashboard = () => {
                 }}
                 className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
               >
-                Solicitar ajuste
+                {t('Request edit', 'Solicitar ajuste')}
               </button>
             </div>
           </div>
@@ -1562,13 +1490,13 @@ const SupervisorDashboard = () => {
       {review.entry ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-6">
           <div className="w-full max-w-lg rounded-3xl border border-slate-100 bg-white p-6 shadow-lg">
-            <h4 className="text-lg font-semibold text-slate-900">Revisar jornada</h4>
+            <h4 className="text-lg font-semibold text-slate-900">{t('Review workday', 'Revisar jornada')}</h4>
             <p className="mt-2 text-xs text-slate-500">
               {review.entry.user.name} • {formatDateTimeWithTimeZone(review.entry.clockIn, viewTimeZone)}
             </p>
 
             <label className="mt-5 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Comentario
+              {t('Comment', 'Comentario')}
             </label>
             <textarea
               value={review.comment}
@@ -1582,14 +1510,16 @@ const SupervisorDashboard = () => {
                 onClick={closeReview}
                 className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600"
               >
-                Cancelar
+                {t('Cancel', 'Cancelar')}
               </button>
               <button
                 onClick={submitReview}
                 disabled={!canSubmit}
                 className="rounded-full bg-teal-700 px-4 py-2 text-xs font-semibold text-white"
               >
-                {review.action === 'APPROVE' ? 'Confirmar aprovacao' : 'Enviar pedido'}
+                {review.action === 'APPROVE'
+                  ? t('Confirm approval', 'Confirmar aprovacao')
+                  : t('Send request', 'Enviar pedido')}
               </button>
             </div>
           </div>

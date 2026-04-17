@@ -9,6 +9,8 @@ const {
   getTimeEntryAuditLog,
   getUserTimeEntries,
   changeUserSupervisor,
+  setUserPin,
+  resetUserPin,
   getSystemStats,
   getTeamOverview,
 } = require('../../src/controllers/admin.controller');
@@ -324,6 +326,196 @@ describe('Admin Controller', () => {
           message: 'Supervisor alterado com sucesso',
           previousSupervisorId: 'old-supervisor',
           newSupervisorId: 'new-supervisor',
+        })
+      );
+    });
+  });
+
+  describe('setUserPin', () => {
+    it('should return 403 for non-admin roles', async () => {
+      mockReq.user.role = 'HR';
+      mockReq.params = { userId: 'member-1' };
+      mockReq.body = { pin: '1234' };
+
+      await setUserPin(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Forbidden',
+          message: 'Apenas ADMIN pode alterar PIN de usuarios',
+        })
+      );
+      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('should return 403 when admin tries to set PIN outside own team', async () => {
+      mockReq.params = { userId: 'member-outside' };
+      mockReq.body = { pin: '1234' };
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'member-outside',
+        email: 'outside@test.com',
+        role: 'MEMBER',
+        organizationAdminId: 'another-admin',
+      });
+
+      await setUserPin(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Forbidden',
+          message: 'Voce so pode alterar PIN de usuarios do seu proprio time',
+        })
+      );
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when admin tries to set PIN for non-team roles', async () => {
+      mockReq.params = { userId: 'admin-123' };
+      mockReq.body = { pin: '1234' };
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'admin-123',
+        email: 'admin@test.com',
+        role: 'ADMIN',
+        organizationAdminId: 'admin-123',
+      });
+
+      await setUserPin(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Bad Request',
+          message: 'Admin so pode alterar PIN de usuarios do time (HR, SUPERVISOR, MEMBER).',
+        })
+      );
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('should set PIN successfully for team member', async () => {
+      mockReq.params = { userId: 'member-1' };
+      mockReq.body = { pin: '1234' };
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'member-1',
+        email: 'member@test.com',
+        role: 'MEMBER',
+        organizationAdminId: 'admin-123',
+      });
+      mockPrisma.user.update.mockResolvedValue({ id: 'member-1' });
+
+      await setUserPin(mockReq, mockRes);
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'member-1' },
+          data: expect.objectContaining({
+            pinHash: expect.any(String),
+            pinSalt: expect.any(String),
+            pinUpdatedAt: expect.any(Date),
+            pinFailedAttempts: 0,
+            pinLockedUntil: null,
+          }),
+        })
+      );
+
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'PIN definido com sucesso',
+          user: expect.objectContaining({ id: 'member-1', hasPin: true }),
+        })
+      );
+    });
+  });
+
+  describe('resetUserPin', () => {
+    it('should return 403 for non-admin roles', async () => {
+      mockReq.user.role = 'SUPERVISOR';
+      mockReq.params = { userId: 'member-1' };
+
+      await resetUserPin(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Forbidden',
+          message: 'Apenas ADMIN pode resetar PIN de usuarios',
+        })
+      );
+      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('should return 403 when admin tries to reset PIN outside own team', async () => {
+      mockReq.params = { userId: 'member-outside' };
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'member-outside',
+        email: 'outside@test.com',
+        role: 'MEMBER',
+        organizationAdminId: 'another-admin',
+      });
+
+      await resetUserPin(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Forbidden',
+          message: 'Voce so pode resetar PIN de usuarios do seu proprio time',
+        })
+      );
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when admin tries to reset PIN for non-team roles', async () => {
+      mockReq.params = { userId: 'admin-123' };
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'admin-123',
+        email: 'admin@test.com',
+        role: 'ADMIN',
+        organizationAdminId: 'admin-123',
+      });
+
+      await resetUserPin(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Bad Request',
+          message: 'Admin so pode resetar PIN de usuarios do time (HR, SUPERVISOR, MEMBER).',
+        })
+      );
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('should reset PIN successfully for team member', async () => {
+      mockReq.params = { userId: 'member-1' };
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'member-1',
+        email: 'member@test.com',
+        role: 'MEMBER',
+        organizationAdminId: 'admin-123',
+      });
+      mockPrisma.user.update.mockResolvedValue({ id: 'member-1' });
+
+      await resetUserPin(mockReq, mockRes);
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'member-1' },
+          data: expect.objectContaining({
+            pinHash: null,
+            pinSalt: null,
+            pinUpdatedAt: null,
+            pinFailedAttempts: 0,
+            pinLockedUntil: null,
+          }),
+        })
+      );
+
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'PIN resetado com sucesso',
+          user: expect.objectContaining({ id: 'member-1', hasPin: false }),
         })
       );
     });

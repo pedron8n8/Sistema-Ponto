@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { apiFetch } from '../lib/api'
+import { apiFetch, translateApiMessage } from '../lib/api'
 import { useTimeZone } from '../context/TimezoneContext'
 import { formatDateTimeWithTimeZone } from '../lib/timezone'
 import { useTranslation } from 'react-i18next'
@@ -88,7 +88,11 @@ const Overview = () => {
         method: 'PATCH',
         body: { notes },
       })
-      setAdjustmentNotice(response.message || t('Notes updated successfully.', 'Notas ajustadas com sucesso.'))
+      setAdjustmentNotice(
+        response.message
+          ? translateApiMessage(response.message)
+          : t('Notes updated successfully.', 'Notas ajustadas com sucesso.')
+      )
       await loadAdjustmentRequests()
     } catch (err) {
       setAdjustmentError(err instanceof Error ? err.message : t('Failed to update notes.', 'Erro ao salvar ajuste de notas'))

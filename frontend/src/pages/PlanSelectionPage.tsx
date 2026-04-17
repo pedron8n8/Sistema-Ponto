@@ -32,6 +32,15 @@ const clampSeatLimit = (value: number, maxSeats: number) => {
   return Math.max(1, Math.min(maxSeats, normalized))
 }
 
+const resolveReturnPath = (value: string | null) => {
+  const normalized = String(value || '').trim()
+  if (normalized === '/app' || normalized.startsWith('/app/')) {
+    return normalized
+  }
+
+  return '/app'
+}
+
 const PlanSelectionPage = () => {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -42,6 +51,7 @@ const PlanSelectionPage = () => {
 
   const checkoutStatus = searchParams.get('status')
   const stripeSessionId = searchParams.get('session_id')
+  const returnPath = resolveReturnPath(searchParams.get('returnTo'))
   const checkoutFinalizeStartedRef = useRef(false)
 
   const plans = useMemo(() => {
@@ -105,11 +115,12 @@ const PlanSelectionPage = () => {
       token: session.access_token,
       body: {
         stripeSessionId,
+        returnTo: returnPath,
       },
     })
       .then(async () => {
         await refreshProfile()
-        navigate('/app', { replace: true })
+        navigate(returnPath, { replace: true })
       })
       .catch((err) => {
         setError(
@@ -124,7 +135,7 @@ const PlanSelectionPage = () => {
       .finally(() => {
         setFinalizingCheckout(false)
       })
-  }, [checkoutStatus, stripeSessionId, session?.access_token, refreshProfile, navigate, t])
+  }, [checkoutStatus, stripeSessionId, session?.access_token, refreshProfile, navigate, returnPath, t])
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -161,6 +172,7 @@ const PlanSelectionPage = () => {
           planCode: selectedPlan.code,
           seatLimit,
           startCheckout: true,
+          returnTo: returnPath,
         },
       })
 
@@ -177,7 +189,7 @@ const PlanSelectionPage = () => {
       }
 
       await refreshProfile()
-      navigate('/app', { replace: true })
+      navigate(returnPath, { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Could not update plan.', 'Nao foi possivel atualizar o plano.'))
     } finally {

@@ -1,9 +1,233 @@
+import i18next from 'i18next'
+
 export const API_BASE =
   (import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:3000/api/v1'
 
 const IDEMPOTENCY_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 const IDEMPOTENCY_KEY_HEADER = 'X-Idempotency-Key'
 const IDEMPOTENCY_DATE_HEADER = 'X-Idempotency-Date'
+
+const isPortugueseLanguage = () => {
+  const language = String(i18next.resolvedLanguage || i18next.language || '').toLowerCase()
+  return language.startsWith('pt')
+}
+
+const localizeMessage = (en: string, pt: string) => (isPortugueseLanguage() ? pt : en)
+
+const PT_TO_EN_ERROR_RULES: Array<{ pattern: RegExp; replacement: string }> = [
+  {
+    pattern: /token de autentica(?:c|ç)[aã]o n[aã]o fornecido/i,
+    replacement: 'Authentication token was not provided.',
+  },
+  {
+    pattern: /token inv[aá]lido ou expirado/i,
+    replacement: 'Invalid or expired authentication token.',
+  },
+  {
+    pattern: /usu[aá]rio n[aã]o encontrado/i,
+    replacement: 'User not found.',
+  },
+  {
+    pattern: /usu[aá]rio desativado/i,
+    replacement: 'User account is disabled. Please contact your team administrator.',
+  },
+  {
+    pattern: /email inv[aá]lido/i,
+    replacement: 'Invalid email address.',
+  },
+  {
+    pattern: /senha deve ter pelo menos/i,
+    replacement: 'Password must have at least 6 characters.',
+  },
+  {
+    pattern: /nome deve ter pelo menos/i,
+    replacement: 'Name must have at least 2 characters.',
+  },
+  {
+    pattern: /muitas requisi(?:c|ç)[oõ]es/i,
+    replacement: 'Too many requests. Try again shortly.',
+  },
+  {
+    pattern: /j[aá] existe solicita(?:c|ç)[aã]o.*sobreposta/i,
+    replacement: 'There is already an overlapping vacation/day-off request for this period.',
+  },
+  {
+    pattern: /solicita(?:c|ç)[aã]o de folga deve ser para um [uú]nico dia/i,
+    replacement: 'Day-off request must be for a single day.',
+  },
+  {
+    pattern: /você n[aã]o possui supervisor associado/i,
+    replacement: 'You do not have an assigned supervisor to review this request.',
+  },
+  {
+    pattern: /erro ao carregar/i,
+    replacement: 'Failed to load data.',
+  },
+  {
+    pattern: /erro ao atualizar/i,
+    replacement: 'Failed to update data.',
+  },
+  {
+    pattern: /erro ao revisar/i,
+    replacement: 'Failed to review the request.',
+  },
+  {
+    pattern: /erro ao (criar|salvar|remover|resetar|definir)/i,
+    replacement: 'Operation failed. Please try again.',
+  },
+  {
+    pattern: /requisi(?:c|ç)[aã]o inv[aá]lida/i,
+    replacement: 'Invalid request.',
+  },
+  {
+    pattern: /coment[aá]rio obrigat[óo]rio/i,
+    replacement: 'Comment is required for this action.',
+  },
+  {
+    pattern: /(apenas|somente)\s+admin/i,
+    replacement: 'Only ADMIN can perform this action.',
+  },
+  {
+    pattern: /(apenas|somente)\s+superadmin/i,
+    replacement: 'Only SUPERADMIN can perform this action.',
+  },
+  {
+    pattern: /voc[eê]\s+n[aã]o\s+pode\s+desativar\s+sua\s+pr[oó]pria\s+conta/i,
+    replacement: 'You cannot deactivate your own account.',
+  },
+  {
+    pattern: /supervisor\s+(n[aã]o\s+encontrado|inv[aá]lido)/i,
+    replacement: 'Supervisor not found.',
+  },
+  {
+    pattern: /supervisor\s+deve\s+pertencer\s+ao\s+seu\s+time\s+de\s+administra(?:c|ç)[aã]o/i,
+    replacement: 'Supervisor must belong to your administration team.',
+  },
+  {
+    pattern: /n[aã]o\s+h[aá]\s+mais\s+assentos\s+dispon[ií]veis/i,
+    replacement: 'No seats are available for this action.',
+  },
+  {
+    pattern: /limite\s+de\s+cadeiras\s+excedido/i,
+    replacement: 'Seat limit exceeded.',
+  },
+  {
+    pattern: /(sem\s+plano\s+vinculado|plano\s+atual\s+inativo|plano\s+vinculado\s+necess[aá]rio)/i,
+    replacement: 'An active admin plan is required to continue.',
+  },
+  {
+    pattern: /(checkout\s+stripe\s+.*n[aã]o\s+configurado|stripe\s+n[aã]o\s+configurado)/i,
+    replacement: 'Stripe checkout is not configured on the backend.',
+  },
+  {
+    pattern: /sess[aã]o\s+de\s+checkout\s+n[aã]o\s+pertence/i,
+    replacement: 'Checkout session does not belong to the authenticated admin.',
+  },
+  {
+    pattern: /sess[aã]o\s+stripe\s+ainda\s+n[aã]o\s+foi\s+conclu[ií]da\/paga/i,
+    replacement: 'Stripe session is not paid/completed yet.',
+  },
+  {
+    pattern: /sess[aã]o\s+stripe\s+inv[aá]lida/i,
+    replacement: 'Invalid Stripe session.',
+  },
+  {
+    pattern: /token\s+da\s+api\s+p[úu]blica\s+n[aã]o\s+informado/i,
+    replacement: 'Public API token was not provided.',
+  },
+  {
+    pattern: /api\s+p[úu]blica\s+est[aá]\s+desativada/i,
+    replacement: 'Public API is disabled in PRO settings.',
+  },
+  {
+    pattern: /somente\s+administradores\s+podem\s+emitir\s+token/i,
+    replacement: 'Only administrators can issue public API tokens.',
+  },
+  {
+    pattern: /registro\s+aprovado\s+com\s+sucesso|registro\s+aprovado/i,
+    replacement: 'Entry approved successfully.',
+  },
+  {
+    pattern: /registro\s+rejeitado\s+com\s+sucesso|registro\s+rejeitado/i,
+    replacement: 'Entry rejected successfully.',
+  },
+  {
+    pattern: /solicita(?:c|ç)[aã]o\s+de\s+edi(?:c|ç)[aã]o\s+enviada/i,
+    replacement: 'Edit request sent to collaborator.',
+  },
+  {
+    pattern: /baixa\s+(realizada|de\s+banco\s+de\s+horas\s+registrada)\s+com\s+sucesso/i,
+    replacement: 'Payment posted successfully.',
+  },
+  {
+    pattern: /pin\s+definido\s+com\s+sucesso/i,
+    replacement: 'PIN set successfully.',
+  },
+  {
+    pattern: /pin\s+resetado\s+com\s+sucesso/i,
+    replacement: 'PIN reset successfully.',
+  },
+  {
+    pattern: /configura(?:c|ç)[aã]o\s+.*atualizada\s+com\s+sucesso/i,
+    replacement: 'Configuration updated successfully.',
+  },
+  {
+    pattern: /checkout\s+de\s+cadeiras\s+adicionais\s+iniciado\s+com\s+sucesso/i,
+    replacement: 'Additional seats checkout started successfully.',
+  },
+  {
+    pattern: /cadeiras\s+adicionais\s+confirmadas\s+e\s+salvas\s+no\s+banco\s+com\s+sucesso/i,
+    replacement: 'Additional seats confirmed and saved successfully.',
+  },
+  {
+    pattern: /(reconhecimento|cadastro)\s+facial\s+(cadastrado|removido)\s+com\s+sucesso/i,
+    replacement: 'Facial enrollment updated successfully.',
+  },
+  {
+    pattern: /com\s+sucesso/i,
+    replacement: 'Operation completed successfully.',
+  },
+]
+
+const probablyPortugueseMessage = (message: string) => {
+  return /[ãõáéíóúç]|\b(nao|n[aã]o|erro|usu[aá]rio|solicita(?:c|ç)[aã]o|rejei(?:c|ç)[aã]o|f[eé]rias|folga|jornada|equipe|colaborador|pendente|inv[aá]lido|superadmin|admin|plano|cadeira|assento|checkout|sess[aã]o|configura(?:c|ç)[aã]o|coment[aá]rio|obrigat[óo]rio|sucesso)\b/i.test(
+    message
+  )
+}
+
+const probablySuccessMessage = (message: string) => {
+  return /\b(sucesso|atualizad[ao]|aprovad[ao]|confirmad[ao]|enviad[ao]|registrad[ao]|sincronizad[ao]|salv[ao]|emitid[ao]|gerad[ao]|removid[ao])\b/i.test(
+    message
+  )
+}
+
+export const translateApiMessage = (rawMessage: unknown) => {
+  const message = String(rawMessage || '').trim()
+
+  if (!message) {
+    return localizeMessage('Request failed.', 'Erro na requisicao')
+  }
+
+  if (isPortugueseLanguage()) {
+    return message
+  }
+
+  for (const rule of PT_TO_EN_ERROR_RULES) {
+    if (rule.pattern.test(message)) {
+      return rule.replacement
+    }
+  }
+
+  if (probablyPortugueseMessage(message)) {
+    if (probablySuccessMessage(message)) {
+      return 'Operation completed successfully.'
+    }
+
+    return 'Request failed. Please check the input and try again.'
+  }
+
+  return message
+}
 
 type RequestOptions = {
   token?: string
@@ -113,7 +337,12 @@ export const apiFetch = async <T>(path: string, options: RequestOptions = {}): P
   } catch (error) {
     clearTimeout(timeoutId)
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error('Tempo de resposta excedido. Verifique se o backend está ativo.')
+      throw new Error(
+        localizeMessage(
+          'Request timed out. Check if the backend service is running.',
+          'Tempo de resposta excedido. Verifique se o backend está ativo.'
+        )
+      )
     }
     throw error
   }
@@ -122,7 +351,7 @@ export const apiFetch = async <T>(path: string, options: RequestOptions = {}): P
 
   if (!res.ok) {
     const payload = await res.json().catch(() => ({}))
-    throw new Error(payload?.message || 'Erro na requisicao')
+    throw new Error(translateApiMessage(payload?.message || localizeMessage('Request failed.', 'Erro na requisicao')))
   }
 
   return res.json() as Promise<T>
@@ -150,7 +379,12 @@ export const apiFetchFormData = async <T>(
   } catch (error) {
     clearTimeout(timeoutId)
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error('Tempo de resposta excedido. Verifique se o backend está ativo.')
+      throw new Error(
+        localizeMessage(
+          'Request timed out. Check if the backend service is running.',
+          'Tempo de resposta excedido. Verifique se o backend está ativo.'
+        )
+      )
     }
     throw error
   }
@@ -159,7 +393,7 @@ export const apiFetchFormData = async <T>(
 
   if (!res.ok) {
     const payload = await res.json().catch(() => ({}))
-    throw new Error(payload?.message || 'Erro na requisicao')
+    throw new Error(translateApiMessage(payload?.message || localizeMessage('Request failed.', 'Erro na requisicao')))
   }
 
   return res.json() as Promise<T>

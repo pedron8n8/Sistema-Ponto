@@ -30,6 +30,31 @@ const EXTRA_ADMIN_SEAT_MONTHLY_USD = Number(
 
 const normalizePlanCode = (value) => String(value || '').trim().toUpperCase();
 
+const normalizeAppReturnPath = (value, fallback = '/app') => {
+  const normalized = String(value || '').trim();
+  if (normalized === '/app' || normalized.startsWith('/app/')) {
+    return normalized;
+  }
+
+  return fallback;
+};
+
+const appendReturnPathToUrl = (url, returnPath) => {
+  const normalizedUrl = String(url || '').trim();
+  if (!normalizedUrl) return normalizedUrl;
+
+  const safeReturnPath = normalizeAppReturnPath(returnPath, '/app');
+
+  try {
+    const parsedUrl = new URL(normalizedUrl);
+    parsedUrl.searchParams.set('returnTo', safeReturnPath);
+    return parsedUrl.toString();
+  } catch {
+    const separator = normalizedUrl.includes('?') ? '&' : '?';
+    return `${normalizedUrl}${separator}returnTo=${encodeURIComponent(safeReturnPath)}`;
+  }
+};
+
 const resolveBasePlanPriceId = (planCode) => {
   const normalized = normalizePlanCode(planCode);
   const fallbackPriceId = process.env.STRIPE_PLAN_DEFAULT_PRICE_ID || null;
@@ -87,6 +112,7 @@ const createBasePlanCheckoutSession = async ({
   planName,
   planMonthlyPriceUsd,
   seatLimit,
+  returnTo,
 }) => {
   const stripe = getStripeClient();
   if (!stripe) {
@@ -107,6 +133,8 @@ const createBasePlanCheckoutSession = async ({
     process.env.STRIPE_PLAN_SELECTION_CANCEL_URL ||
     `${frontendUrl}/app/escolher-plano?status=cancel`;
 
+  const safeReturnPath = normalizeAppReturnPath(returnTo, '/app');
+
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     line_items: [
@@ -116,8 +144,8 @@ const createBasePlanCheckoutSession = async ({
         planMonthlyPriceUsd,
       }),
     ],
-    success_url: successUrl,
-    cancel_url: cancelUrl,
+    success_url: appendReturnPathToUrl(successUrl, safeReturnPath),
+    cancel_url: appendReturnPathToUrl(cancelUrl, safeReturnPath),
     customer_email: adminEmail || undefined,
     metadata: {
       type: 'base_admin_plan',
@@ -125,6 +153,7 @@ const createBasePlanCheckoutSession = async ({
       planCode: resolvedPlan.planCode,
       requestedSeatLimit: String(safeSeatLimit),
       planName: String(planName || ''),
+      returnTo: safeReturnPath,
     },
     allow_promotion_codes: true,
   });

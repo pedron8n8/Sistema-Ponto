@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { apiFetch } from '../lib/api'
+import { apiFetch, translateApiMessage } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from 'react-i18next'
 import { getMarketingPlans } from '../lib/marketingPlans'
@@ -528,8 +528,9 @@ const SuperAdminAccountsPage = () => {
       setConfigNoticeById((prev) => ({
         ...prev,
         [adminId]:
-          response?.seatValidation?.message ||
-          t('Configuration saved successfully.', 'Configuracao salva com sucesso.'),
+          response?.seatValidation?.message
+            ? translateApiMessage(response.seatValidation.message)
+            : t('Configuration saved successfully.', 'Configuracao salva com sucesso.'),
       }))
 
       await loadOverview()

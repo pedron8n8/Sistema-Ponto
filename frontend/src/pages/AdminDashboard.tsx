@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react'
-import { API_BASE, apiFetch, buildIdempotencyHeaders, resolveApiAssetUrl } from '../lib/api'
+import {
+  API_BASE,
+  apiFetch,
+  buildIdempotencyHeaders,
+  resolveApiAssetUrl,
+  translateApiMessage,
+} from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { usePlan } from '../hooks/usePlan'
 import { TIME_ZONE_OPTIONS } from '../lib/timezone'
@@ -72,6 +78,7 @@ type BankHoursOverviewItem = {
 
 type VacationRequest = {
   id: string
+  requestType?: 'VACATION' | 'DAY_OFF'
   startDate: string
   endDate: string
   status:
@@ -229,6 +236,8 @@ const AdminDashboard = () => {
   const { t: i18nT, i18n } = useTranslation()
   const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
   const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
+  const getRequestTypeLabel = (requestType: 'VACATION' | 'DAY_OFF') =>
+    requestType === 'DAY_OFF' ? t('Day off', 'Folga') : t('Vacation', 'Férias')
   const locale = isPt ? 'pt-BR' : 'en-US'
   const token = session?.access_token
   const isSuperAdmin = profile?.role === 'SUPERADMIN'
@@ -508,7 +517,7 @@ const AdminDashboard = () => {
 
       if (response.status === 202 && payload?.idempotency?.ignored) {
         setNotice(
-          payload?.message ||
+          (payload?.message ? translateApiMessage(payload.message) : '') ||
             t('Duplicate request was ignored successfully.', 'Requisicao duplicada ignorada com sucesso.')
         )
         return
@@ -528,16 +537,20 @@ const AdminDashboard = () => {
         }
 
         throw new Error(
-          payload?.message ||
+          translateApiMessage(
+            payload?.message ||
             t(
               'Seat limit exceeded. Configure Stripe on the backend for automatic redirection.',
               'Limite de cadeiras excedido. Configure Stripe no backend para redirecionamento automatico.'
             )
+          )
         )
       }
 
       if (!response.ok) {
-        throw new Error(payload?.message || t('Could not create user.', 'Erro ao criar usuario'))
+        throw new Error(
+          translateApiMessage(payload?.message || t('Could not create user.', 'Erro ao criar usuario'))
+        )
       }
 
       setForm({
@@ -597,7 +610,7 @@ const AdminDashboard = () => {
 
       if (response.status === 202) {
         setInviteNotice(
-          payload?.message ||
+          (payload?.message ? translateApiMessage(payload.message) : '') ||
             t(
               'Duplicate request ignored. Click again to generate a new invite.',
               'Requisicao duplicada ignorada. Clique novamente para gerar um novo convite.'
@@ -613,8 +626,10 @@ const AdminDashboard = () => {
         }
 
         throw new Error(
-          payload?.message ||
-            t('Could not generate invite link.', 'Erro ao gerar link de convite.')
+          translateApiMessage(
+            payload?.message ||
+              t('Could not generate invite link.', 'Erro ao gerar link de convite.')
+          )
         )
       }
 
@@ -846,7 +861,11 @@ const AdminDashboard = () => {
         method: 'PATCH',
         body: { payAllPending: true },
       })
-      setBankNotice(response.message || t('Payment posted successfully.', 'Baixa realizada com sucesso.'))
+      setBankNotice(
+        response.message
+          ? translateApiMessage(response.message)
+          : t('Payment posted successfully.', 'Baixa realizada com sucesso.')
+      )
       await loadBankOverview()
       await loadUsers()
     } catch (err) {
@@ -953,11 +972,12 @@ const AdminDashboard = () => {
 
       setLocationSettings(response.locationSettings)
       setNotice(
-        response.message ||
-          t(
-            'Location settings updated successfully.',
-            'Configuracao de localizacao atualizada com sucesso.'
-          )
+        response.message
+          ? translateApiMessage(response.message)
+          : t(
+              'Location settings updated successfully.',
+              'Configuracao de localizacao atualizada com sucesso.'
+            )
       )
     } catch (err) {
       setError(
@@ -1720,6 +1740,9 @@ const AdminDashboard = () => {
                 <p className="mt-2 text-xs text-slate-600">
                   {t('Period:', 'Periodo:')} {new Date(request.startDate).toLocaleDateString(locale)} {t('to', 'ate')}{' '}
                   {new Date(request.endDate).toLocaleDateString(locale)}
+                </p>
+                <p className="mt-1 text-xs text-slate-600">
+                  {t('Type:', 'Tipo:')} {getRequestTypeLabel(request.requestType || 'VACATION')}
                 </p>
                 {request.supervisor ? (
                   <p className="mt-1 text-xs text-slate-600">

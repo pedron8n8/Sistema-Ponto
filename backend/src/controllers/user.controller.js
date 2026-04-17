@@ -283,6 +283,15 @@ const buildFrontendAppUrl = (pathWithQuery = '') => {
   return `${frontendUrl}${normalizedPath}`;
 };
 
+const resolveAppReturnPath = (value, fallback = '/app') => {
+  const normalized = String(value || '').trim();
+  if (normalized === '/app' || normalized.startsWith('/app/')) {
+    return normalized;
+  }
+
+  return fallback;
+};
+
 const resolveAdminSeatConfig = ({ adminSeatLimit, adminExtraSeatPrice }) => {
   const nextSeatLimit = adminSeatLimit === undefined ? 10 : Number(adminSeatLimit);
   if (!Number.isInteger(nextSeatLimit) || nextSeatLimit < 1) {
@@ -2393,8 +2402,9 @@ const chooseMyPlan = async (req, res) => {
       });
     }
 
-    const { planCode, seatLimit, seats, startCheckout, stripeSessionId } = req.body || {};
+    const { planCode, seatLimit, seats, startCheckout, stripeSessionId, returnTo } = req.body || {};
     const shouldStartCheckout = parseBooleanFlag(startCheckout);
+    const safeReturnTo = resolveAppReturnPath(returnTo, '/app');
 
     let selectedPlan;
     let requestedSeatLimit;
@@ -2470,6 +2480,7 @@ const chooseMyPlan = async (req, res) => {
           planName: selectedPlan.name,
           planMonthlyPriceUsd: selectedPlan.monthlyPrice,
           seatLimit: requestedSeatLimit,
+          returnTo: safeReturnTo,
         });
 
         if (!checkout.ok || !checkout.checkoutUrl) {
@@ -2493,6 +2504,7 @@ const chooseMyPlan = async (req, res) => {
             url: checkout.checkoutUrl,
             sessionId: checkout.sessionId,
             provider: 'STRIPE',
+            returnTo: safeReturnTo,
           },
           planSelection: {
             code: selectedPlan.code,

@@ -80,6 +80,107 @@ const CREATE_ORDER = [
   'RH',
 ];
 
+const parsedExtraAdminSeatMonthlyUsd = Number(process.env.EXTRA_ADMIN_SEAT_MONTHLY_USD);
+const EXTRA_ADMIN_SEAT_MONTHLY_USD = Number(
+  (
+    Number.isFinite(parsedExtraAdminSeatMonthlyUsd) && parsedExtraAdminSeatMonthlyUsd >= 0
+      ? parsedExtraAdminSeatMonthlyUsd
+      : 7.5
+  ).toFixed(2)
+);
+
+const ADMIN_PLAN_CATALOG = {
+  STARTER: {
+    code: 'STARTER',
+    name: 'Starter',
+    monthlyPrice: 30,
+    maxSeats: 3,
+  },
+  GROWTH: {
+    code: 'GROWTH',
+    name: 'Growth',
+    monthlyPrice: 40,
+    maxSeats: 5,
+  },
+  PRO: {
+    code: 'PRO',
+    name: 'Pro',
+    monthlyPrice: 50,
+    maxSeats: 7,
+  },
+};
+
+const resolveSeedPlanConfig = () => {
+  const defaultPlanCode = String(process.env.DEFAULT_ADMIN_PLAN_CODE || 'STARTER').trim().toUpperCase();
+  return ADMIN_PLAN_CATALOG[defaultPlanCode] || ADMIN_PLAN_CATALOG.STARTER;
+};
+
+const buildSeedPaidInvoices = ({ adminUserId, adminEmail, planConfig }) => {
+  const now = new Date();
+  const currentCyclePaidAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 10, 13, 0, 0));
+  const previousCyclePaidAt = new Date(currentCyclePaidAt);
+  previousCyclePaidAt.setUTCMonth(previousCyclePaidAt.getUTCMonth() - 1);
+
+  const additionalSeats = 2;
+  const basePlanAmount = Number(planConfig.monthlyPrice.toFixed(2));
+  const additionalSeatsAmount = Number((additionalSeats * EXTRA_ADMIN_SEAT_MONTHLY_USD).toFixed(2));
+  const invoiceIdSuffix = String(adminUserId || 'admin').replace(/[^a-zA-Z0-9]/g, '').slice(0, 16) || 'admin';
+
+  return [
+    {
+      sourceType: 'BASE_PLAN',
+      stripeSessionId: `seed_base_plan_prev_${invoiceIdSuffix}`,
+      stripeInvoiceId: `seed_inv_base_prev_${invoiceIdSuffix}`,
+      stripeSubscriptionId: `seed_sub_plan_${invoiceIdSuffix}`,
+      status: 'complete',
+      paymentStatus: 'paid',
+      mode: 'subscription',
+      currency: 'USD',
+      amountTotal: basePlanAmount,
+      amountSubtotal: basePlanAmount,
+      expectedMonthlyAmountUsd: basePlanAmount,
+      overageSeats: null,
+      customerEmail: adminEmail,
+      sessionCreatedAt: previousCyclePaidAt,
+      paidAt: previousCyclePaidAt,
+    },
+    {
+      sourceType: 'BASE_PLAN',
+      stripeSessionId: `seed_base_plan_curr_${invoiceIdSuffix}`,
+      stripeInvoiceId: `seed_inv_base_curr_${invoiceIdSuffix}`,
+      stripeSubscriptionId: `seed_sub_plan_${invoiceIdSuffix}`,
+      status: 'complete',
+      paymentStatus: 'paid',
+      mode: 'subscription',
+      currency: 'USD',
+      amountTotal: basePlanAmount,
+      amountSubtotal: basePlanAmount,
+      expectedMonthlyAmountUsd: basePlanAmount,
+      overageSeats: null,
+      customerEmail: adminEmail,
+      sessionCreatedAt: currentCyclePaidAt,
+      paidAt: currentCyclePaidAt,
+    },
+    {
+      sourceType: 'ADDITIONAL_SEATS',
+      stripeSessionId: `seed_extra_seats_curr_${invoiceIdSuffix}`,
+      stripeInvoiceId: `seed_inv_extra_curr_${invoiceIdSuffix}`,
+      stripeSubscriptionId: `seed_sub_extra_${invoiceIdSuffix}`,
+      status: 'complete',
+      paymentStatus: 'paid',
+      mode: 'subscription',
+      currency: 'USD',
+      amountTotal: additionalSeatsAmount,
+      amountSubtotal: additionalSeatsAmount,
+      expectedMonthlyAmountUsd: additionalSeatsAmount,
+      overageSeats: additionalSeats,
+      customerEmail: adminEmail,
+      sessionCreatedAt: currentCyclePaidAt,
+      paidAt: currentCyclePaidAt,
+    },
+  ];
+};
+
 const normalize = (value) => String(value || '').trim();
 
 const getSeedUsersFromEnv = () => {
@@ -258,27 +359,41 @@ const resetLocalUserDomain = async () => {
   await prisma.approvalLog.deleteMany();
   await prisma.bankHoursEntry.deleteMany();
   await prisma.timeEntry.deleteMany();
+  await prisma.adminBillingInvoice.deleteMany();
   await prisma.user.deleteMany();
 
   console.log('🗑️ Banco local: dados de usuários e dependências removidos.');
 };
 
 const seedLocalUsers = async (createdByKey) => {
-  const adminPlan = await prisma.adminPlan.upsert({
-    where: { code: 'STARTER' },
-    update: {
-      name: 'Starter',
-      monthlyPrice: 30,
-      isActive: true,
-    },
-    create: {
-      code: 'STARTER',
-      name: 'Starter',
-      description: 'Plano Starter para administradores',
-      monthlyPrice: 30,
-      isActive: true,
-    },
-  });
+  const seedPlanConfig = resolveSeedPlanConfig();
+  const seedExtraSeatsContracted = 2;
+  const seedTeamActiveSeats = 5;
+  const seedSeatLimit = seedPlanConfig.maxSeats + seedExtraSeatsContracted;
+
+  const planByCode = {};
+  for (const planConfig of Object.values(ADMIN_PLAN_CATALOG)) {
+    const upsertedPlan = await prisma.adminPlan.upsert({
+      where: { code: planConfig.code },
+      update: {
+        name: planConfig.name,
+        description: `Plano ${planConfig.name} para administradores`,
+        monthlyPrice: Number(planConfig.monthlyPrice.toFixed(2)),
+        isActive: true,
+      },
+      create: {
+        code: planConfig.code,
+        name: planConfig.name,
+        description: `Plano ${planConfig.name} para administradores`,
+        monthlyPrice: Number(planConfig.monthlyPrice.toFixed(2)),
+        isActive: true,
+      },
+    });
+
+    planByCode[planConfig.code] = upsertedPlan;
+  }
+
+  const selectedAdminPlan = planByCode[seedPlanConfig.code] || planByCode.STARTER;
 
   const superadmin = createdByKey.get('SUPERADMIN');
   const admin = createdByKey.get('ADMIN');
@@ -308,9 +423,13 @@ const seedLocalUsers = async (createdByKey) => {
       role: 'ADMIN',
       supervisorId: null,
       organizationAdminId: admin.id,
-      adminPlanId: adminPlan.id,
+      adminPlanId: selectedAdminPlan.id,
       adminPlanStatus: 'ACTIVE',
       adminPlanLinkedAt: new Date(),
+      adminSeatLimit: seedSeatLimit,
+      adminExtraSeatPrice: EXTRA_ADMIN_SEAT_MONTHLY_USD,
+      adminActiveSeats: seedTeamActiveSeats,
+      adminExtraSeatsContracted: seedExtraSeatsContracted,
     },
   });
 
@@ -368,6 +487,27 @@ const seedLocalUsers = async (createdByKey) => {
       organizationAdminId: admin.id,
     },
   });
+
+  const seedInvoices = buildSeedPaidInvoices({
+    adminUserId: admin.id,
+    adminEmail: admin.email,
+    planConfig: seedPlanConfig,
+  });
+
+  for (const invoiceData of seedInvoices) {
+    await prisma.adminBillingInvoice.upsert({
+      where: { stripeSessionId: invoiceData.stripeSessionId },
+      update: {
+        ...invoiceData,
+        adminUserId: admin.id,
+        syncedAt: new Date(),
+      },
+      create: {
+        ...invoiceData,
+        adminUserId: admin.id,
+      },
+    });
+  }
 
   console.log('✅ Banco local: usuários seed recriados e sincronizados.');
 };

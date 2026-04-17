@@ -148,7 +148,9 @@ const ColaboradorDashboard = () => {
   const [faceStatus, setFaceStatus] = useState<FaceStatusResponse['face'] | null>(null)
   const [cameraActive, setCameraActive] = useState(false)
   const [enrollModalOpen, setEnrollModalOpen] = useState(false)
-  const [enrollInstruction, setEnrollInstruction] = useState('Centralize seu rosto no quadro')
+  const [enrollInstruction, setEnrollInstruction] = useState(
+    t('Center your face in frame', 'Centralize seu rosto no quadro')
+  )
   const [enrollProgress, setEnrollProgress] = useState(0)
   const [enrollStep, setEnrollStep] = useState<'CENTER' | 'LEFT' | 'RIGHT' | 'UP' | 'DOWN'>('CENTER')
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -170,7 +172,7 @@ const ColaboradorDashboard = () => {
 
   const getBrowserLocation = async () => {
     if (!navigator.geolocation) {
-      throw new Error('Geolocalizacao nao suportada neste navegador')
+      throw new Error(t('Geolocation is not supported in this browser', 'Geolocalizacao nao suportada neste navegador'))
     }
 
     return new Promise<{ lat: number; lng: number }>((resolve, reject) => {
@@ -182,7 +184,7 @@ const ColaboradorDashboard = () => {
           })
         },
         (geoErr) => {
-          reject(new Error(geoErr.message || 'Nao foi possivel obter localizacao'))
+          reject(new Error(geoErr.message || t('Could not get location', 'Nao foi possivel obter localizacao')))
         },
         {
           enableHighAccuracy: true,
@@ -201,7 +203,7 @@ const ColaboradorDashboard = () => {
       setCurrentPosition(location)
       return location
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Falha ao obter localizacao'
+      const message = err instanceof Error ? err.message : t('Failed to get location', 'Falha ao obter localizacao')
       setGeoError(message)
       throw err
     } finally {
@@ -283,7 +285,7 @@ const ColaboradorDashboard = () => {
 
     writeOfflineQueue(remaining)
     if (remaining.length === 0) {
-      setSuccess('Pendencias offline sincronizadas com sucesso.')
+      setSuccess(t('Offline pending items synced successfully.', 'Pendencias offline sincronizadas com sucesso.'))
       await loadEntries()
       await loadCurrentEntry()
     }
@@ -298,7 +300,12 @@ const ColaboradorDashboard = () => {
 
     const reachedDailyTarget = Boolean(response.entry?.dailyProgress?.hasReachedDailyTarget)
     if (reachedDailyTarget && !dailyTargetNotifiedRef.current) {
-      setSuccess('Voce atingiu a carga horaria do dia. A partir de agora o tempo sera contabilizado como hora extra.')
+      setSuccess(
+        t(
+          'You reached your daily workload. From now on, time will be counted as overtime.',
+          'Voce atingiu a carga horaria do dia. A partir de agora o tempo sera contabilizado como hora extra.'
+        )
+      )
       dailyTargetNotifiedRef.current = true
     }
 
@@ -349,7 +356,7 @@ const ColaboradorDashboard = () => {
     }
 
     if (!loaded) {
-      throw lastError || new Error('Falha ao carregar modelos faciais')
+      throw lastError || new Error(t('Failed to load face models', 'Falha ao carregar modelos faciais'))
     }
   }
 
@@ -368,11 +375,16 @@ const ColaboradorDashboard = () => {
 
   const startCamera = async () => {
     if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error('Camera nao suportada neste navegador')
+      throw new Error(t('Camera is not supported in this browser', 'Camera nao suportada neste navegador'))
     }
 
     if (!faceModelsReady) {
-      throw new Error('Modelos faciais ainda nao carregados. Aguarde alguns segundos.')
+      throw new Error(
+        t(
+          'Face models are not loaded yet. Please wait a few seconds.',
+          'Modelos faciais ainda nao carregados. Aguarde alguns segundos.'
+        )
+      )
     }
 
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -396,7 +408,7 @@ const ColaboradorDashboard = () => {
 
   const extractFaceDescriptor = async () => {
     if (!videoRef.current) {
-      throw new Error('Camera nao inicializada')
+      throw new Error(t('Camera is not initialized', 'Camera nao inicializada'))
     }
 
     const result = await faceapi
@@ -405,7 +417,7 @@ const ColaboradorDashboard = () => {
       .withFaceDescriptor()
 
     if (!result) {
-      throw new Error('Nenhum rosto detectado. Centralize seu rosto e tente novamente.')
+      throw new Error(t('No face detected. Center your face and try again.', 'Nenhum rosto detectado. Centralize seu rosto e tente novamente.'))
     }
 
     return Array.from(result.descriptor)
@@ -413,7 +425,7 @@ const ColaboradorDashboard = () => {
 
   const collectLivenessData = async (): Promise<LivenessData> => {
     if (!videoRef.current) {
-      throw new Error('Camera nao inicializada')
+      throw new Error(t('Camera is not initialized', 'Camera nao inicializada'))
     }
 
     let frameCount = 0
@@ -463,7 +475,12 @@ const ColaboradorDashboard = () => {
     }
 
     if (frameCount < LIVENESS_MIN_VALID_FRAMES) {
-      throw new Error('Rosto nao detectado por tempo suficiente. Ajuste iluminacao e enquadramento.')
+      throw new Error(
+        t(
+          'Face was not detected long enough. Adjust lighting and framing.',
+          'Rosto nao detectado por tempo suficiente. Ajuste iluminacao e enquadramento.'
+        )
+      )
     }
 
     const headMovementDelta =
@@ -494,7 +511,7 @@ const ColaboradorDashboard = () => {
 
   const runGuidedFaceEnrollment = async () => {
     if (!videoRef.current) {
-      throw new Error('Camera nao inicializada')
+      throw new Error(t('Camera is not initialized', 'Camera nao inicializada'))
     }
 
     let frameCount = 0
@@ -512,7 +529,7 @@ const ColaboradorDashboard = () => {
     let downDone = false
 
     setEnrollStep('CENTER')
-    setEnrollInstruction('Centralize seu rosto e fique olhando para frente')
+  setEnrollInstruction(t('Center your face and keep looking forward', 'Centralize seu rosto e fique olhando para frente'))
     setEnrollProgress(8)
 
     const startedAt = Date.now()
@@ -523,7 +540,7 @@ const ColaboradorDashboard = () => {
         .withFaceLandmarks()
 
       if (!detection) {
-        setEnrollInstruction('Rosto nao detectado. Ajuste iluminacao e enquadramento')
+        setEnrollInstruction(t('Face not detected. Adjust lighting and framing', 'Rosto nao detectado. Ajuste iluminacao e enquadramento'))
         await sleep(LIVENESS_FRAME_INTERVAL_MS)
         continue
       }
@@ -553,7 +570,7 @@ const ColaboradorDashboard = () => {
 
         if (!centerDone) {
           setEnrollStep('CENTER')
-          setEnrollInstruction('Centralize seu rosto e fique olhando para frente')
+          setEnrollInstruction(t('Center your face and keep looking forward', 'Centralize seu rosto e fique olhando para frente'))
 
           if (normalizedNoseX >= FACE_CENTER_MIN && normalizedNoseX <= FACE_CENTER_MAX) {
             if (normalizedNoseY < FACE_VERTICAL_CENTER_MIN || normalizedNoseY > FACE_VERTICAL_CENTER_MAX) {
@@ -566,7 +583,7 @@ const ColaboradorDashboard = () => {
             centerDone = true
             setEnrollProgress(30)
             setEnrollStep('LEFT')
-            setEnrollInstruction('Agora vire levemente a cabeca para um lado')
+            setEnrollInstruction(t('Now turn your head slightly to one side', 'Agora vire levemente a cabeca para um lado'))
           }
         } else if (!leftDone && centerBaseline !== null) {
           setEnrollStep('LEFT')
@@ -574,7 +591,7 @@ const ColaboradorDashboard = () => {
             leftDone = true
             setEnrollProgress(55)
             setEnrollStep('RIGHT')
-            setEnrollInstruction('Perfeito. Agora vire levemente para o outro lado')
+            setEnrollInstruction(t('Great. Now turn slightly to the other side', 'Perfeito. Agora vire levemente para o outro lado'))
           }
         } else if (!rightDone && centerBaseline !== null) {
           setEnrollStep('RIGHT')
@@ -582,7 +599,7 @@ const ColaboradorDashboard = () => {
             rightDone = true
             setEnrollProgress(70)
             setEnrollStep('UP')
-            setEnrollInstruction('Agora mova levemente a cabeca para cima')
+            setEnrollInstruction(t('Now move your head slightly upward', 'Agora mova levemente a cabeca para cima'))
           }
         } else if (!upDone && centerBaselineY !== null) {
           setEnrollStep('UP')
@@ -590,14 +607,14 @@ const ColaboradorDashboard = () => {
             upDone = true
             setEnrollProgress(85)
             setEnrollStep('DOWN')
-            setEnrollInstruction('Perfeito. Agora mova levemente a cabeca para baixo')
+            setEnrollInstruction(t('Great. Now move your head slightly downward', 'Perfeito. Agora mova levemente a cabeca para baixo'))
           }
         } else if (!downDone && centerBaselineY !== null) {
           setEnrollStep('DOWN')
           if (normalizedNoseY >= centerBaselineY + FACE_VERTICAL_TURN_DELTA) {
             downDone = true
             setEnrollProgress(100)
-            setEnrollInstruction('Movimentos validados. Finalizando cadastro...')
+            setEnrollInstruction(t('Movement validated. Finishing enrollment...', 'Movimentos validados. Finalizando cadastro...'))
           }
         }
       }
@@ -609,7 +626,12 @@ const ColaboradorDashboard = () => {
           .withFaceDescriptor()
 
         if (!descriptorResult) {
-          throw new Error('Nao foi possivel extrair descriptor facial no final da validacao.')
+          throw new Error(
+            t(
+              'Could not extract face descriptor at the end of validation.',
+              'Nao foi possivel extrair descriptor facial no final da validacao.'
+            )
+          )
         }
 
         const headMovementDelta =
@@ -643,7 +665,12 @@ const ColaboradorDashboard = () => {
       await sleep(LIVENESS_FRAME_INTERVAL_MS)
     }
 
-    throw new Error('Tempo esgotado na verificacao facial. Tente novamente e siga as instrucoes na tela.')
+    throw new Error(
+      t(
+        'Face verification timed out. Try again and follow the on-screen instructions.',
+        'Tempo esgotado na verificacao facial. Tente novamente e siga as instrucoes na tela.'
+      )
+    )
   }
 
   const ensureFaceVerification = async () => {
@@ -663,7 +690,7 @@ const ColaboradorDashboard = () => {
         livenessData,
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Falha ao capturar rosto'
+      const message = err instanceof Error ? err.message : t('Failed to capture face', 'Falha ao capturar rosto')
       setFaceError(message)
       throw err
     } finally {
@@ -677,7 +704,7 @@ const ColaboradorDashboard = () => {
     setEnrollModalOpen(true)
     setEnrollProgress(0)
     setEnrollStep('CENTER')
-    setEnrollInstruction('Preparando camera...')
+  setEnrollInstruction(t('Preparing camera...', 'Preparando camera...'))
     setFaceError('')
     setSuccess('')
     setFaceLoading(true)
@@ -699,14 +726,14 @@ const ColaboradorDashboard = () => {
       })
 
       await loadFaceStatus()
-      setSuccess('Cadastro facial atualizado com sucesso.')
+      setSuccess(t('Face enrollment updated successfully.', 'Cadastro facial atualizado com sucesso.'))
       setFaceError('')
       setEnrollModalOpen(false)
       stopCamera()
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao cadastrar facial'
+      const message = err instanceof Error ? err.message : t('Error enrolling face', 'Erro ao cadastrar facial')
       setFaceError(message)
-      setEnrollInstruction('Nao foi possivel concluir. Tente novamente.')
+      setEnrollInstruction(t('Could not complete. Please try again.', 'Nao foi possivel concluir. Tente novamente.'))
     } finally {
       setFaceLoading(false)
     }
@@ -722,9 +749,9 @@ const ColaboradorDashboard = () => {
         method: 'DELETE',
       })
       await loadFaceStatus()
-      setSuccess('Cadastro facial removido com sucesso.')
+      setSuccess(t('Face enrollment removed successfully.', 'Cadastro facial removido com sucesso.'))
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao remover facial'
+      const message = err instanceof Error ? err.message : t('Error removing face enrollment', 'Erro ao remover facial')
       setFaceError(message)
     } finally {
       setFaceLoading(false)
@@ -739,7 +766,10 @@ const ColaboradorDashboard = () => {
     loadFaceModels().catch(() => {
       setFaceModelsReady(false)
       setFaceError(
-        'Nao foi possivel carregar modelos faciais localmente nem por CDN. Verifique sua internet ou /public/models.'
+        t(
+          'Could not load face models locally or from CDN. Check your internet connection or /public/models.',
+          'Nao foi possivel carregar modelos faciais localmente nem por CDN. Verifique sua internet ou /public/models.'
+        )
       )
     })
     refreshLocation().catch(() => undefined)
@@ -850,7 +880,12 @@ const ColaboradorDashboard = () => {
   const startQrScanner = async () => {
     const BarcodeDetectorCtor = getBarcodeDetector()
     if (!BarcodeDetectorCtor) {
-      setQrScanError('Leitura de QR por câmera não suportada neste navegador. Use Chrome/Edge recente.')
+      setQrScanError(
+        t(
+          'QR reading through camera is not supported in this browser. Use recent Chrome/Edge.',
+          'Leitura de QR por câmera não suportada neste navegador. Use Chrome/Edge recente.'
+        )
+      )
       return
     }
 
@@ -875,7 +910,7 @@ const ColaboradorDashboard = () => {
 
       qrStreamRef.current = stream
       if (!qrVideoRef.current) {
-        throw new Error('Falha ao inicializar câmera para QR')
+        throw new Error(t('Failed to initialize camera for QR', 'Falha ao inicializar câmera para QR'))
       }
 
       qrVideoRef.current.srcObject = stream
@@ -896,7 +931,11 @@ const ColaboradorDashboard = () => {
             setScannedQrSummary(summary)
             setQrScannerOpen(false)
             stopQrScanner()
-            setSuccess(summary ? `QR lido: ${summary}` : 'QR lido com sucesso.')
+            setSuccess(
+              summary
+                ? t(`QR read: ${summary}`, `QR lido: ${summary}`)
+                : t('QR read successfully.', 'QR lido com sucesso.')
+            )
             setQrScanLoading(false)
             return
           }
@@ -911,7 +950,11 @@ const ColaboradorDashboard = () => {
 
       loop().catch(() => undefined)
     } catch (err) {
-      setQrScanError(err instanceof Error ? err.message : 'Não foi possível abrir a câmera para leitura do QR')
+      setQrScanError(
+        err instanceof Error
+          ? err.message
+          : t('Could not open camera for QR reading', 'Não foi possível abrir a câmera para leitura do QR')
+      )
       setQrScannerOpen(false)
       stopQrScanner()
       setQrScanLoading(false)
@@ -925,7 +968,12 @@ const ColaboradorDashboard = () => {
     setSuccess('')
     try {
       if (geofence?.locationValidationSource === 'TERMINAL_QR' && !scannedQrToken.trim()) {
-        throw new Error('Leia o QR do terminal pela câmera antes de registrar o ponto.')
+        throw new Error(
+          t(
+            'Read the terminal QR with camera before registering time.',
+            'Leia o QR do terminal pela câmera antes de registrar o ponto.'
+          )
+        )
       }
 
       const location = await refreshLocation()
@@ -960,7 +1008,7 @@ const ColaboradorDashboard = () => {
       setScannedQrSummary('')
       await loadEntries()
       await loadCurrentEntry()
-      setSuccess('Clock-in registrado com sucesso.')
+      setSuccess(t('Clock-in recorded successfully.', 'Clock-in registrado com sucesso.'))
     } catch (err) {
       if (isLikelyNetworkError(err)) {
         enqueueOfflineClockAction({
@@ -973,9 +1021,9 @@ const ColaboradorDashboard = () => {
             ...(scannedQrToken.trim() ? { qrToken: scannedQrToken.trim() } : {}),
           },
         })
-        setSuccess('Sem conexão. Clock-in salvo localmente e pendente de sincronização.')
+        setSuccess(t('No connection. Clock-in saved locally and pending sync.', 'Sem conexão. Clock-in salvo localmente e pendente de sincronização.'))
       } else {
-        setError(err instanceof Error ? err.message : 'Erro ao registrar entrada')
+        setError(err instanceof Error ? err.message : t('Error recording clock-in', 'Erro ao registrar entrada'))
       }
     } finally {
       setLoading(false)
@@ -989,7 +1037,12 @@ const ColaboradorDashboard = () => {
     setSuccess('')
     try {
       if (geofence?.locationValidationSource === 'TERMINAL_QR' && !scannedQrToken.trim()) {
-        throw new Error('Leia o QR do terminal pela câmera antes de registrar o ponto.')
+        throw new Error(
+          t(
+            'Read the terminal QR with camera before registering time.',
+            'Leia o QR do terminal pela câmera antes de registrar o ponto.'
+          )
+        )
       }
 
       const location = await refreshLocation()
@@ -1024,7 +1077,7 @@ const ColaboradorDashboard = () => {
       setScannedQrSummary('')
       await loadEntries()
       await loadCurrentEntry()
-      setSuccess('Clock-out registrado com sucesso.')
+      setSuccess(t('Clock-out recorded successfully.', 'Clock-out registrado com sucesso.'))
     } catch (err) {
       if (isLikelyNetworkError(err)) {
         enqueueOfflineClockAction({
@@ -1037,9 +1090,9 @@ const ColaboradorDashboard = () => {
             ...(scannedQrToken.trim() ? { qrToken: scannedQrToken.trim() } : {}),
           },
         })
-        setSuccess('Sem conexão. Clock-out salvo localmente e pendente de sincronização.')
+        setSuccess(t('No connection. Clock-out saved locally and pending sync.', 'Sem conexão. Clock-out salvo localmente e pendente de sincronização.'))
       } else {
-        setError(err instanceof Error ? err.message : 'Erro ao registrar saida')
+        setError(err instanceof Error ? err.message : t('Error recording clock-out', 'Erro ao registrar saida'))
       }
     } finally {
       setLoading(false)
@@ -1064,44 +1117,50 @@ const ColaboradorDashboard = () => {
   return (
     <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
-        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">Colaborador</p>
-        <h2 className="mt-4 text-3xl font-semibold text-slate-900">Sua jornada em um toque.</h2>
+        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">{t('Member', 'Colaborador')}</p>
+        <h2 className="mt-4 text-3xl font-semibold text-slate-900">{t('Your workday in one tap.', 'Sua jornada em um toque.')}</h2>
         <p className="mt-4 text-sm text-slate-600">
-          Registre a entrada e a saida com rapidez. O sistema salva automaticamente o contexto.
+          {t(
+            'Register clock-in and clock-out quickly. The system saves context automatically.',
+            'Registre a entrada e a saida com rapidez. O sistema salva automaticamente o contexto.'
+          )}
         </p>
 
         <div className="mt-8 rounded-2xl border border-slate-100 bg-slate-50/70 p-5">
           <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-            Notas da jornada
+            {t('Workday notes', 'Notas da jornada')}
           </label>
           <textarea
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
-            placeholder="Opcional: reuniao, foco, home office..."
+            placeholder={t('Optional: meeting, focus, home office...', 'Opcional: reuniao, foco, home office...')}
             className="mt-3 h-24 w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
           />
 
           <div className="mt-3">
             <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              PIN (alternativa ao facial)
+              {t('PIN (alternative to face)', 'PIN (alternativa ao facial)')}
             </label>
             <input
               value={pin}
               onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 8))}
-              placeholder="Informe seu PIN numerico"
+              placeholder={t('Enter your numeric PIN', 'Informe seu PIN numerico')}
               type="password"
               inputMode="numeric"
               className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
             />
             <p className="mt-1 text-[11px] text-slate-500">
-              Se o PIN for informado, clock-in e clock-out usam PIN sem exigir captura facial.
+              {t(
+                'If PIN is provided, clock-in and clock-out use PIN without requiring face capture.',
+                'Se o PIN for informado, clock-in e clock-out usam PIN sem exigir captura facial.'
+              )}
             </p>
           </div>
 
           <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                QR do terminal (leitura por câmera)
+                {t('Terminal QR (camera read)', 'QR do terminal (leitura por câmera)')}
               </label>
               <button
                 onClick={() => {
@@ -1112,13 +1171,16 @@ const ColaboradorDashboard = () => {
                 disabled={qrScanLoading}
                 className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-50"
               >
-                {qrScanLoading ? 'Abrindo câmera...' : 'Ler QR'}
+                {qrScanLoading ? t('Opening camera...', 'Abrindo câmera...') : t('Read QR', 'Ler QR')}
               </button>
             </div>
             <p className="mt-2 text-[11px] text-slate-500">
               {scannedQrToken
-                ? `QR validado${scannedQrSummary ? `: ${scannedQrSummary}` : ''}`
-                : 'Nenhum QR lido ainda.'}
+                ? t(
+                    `QR validated${scannedQrSummary ? `: ${scannedQrSummary}` : ''}`,
+                    `QR validado${scannedQrSummary ? `: ${scannedQrSummary}` : ''}`
+                  )
+                : t('No QR read yet.', 'Nenhum QR lido ainda.')}
             </p>
             {qrScanError ? <p className="mt-2 text-xs text-rose-600">{qrScanError}</p> : null}
           </div>
@@ -1132,14 +1194,14 @@ const ColaboradorDashboard = () => {
               disabled={loading || Boolean(activeEntry)}
               className="rounded-full bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-50"
             >
-              Clock in
+              {t('Clock in', 'Registrar entrada')}
             </button>
             <button
               onClick={handleClockOut}
               disabled={loading || !activeEntry}
               className="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 disabled:opacity-50"
             >
-              Clock out
+              {t('Clock out', 'Registrar saida')}
             </button>
           </div>
 
@@ -1155,9 +1217,11 @@ const ColaboradorDashboard = () => {
                   isOnline ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                 }`}
               >
-                {isOnline ? 'Online' : 'Offline'}
+                {isOnline ? t('Online', 'Online') : t('Offline', 'Offline')}
               </span>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">Pendentes: {pendingSyncCount}</span>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">
+                {t('Pending:', 'Pendentes:')} {pendingSyncCount}
+              </span>
               <button
                 onClick={() => {
                   syncOfflineClockQueue().catch(() => undefined)
@@ -1165,24 +1229,28 @@ const ColaboradorDashboard = () => {
                 disabled={!isOnline || pendingSyncCount === 0 || syncingOfflineQueue}
                 className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-600 disabled:opacity-50"
               >
-                {syncingOfflineQueue ? 'Sincronizando...' : 'Sincronizar pendências'}
+                {syncingOfflineQueue
+                  ? t('Syncing...', 'Sincronizando...')
+                  : t('Sync pending items', 'Sincronizar pendências')}
               </button>
             </div>
 
             {dailyProgress?.hasReachedDailyTarget ? (
               <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                Jornada diaria concluida. Tempo atual marcado como hora extra ({formatMinutesLabel(liveOvertimeMinutes)}).
+                {t('Daily workday completed. Current time is marked as overtime', 'Jornada diaria concluida. Tempo atual marcado como hora extra')}{' '}
+                ({formatMinutesLabel(liveOvertimeMinutes)}).
               </div>
             ) : dailyProgress ? (
               <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                Faltam {formatMinutesLabel(Math.max(0, contractDailyMinutes - liveRegularMinutes))} para atingir a carga diaria.
+                {t('Remaining', 'Faltam')} {formatMinutesLabel(Math.max(0, contractDailyMinutes - liveRegularMinutes))}{' '}
+                {t('to reach daily workload.', 'para atingir a carga diaria.')}
               </div>
             ) : null}
 
             <div className="mt-4 grid gap-2">
               <div>
                 <div className="mb-1 flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-slate-500">
-                  <span>Regular</span>
+                  <span>{t('Regular', 'Regular')}</span>
                   <span>{formatMinutesLabel(liveRegularMinutes)}</span>
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-slate-200">
@@ -1194,7 +1262,7 @@ const ColaboradorDashboard = () => {
               </div>
               <div>
                 <div className="mb-1 flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-slate-500">
-                  <span>Hora extra</span>
+                  <span>{t('Overtime', 'Hora extra')}</span>
                   <span>{formatMinutesLabel(liveOvertimeMinutes)}</span>
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-slate-200">
@@ -1206,7 +1274,7 @@ const ColaboradorDashboard = () => {
               </div>
               <div>
                 <div className="mb-1 flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-slate-500">
-                  <span>Meta diária</span>
+                  <span>{t('Daily target', 'Meta diária')}</span>
                   <span>{formatMinutesLabel(contractDailyMinutes)}</span>
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-slate-200">
@@ -1237,19 +1305,26 @@ const ColaboradorDashboard = () => {
       <aside className="space-y-5">
         {isPro && (
         <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900">Reconhecimento facial</h3>
+          <h3 className="text-lg font-semibold text-slate-900">{t('Facial recognition', 'Reconhecimento facial')}</h3>
           <p className="mt-2 text-xs text-slate-600">
             {faceStatus?.enrolled
-              ? `Cadastro ativo${faceStatus.updatedAt ? ` desde ${formatDateTimeWithTimeZone(faceStatus.updatedAt, viewTimeZone)}` : ''}`
-              : 'Sem cadastro facial'}
+              ? `${t('Enrollment active', 'Cadastro ativo')}${
+                  faceStatus.updatedAt
+                    ? ` ${t('since', 'desde')} ${formatDateTimeWithTimeZone(faceStatus.updatedAt, viewTimeZone)}`
+                    : ''
+                }`
+              : t('No facial enrollment', 'Sem cadastro facial')}
           </p>
           <p className="mt-1 text-xs text-slate-500">
             {faceModelsReady
-              ? `Modelos faciais carregados (${faceModelSource === '/models' ? 'local' : 'cdn'}).`
-              : 'Carregando modelos faciais...'}
+              ? `${t('Face models loaded', 'Modelos faciais carregados')} (${faceModelSource === '/models' ? t('local', 'local') : 'cdn'}).`
+              : t('Loading face models...', 'Carregando modelos faciais...')}
           </p>
           <p className="mt-1 text-[11px] text-slate-500">
-            Prova de vida: mova a cabeca para os lados, para cima e para baixo durante a validacao facial.
+            {t(
+              'Liveness check: move your head to the sides, up, and down during facial validation.',
+              'Prova de vida: mova a cabeca para os lados, para cima e para baixo durante a validacao facial.'
+            )}
           </p>
 
           <div className="mt-4 overflow-hidden rounded-2xl border border-slate-100 bg-slate-100">
@@ -1264,14 +1339,14 @@ const ColaboradorDashboard = () => {
               disabled={faceLoading || !faceModelsReady}
               className="rounded-full bg-teal-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
             >
-              {faceLoading ? 'Validando...' : 'Cadastrar rosto'}
+              {faceLoading ? t('Validating...', 'Validando...') : t('Enroll face', 'Cadastrar rosto')}
             </button>
             <button
               onClick={handleRemoveFace}
               disabled={faceLoading || !faceStatus?.enrolled}
               className="rounded-full border border-rose-200 bg-white px-4 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
             >
-              Remover facial
+              {t('Remove facial enrollment', 'Remover facial')}
             </button>
           </div>
         </div>
@@ -1281,8 +1356,8 @@ const ColaboradorDashboard = () => {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 px-4">
             <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-slate-700 bg-slate-900 shadow-2xl">
               <div className="border-b border-slate-700 p-5">
-                <p className="text-xs uppercase tracking-[0.25em] text-teal-300">Cadastro facial guiado</p>
-                <h4 className="mt-2 text-xl font-semibold text-slate-100">Verificacao estilo Face ID</h4>
+                <p className="text-xs uppercase tracking-[0.25em] text-teal-300">{t('Guided facial enrollment', 'Cadastro facial guiado')}</p>
+                <h4 className="mt-2 text-xl font-semibold text-slate-100">{t('Face ID-style verification', 'Verificacao estilo Face ID')}</h4>
                 <p className="mt-2 text-sm text-slate-300">{enrollInstruction}</p>
               </div>
 
@@ -1302,7 +1377,7 @@ const ColaboradorDashboard = () => {
                     />
                   </div>
                   <div className="mt-2 flex items-center justify-between text-[11px] uppercase tracking-[0.2em] text-slate-400">
-                    <span>Etapa: {enrollStep}</span>
+                    <span>{t('Step:', 'Etapa:')} {enrollStep}</span>
                     <span>{Math.round(enrollProgress)}%</span>
                   </div>
                 </div>
@@ -1317,7 +1392,7 @@ const ColaboradorDashboard = () => {
                     disabled={faceLoading && enrollProgress > 0 && enrollProgress < 100}
                     className="rounded-full border border-slate-600 bg-slate-800 px-4 py-2 text-xs font-semibold text-slate-200 disabled:opacity-60"
                   >
-                    Fechar
+                    {t('Close', 'Fechar')}
                   </button>
                 </div>
               </div>
@@ -1329,9 +1404,11 @@ const ColaboradorDashboard = () => {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 px-4">
             <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-slate-700 bg-slate-900 shadow-2xl">
               <div className="border-b border-slate-700 p-5">
-                <p className="text-xs uppercase tracking-[0.25em] text-teal-300">Leitura de QR</p>
-                <h4 className="mt-2 text-xl font-semibold text-slate-100">Aponte a câmera para o QR do terminal</h4>
-                <p className="mt-2 text-sm text-slate-300">Mantenha o código centralizado até a validação.</p>
+                <p className="text-xs uppercase tracking-[0.25em] text-teal-300">{t('QR reading', 'Leitura de QR')}</p>
+                <h4 className="mt-2 text-xl font-semibold text-slate-100">{t('Point the camera to the terminal QR', 'Aponte a câmera para o QR do terminal')}</h4>
+                <p className="mt-2 text-sm text-slate-300">
+                  {t('Keep the code centered until validation.', 'Mantenha o código centralizado até a validação.')}
+                </p>
               </div>
 
               <div className="p-5">
@@ -1353,7 +1430,7 @@ const ColaboradorDashboard = () => {
                     }}
                     className="rounded-full border border-slate-600 bg-slate-800 px-4 py-2 text-xs font-semibold text-slate-200"
                   >
-                    Fechar
+                    {t('Close', 'Fechar')}
                   </button>
                 </div>
               </div>
@@ -1364,7 +1441,7 @@ const ColaboradorDashboard = () => {
 
         <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="text-lg font-semibold text-slate-900">Geolocalizacao</h3>
+            <h3 className="text-lg font-semibold text-slate-900">{t('Geolocation', 'Geolocalizacao')}</h3>
             <button
               onClick={() => {
                 refreshLocation().catch(() => undefined)
@@ -1372,20 +1449,21 @@ const ColaboradorDashboard = () => {
               className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600"
               disabled={geoLoading}
             >
-              {geoLoading ? 'Atualizando...' : 'Atualizar GPS'}
+              {geoLoading ? t('Updating...', 'Atualizando...') : t('Refresh GPS', 'Atualizar GPS')}
             </button>
           </div>
           <p className="mt-2 text-xs text-slate-600">
             {currentPosition
-              ? `Posicao atual: ${currentPosition.lat.toFixed(6)}, ${currentPosition.lng.toFixed(6)}`
-              : 'Posicao ainda nao capturada'}
+              ? `${t('Current position:', 'Posicao atual:')} ${currentPosition.lat.toFixed(6)}, ${currentPosition.lng.toFixed(6)}`
+              : t('Position not captured yet', 'Posicao ainda nao capturada')}
           </p>
           {geofence?.enabled ? (
             <p className="mt-1 text-xs text-slate-500">
-              Cerca ativa em modo {geofence.mode} com raio de {Math.round(geofence.radiusMeters)}m
+              {t('Fence active in mode', 'Cerca ativa em modo')} {geofence.mode}{' '}
+              {t('with radius of', 'com raio de')} {Math.round(geofence.radiusMeters)}m
             </p>
           ) : (
-            <p className="mt-1 text-xs text-slate-500">Cerca virtual desativada no backend</p>
+            <p className="mt-1 text-xs text-slate-500">{t('Virtual fence disabled on backend', 'Cerca virtual desativada no backend')}</p>
           )}
           {geoError ? <p className="mt-2 text-xs text-rose-600">{geoError}</p> : null}
 
@@ -1408,7 +1486,7 @@ const ColaboradorDashboard = () => {
                     radius={6}
                     pathOptions={{ color: '#0f766e', fillColor: '#0f766e', fillOpacity: 1 }}
                   >
-                    <Popup>Centro da cerca virtual</Popup>
+                    <Popup>{t('Virtual fence center', 'Centro da cerca virtual')}</Popup>
                   </CircleMarker>
                 </>
               ) : null}
@@ -1419,7 +1497,7 @@ const ColaboradorDashboard = () => {
                   radius={7}
                   pathOptions={{ color: '#2563eb', fillColor: '#3b82f6', fillOpacity: 1 }}
                 >
-                  <Popup>Sua posicao atual</Popup>
+                  <Popup>{t('Your current position', 'Sua posicao atual')}</Popup>
                 </CircleMarker>
               ) : null}
             </MapContainer>

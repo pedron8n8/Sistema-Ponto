@@ -8,6 +8,7 @@ import UserAvatar from '../components/UserAvatar'
 
 type VacationRequest = {
   id: string
+  requestType?: 'VACATION' | 'DAY_OFF'
   startDate: string
   endDate: string
   status:
@@ -38,6 +39,7 @@ type VacationCalendarDay = {
     name: string | null
     email: string
     photoUrl?: string | null
+    requestType?: 'VACATION' | 'DAY_OFF'
     status: string
   }>
 }
@@ -63,6 +65,8 @@ const VacationSupervisorPage = () => {
   const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
   const token = session?.access_token
   const isHrFlow = profile?.role === 'HR' || profile?.role === 'ADMIN'
+  const getRequestTypeLabel = (requestType: 'VACATION' | 'DAY_OFF') =>
+    requestType === 'DAY_OFF' ? t('Day off', 'Folga') : t('Vacation', 'Férias')
 
   const [requests, setRequests] = useState<VacationRequest[]>([])
   const [requestsLoading, setRequestsLoading] = useState(false)
@@ -277,6 +281,9 @@ const VacationSupervisorPage = () => {
                   {formatDateWithTimeZone(request.startDate, viewTimeZone)} {t('to', 'até')}{' '}
                   {formatDateWithTimeZone(request.endDate, viewTimeZone)}
                 </p>
+                <p className="mt-1 text-xs text-slate-600">
+                  {t('Type:', 'Tipo:')} {getRequestTypeLabel(request.requestType || 'VACATION')}
+                </p>
                 {request.reason ? <p className="mt-1 text-xs text-slate-600">{t('Reason:', 'Motivo:')} {request.reason}</p> : null}
 
                 <input
@@ -429,6 +436,9 @@ const VacationSupervisorPage = () => {
                             </div>
                           </div>
                           <p className="mt-1 text-slate-500">{t('Status:', 'Status:')} {member.status}</p>
+                          <p className="text-slate-500">
+                            {t('Type:', 'Tipo:')} {getRequestTypeLabel(member.requestType || 'VACATION')}
+                          </p>
                         </div>
                       ))
                     )}

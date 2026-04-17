@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
+import i18next from 'i18next'
 import {
   supabase,
   hasSupabaseEnv,
@@ -51,6 +52,13 @@ type AuthState = {
 
 const AuthContext = createContext<AuthState | undefined>(undefined)
 
+const isPortugueseLanguage = () => {
+  const language = String(i18next.resolvedLanguage || i18next.language || '').toLowerCase()
+  return language.startsWith('pt')
+}
+
+const localizeMessage = (en: string, pt: string) => (isPortugueseLanguage() ? pt : en)
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
@@ -77,7 +85,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setProfileError(null)
     } catch (err) {
       setProfile(null)
-      setProfileError(err instanceof Error ? err.message : 'Nao foi possivel carregar o perfil')
+      setProfileError(
+        err instanceof Error
+          ? err.message
+          : localizeMessage('Could not load profile.', 'Nao foi possivel carregar o perfil')
+      )
     }
   }
 
@@ -85,7 +97,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (!hasSupabaseEnv || !supabase) {
       setLoading(false)
       setProfile(null)
-      setProfileError('Variaveis do Supabase nao configuradas no frontend.')
+      setProfileError(
+        localizeMessage(
+          'Supabase variables are not configured in the frontend.',
+          'Variaveis do Supabase nao configuradas no frontend.'
+        )
+      )
       return
     }
 
@@ -112,7 +129,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signIn = async (email: string, password: string) => {
     if (!supabase) {
-      throw new Error('Supabase nao configurado no frontend')
+      throw new Error(
+        localizeMessage(
+          'Supabase is not configured in the frontend.',
+          'Supabase nao configurado no frontend'
+        )
+      )
     }
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
@@ -126,7 +148,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signUp = async ({ name, email, password, phone, inviteToken }: SignUpPayload) => {
     if (!supabase) {
-      throw new Error('Supabase nao configurado no frontend')
+      throw new Error(
+        localizeMessage(
+          'Supabase is not configured in the frontend.',
+          'Supabase nao configurado no frontend'
+        )
+      )
     }
 
     const normalizedName = String(name || '').trim()
@@ -136,15 +163,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const normalizedInviteToken = String(inviteToken || '').trim()
 
     if (normalizedName.length < 2) {
-      throw new Error('Nome deve ter pelo menos 2 caracteres')
+      throw new Error(localizeMessage('Name must have at least 2 characters.', 'Nome deve ter pelo menos 2 caracteres'))
     }
 
     if (!normalizedEmail.includes('@')) {
-      throw new Error('Email invalido')
+      throw new Error(localizeMessage('Invalid email address.', 'Email invalido'))
     }
 
     if (normalizedPassword.length < 6) {
-      throw new Error('Senha deve ter pelo menos 6 caracteres')
+      throw new Error(
+        localizeMessage('Password must have at least 6 characters.', 'Senha deve ter pelo menos 6 caracteres')
+      )
     }
 
     const { data, error } = await supabase.auth.signUp({
@@ -172,7 +201,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signInWithGoogle = async () => {
     if (!supabase) {
-      throw new Error('Supabase nao configurado no frontend')
+      throw new Error(
+        localizeMessage(
+          'Supabase is not configured in the frontend.',
+          'Supabase nao configurado no frontend'
+        )
+      )
     }
 
     const googleProviderEnabled = await isGoogleProviderEnabled()
@@ -193,7 +227,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     if (!data?.url) {
-      throw new Error('Nao foi possivel iniciar o login com Google')
+      throw new Error(
+        localizeMessage(
+          'Could not start Google sign-in flow.',
+          'Nao foi possivel iniciar o login com Google'
+        )
+      )
     }
 
     window.location.assign(data.url)
@@ -203,7 +242,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (!supabase) {
       setSession(null)
       setProfile(null)
-      setProfileError('Supabase nao configurado no frontend')
+      setProfileError(
+        localizeMessage(
+          'Supabase is not configured in the frontend.',
+          'Supabase nao configurado no frontend'
+        )
+      )
       return
     }
 

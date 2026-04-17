@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { API_BASE, apiFetch } from '../lib/api'
+import { API_BASE, apiFetch, translateApiMessage } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTimeZone } from '../context/TimezoneContext'
+import { useTranslation } from 'react-i18next'
 import { formatDateWithTimeZone, formatTimeWithTimeZone } from '../lib/timezone'
 
 const API_ORIGIN = API_BASE.replace(/\/api\/v1\/?$/, '')
@@ -56,6 +57,10 @@ type DailyBreakdownResponse = {
 const Reports = () => {
   const { session } = useAuth()
   const { viewTimeZone } = useTimeZone()
+  const { t: i18nT, i18n } = useTranslation()
+  const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
+  const locale = isPt ? 'pt-BR' : 'en-US'
+  const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
   const token = session?.access_token
   const [entries, setEntries] = useState<TimeEntry[]>([])
   const [startDate, setStartDate] = useState('')
@@ -93,7 +98,7 @@ const Reports = () => {
   }
 
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat(locale, {
       style: 'currency',
       currency: 'USD',
       minimumFractionDigits: 2,
@@ -131,11 +136,11 @@ const Reports = () => {
       let backendMessage = ''
       try {
         const payload = (await response.json()) as { message?: string }
-        backendMessage = payload?.message || ''
+        backendMessage = translateApiMessage(payload?.message || '')
       } catch {
         backendMessage = ''
       }
-      throw new Error(backendMessage || 'Nao foi possivel baixar o relatorio')
+      throw new Error(backendMessage || t('Could not download report.', 'Nao foi possivel baixar o relatorio'))
     }
 
     const contentDisposition = response.headers.get('Content-Disposition') || ''
@@ -164,18 +169,32 @@ const Reports = () => {
 
       if (status.state === 'completed' && status.result) {
         await triggerBrowserDownload(status.result.downloadUrl, status.result.filename)
-        setMessage(`Relatorio ${status.result.filename} baixado com sucesso.`)
+        setMessage(
+          t(
+            `Report ${status.result.filename} downloaded successfully.`,
+            `Relatorio ${status.result.filename} baixado com sucesso.`
+          )
+        )
         return
       }
 
       if (status.state === 'failed') {
-        throw new Error(status.error || 'Falha ao gerar relatorio')
+        throw new Error(
+          status.error
+            ? translateApiMessage(status.error)
+            : t('Failed to generate report.', 'Falha ao gerar relatorio')
+        )
       }
 
       await new Promise((resolve) => setTimeout(resolve, waitMs))
     }
 
-    throw new Error('A exportacao demorou mais que o esperado. Verifique em alguns instantes.')
+    throw new Error(
+      t(
+        'Export is taking longer than expected. Please check again in a moment.',
+        'A exportacao demorou mais que o esperado. Verifique em alguns instantes.'
+      )
+    )
   }
 
   const handleExport = async () => {
@@ -193,10 +212,10 @@ const Reports = () => {
           format: 'xlsx',
         },
       })
-      setMessage('Exportacao iniciada. Gerando arquivo XLSX...')
+      setMessage(t('Export started. Generating XLSX file...', 'Exportacao iniciada. Gerando arquivo XLSX...'))
       await waitForExportAndDownload(exportJob.jobId)
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Erro ao solicitar exportacao')
+      setMessage(err instanceof Error ? err.message : t('Failed to request export.', 'Erro ao solicitar exportacao'))
     } finally {
       setIsExporting(false)
     }
@@ -217,7 +236,11 @@ const Reports = () => {
       setDailyBreakdown(response)
     } catch (err) {
       setDailyBreakdown(null)
-      setDailyBreakdownError(err instanceof Error ? err.message : 'Erro ao carregar detalhamento do dia')
+      setDailyBreakdownError(
+        err instanceof Error
+          ? err.message
+          : t('Failed to load daily breakdown.', 'Erro ao carregar detalhamento do dia')
+      )
     } finally {
       setDailyBreakdownLoading(false)
     }
@@ -260,15 +283,21 @@ const Reports = () => {
   return (
     <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
-        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">Relatorios</p>
-        <h2 className="mt-4 text-3xl font-semibold text-slate-900">Timesheet semanal, pronto para exportar.</h2>
+        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">{t('Reports', 'Relatorios')}</p>
+        <h2 className="mt-4 text-3xl font-semibold text-slate-900">
+          {t('Weekly timesheet, ready to export.', 'Timesheet semanal, pronto para exportar.')}
+        </h2>
         <p className="mt-4 text-sm text-slate-600">
-          Selecione o periodo e solicite a exportacao. O sistema gera uma planilha XLSX em background.
+          {t(
+            'Select a period and request export. The system generates an XLSX file in the background.',
+            'Selecione o periodo e solicite a exportacao. O sistema gera uma planilha XLSX em background.'
+          )}
         </p>
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm text-slate-600">
-            Semana de {formatDateWithTimeZone(weekStart, viewTimeZone)} a {formatDateWithTimeZone(weekEnd, viewTimeZone)}
+            {t('Week from', 'Semana de')} {formatDateWithTimeZone(weekStart, viewTimeZone)} {t('to', 'a')}{' '}
+            {formatDateWithTimeZone(weekEnd, viewTimeZone)}
           </div>
           <div className="flex gap-2">
             <button
@@ -279,7 +308,7 @@ const Reports = () => {
               }}
               className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600"
             >
-              Semana anterior
+              {t('Previous week', 'Semana anterior')}
             </button>
             <button
               onClick={() => {
@@ -289,7 +318,7 @@ const Reports = () => {
               }}
               className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600"
             >
-              Proxima semana
+              {t('Next week', 'Proxima semana')}
             </button>
           </div>
         </div>
@@ -305,7 +334,7 @@ const Reports = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold text-slate-800">
-                    {formatDateWithTimeZone(day.date, viewTimeZone, 'pt-BR', { weekday: 'long' })}
+                    {formatDateWithTimeZone(day.date, viewTimeZone, locale, { weekday: 'long' })}
                   </p>
                   <p className="text-xs text-slate-500">{formatDateWithTimeZone(day.date, viewTimeZone)}</p>
                 </div>
@@ -315,13 +344,15 @@ const Reports = () => {
               </div>
               <div className="mt-3 grid gap-2 text-xs text-slate-600">
                 {day.entries.length === 0 ? (
-                  <p>Sem registros.</p>
+                  <p>{t('No records.', 'Sem registros.')}</p>
                 ) : (
                   day.entries.map((entry) => (
                     <div key={entry.id} className="flex items-center justify-between">
                       <span>
                         {formatTimeWithTimeZone(entry.clockIn, viewTimeZone)} -{' '}
-                        {entry.clockOut ? formatTimeWithTimeZone(entry.clockOut, viewTimeZone) : 'Em aberto'}
+                        {entry.clockOut
+                          ? formatTimeWithTimeZone(entry.clockOut, viewTimeZone)
+                          : t('Open', 'Em aberto')}
                       </span>
                       <span>{entry.duration?.formatted || ''}</span>
                     </div>
@@ -334,10 +365,12 @@ const Reports = () => {
       </div>
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-slate-900">Solicitar exportacao</h3>
+        <h3 className="text-lg font-semibold text-slate-900">{t('Request export', 'Solicitar exportacao')}</h3>
         <div className="mt-5 space-y-4">
           <div>
-            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Data inicio</label>
+            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+              {t('Start date', 'Data inicio')}
+            </label>
             <input
               value={startDate}
               onChange={(event) => setStartDate(event.target.value)}
@@ -346,7 +379,9 @@ const Reports = () => {
             />
           </div>
           <div>
-            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Data fim</label>
+            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+              {t('End date', 'Data fim')}
+            </label>
             <input
               value={endDate}
               onChange={(event) => setEndDate(event.target.value)}
@@ -355,11 +390,13 @@ const Reports = () => {
             />
           </div>
           <div>
-            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Equipe (ID opcional)</label>
+            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+              {t('Team (optional ID)', 'Equipe (ID opcional)')}
+            </label>
             <input
               value={teamId}
               onChange={(event) => setTeamId(event.target.value)}
-              placeholder="ID da equipe"
+              placeholder={t('Team ID', 'ID da equipe')}
               className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
             />
           </div>
@@ -368,7 +405,7 @@ const Reports = () => {
             disabled={isExporting}
             className="w-full rounded-full bg-teal-700 px-4 py-2 text-sm font-semibold text-white"
           >
-            {isExporting ? 'Gerando planilha...' : 'Solicitar exportacao XLSX'}
+            {isExporting ? t('Generating file...', 'Gerando planilha...') : t('Request XLSX export', 'Solicitar exportacao XLSX')}
           </button>
           {message ? <p className="text-xs text-slate-600">{message}</p> : null}
         </div>
@@ -379,7 +416,7 @@ const Reports = () => {
           <div className="w-full max-w-3xl rounded-3xl border border-slate-100 bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-teal-700">Detalhamento diario</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-teal-700">{t('Daily breakdown', 'Detalhamento diario')}</p>
                 <h4 className="mt-2 text-xl font-semibold text-slate-900">
                   {formatDateWithTimeZone(selectedDay, viewTimeZone)}
                 </h4>
@@ -389,35 +426,37 @@ const Reports = () => {
                 onClick={closeDailyBreakdown}
                 className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600"
               >
-                Fechar
+                {t('Close', 'Fechar')}
               </button>
             </div>
 
             <div className="mt-5">
-              {dailyBreakdownLoading ? <p className="text-sm text-slate-500">Carregando detalhamento...</p> : null}
+              {dailyBreakdownLoading ? (
+                <p className="text-sm text-slate-500">{t('Loading breakdown...', 'Carregando detalhamento...')}</p>
+              ) : null}
               {dailyBreakdownError ? <p className="text-sm text-rose-600">{dailyBreakdownError}</p> : null}
 
               {dailyBreakdown && !dailyBreakdownLoading ? (
                 <>
                   <div className="grid gap-3 sm:grid-cols-4">
                     <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Colaboradores</p>
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">{t('Collaborators', 'Colaboradores')}</p>
                       <p className="mt-1 text-lg font-semibold text-slate-900">{dailyBreakdown.summary.totalEmployees}</p>
                     </div>
                     <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Horas trabalhadas</p>
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">{t('Worked hours', 'Horas trabalhadas')}</p>
                       <p className="mt-1 text-lg font-semibold text-slate-900">
                         {formatMinutes(dailyBreakdown.summary.totalWorkedMinutes)}
                       </p>
                     </div>
                     <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Banco (credito)</p>
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">{t('Banked hours (credit)', 'Banco (credito)')}</p>
                       <p className="mt-1 text-lg font-semibold text-slate-900">
                         {formatMinutes(dailyBreakdown.summary.totalBankHoursAccruedMinutes)}
                       </p>
                     </div>
                     <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Custo total</p>
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">{t('Total cost', 'Custo total')}</p>
                       <p className="mt-1 text-lg font-semibold text-slate-900">
                         {formatCurrency(dailyBreakdown.summary.totalCost)}
                       </p>
@@ -426,7 +465,7 @@ const Reports = () => {
 
                   <div className="mt-4 max-h-[50vh] space-y-2 overflow-y-auto pr-1">
                     {dailyBreakdown.rows.length === 0 ? (
-                      <p className="text-sm text-slate-500">Sem dados para este dia.</p>
+                      <p className="text-sm text-slate-500">{t('No data for this day.', 'Sem dados para este dia.')}</p>
                     ) : (
                       dailyBreakdown.rows.map((row) => (
                         <div key={row.user.id} className="rounded-2xl border border-slate-100 bg-white p-3">
@@ -435,17 +474,19 @@ const Reports = () => {
                               <p className="text-sm font-semibold text-slate-800">{row.user.name}</p>
                               <p className="text-xs text-slate-500">{row.user.email}</p>
                             </div>
-                            <div className="text-xs text-slate-500">Valor/hora: {formatCurrency(row.user.hourlyRate || 0)}</div>
+                            <div className="text-xs text-slate-500">
+                              {t('Hourly rate:', 'Valor/hora:')} {formatCurrency(row.user.hourlyRate || 0)}
+                            </div>
                           </div>
                           <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-3">
                             <span className="rounded-full bg-slate-100 px-3 py-1">
-                              Trabalhado: {formatMinutes(row.workedMinutes)}
+                              {t('Worked:', 'Trabalhado:')} {formatMinutes(row.workedMinutes)}
                             </span>
                             <span className="rounded-full bg-slate-100 px-3 py-1">
-                              Banco: {formatMinutes(row.bankHoursAccruedMinutes)}
+                              {t('Banked:', 'Banco:')} {formatMinutes(row.bankHoursAccruedMinutes)}
                             </span>
                             <span className="rounded-full bg-slate-100 px-3 py-1">
-                              Custo: {formatCurrency(row.totalCost)}
+                              {t('Cost:', 'Custo:')} {formatCurrency(row.totalCost)}
                             </span>
                           </div>
                         </div>

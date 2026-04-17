@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 type UserAvatarProps = {
   name?: string | null
   photoUrl?: string | null
@@ -18,6 +20,9 @@ const pickInitial = (name?: string | null) => {
 }
 
 const UserAvatar = ({ name, photoUrl, size = 'md', className = '' }: UserAvatarProps) => {
+  const { t: i18nT, i18n } = useTranslation()
+  const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
+  const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
   const initials = pickInitial(name)
   const sizeClass = sizeByVariant[size]
 
@@ -25,7 +30,7 @@ const UserAvatar = ({ name, photoUrl, size = 'md', className = '' }: UserAvatarP
     return (
       <img
         src={photoUrl}
-        alt={`Foto de ${name || 'usuário'}`}
+        alt={`${t('Photo of', 'Foto de')} ${name || t('user', 'usuário')}`}
         className={`${sizeClass} rounded-full border border-slate-200 object-cover ${className}`.trim()}
         loading="lazy"
       />
@@ -35,7 +40,7 @@ const UserAvatar = ({ name, photoUrl, size = 'md', className = '' }: UserAvatarP
   return (
     <div
       className={`${sizeClass} flex items-center justify-center rounded-full border border-slate-200 bg-slate-100 font-semibold text-slate-600 ${className}`.trim()}
-      aria-label={`Avatar de ${name || 'usuário'}`}
+      aria-label={`${t('Avatar of', 'Avatar de')} ${name || t('user', 'usuário')}`}
     >
       {initials}
     </div>

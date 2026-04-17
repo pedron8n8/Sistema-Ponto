@@ -27,6 +27,7 @@ type EntriesStats = {
 
 type VacationRequest = {
   id: string
+  requestType?: 'VACATION' | 'DAY_OFF'
   status: string
   startDate: string
   endDate: string
@@ -51,6 +52,8 @@ const AdminPendingApprovalsPage = () => {
   const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
   const locale = isPt ? 'pt-BR' : 'en-US'
   const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
+  const getRequestTypeLabel = (requestType: 'VACATION' | 'DAY_OFF') =>
+    requestType === 'DAY_OFF' ? t('Day off', 'Folga') : t('Vacation', 'Férias')
   const token = session?.access_token
 
   const [loading, setLoading] = useState(false)
@@ -339,6 +342,9 @@ const AdminPendingApprovalsPage = () => {
                 <p className="mt-2 text-xs text-slate-600">
                   {t('Period:', 'Periodo:')} {new Date(request.startDate).toLocaleDateString(locale)}{' '}
                   {t('to', 'ate')} {new Date(request.endDate).toLocaleDateString(locale)}
+                </p>
+                <p className="mt-1 text-xs text-slate-600">
+                  {t('Type:', 'Tipo:')} {getRequestTypeLabel(request.requestType || 'VACATION')}
                 </p>
                 {request.reason ? <p className="mt-1 text-xs text-slate-600">{t('Reason:', 'Motivo:')} {request.reason}</p> : null}
 

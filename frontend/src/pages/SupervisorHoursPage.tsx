@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { apiFetch } from '../lib/api'
+import { apiFetch, translateApiMessage } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { TIME_ZONE_OPTIONS } from '../lib/timezone'
+import { useTranslation } from 'react-i18next'
 
 type TeamMember = {
   id: string
@@ -70,6 +71,9 @@ const parseHoursToMinutes = (value: string) => {
 
 const SupervisorHoursPage = () => {
   const { session } = useAuth()
+  const { t: i18nT, i18n } = useTranslation()
+  const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
+  const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
   const token = session?.access_token
 
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
@@ -134,7 +138,11 @@ const SupervisorHoursPage = () => {
     try {
       await Promise.all([loadTeamMembers(), loadTeamBankOverview()])
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao carregar dados de horas da equipe')
+      setError(
+        err instanceof Error
+          ? err.message
+          : t('Failed to load team-hours data.', 'Erro ao carregar dados de horas da equipe')
+      )
       setTeamMembers([])
       setTeamBankOverview([])
     } finally {
@@ -165,7 +173,10 @@ const SupervisorHoursPage = () => {
         if (parsedMinutes === null) {
           setTeamErrorByUser((prev) => ({
             ...prev,
-            [userId]: 'Jornada inválida. Use o formato hh:mm (ex.: 8:20).',
+            [userId]: t(
+              'Invalid workday. Use hh:mm format (e.g. 8:20).',
+              'Jornada inválida. Use o formato hh:mm (ex.: 8:20).'
+            ),
           }))
           return
         }
@@ -187,7 +198,10 @@ const SupervisorHoursPage = () => {
       if (Object.keys(body).length === 0) {
         setTeamErrorByUser((prev) => ({
           ...prev,
-          [userId]: 'Preencha ao menos um campo de jornada para salvar.',
+          [userId]: t(
+            'Fill at least one workday field before saving.',
+            'Preencha ao menos um campo de jornada para salvar.'
+          ),
         }))
         return
       }
@@ -200,14 +214,20 @@ const SupervisorHoursPage = () => {
 
       setTeamNoticeByUser((prev) => ({
         ...prev,
-        [userId]: 'Jornada do colaborador atualizada com sucesso.',
+        [userId]: t(
+          'Member workday updated successfully.',
+          'Jornada do colaborador atualizada com sucesso.'
+        ),
       }))
 
       await loadTeamMembers()
     } catch (err) {
       setTeamErrorByUser((prev) => ({
         ...prev,
-        [userId]: err instanceof Error ? err.message : 'Erro ao atualizar jornada do colaborador',
+        [userId]:
+          err instanceof Error
+            ? err.message
+            : t('Failed to update member workday.', 'Erro ao atualizar jornada do colaborador'),
       }))
     } finally {
       setTeamWorkSettingsLoadingByUser((prev) => ({ ...prev, [userId]: false }))
@@ -228,11 +248,19 @@ const SupervisorHoursPage = () => {
         body: { payAllPending: true },
       })
 
-      setTeamBankNotice(response.message || 'Baixa realizada com sucesso.')
+      setTeamBankNotice(
+        response.message
+          ? translateApiMessage(response.message)
+          : t('Payment posted successfully.', 'Baixa realizada com sucesso.')
+      )
       await loadTeamBankOverview()
       await loadTeamMembers()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao dar baixa no banco de horas')
+      setError(
+        err instanceof Error
+          ? err.message
+          : t('Failed to post banked-hours payment.', 'Erro ao dar baixa no banco de horas')
+      )
     } finally {
       setTeamBankPayLoadingByUser((prev) => ({ ...prev, [userId]: false }))
     }
@@ -241,9 +269,14 @@ const SupervisorHoursPage = () => {
   return (
     <section className="grid gap-6">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
-        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">Supervisor</p>
-        <h2 className="mt-4 text-3xl font-semibold text-slate-900">Horas da equipe</h2>
-        <p className="mt-3 text-sm text-slate-600">Gerencie jornada e banco de horas dos colaboradores em um único painel.</p>
+        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">{t('Supervisor', 'Supervisor')}</p>
+        <h2 className="mt-4 text-3xl font-semibold text-slate-900">{t('Team hours', 'Horas da equipe')}</h2>
+        <p className="mt-3 text-sm text-slate-600">
+          {t(
+            'Manage team workday and banked hours in a single panel.',
+            'Gerencie jornada e banco de horas dos colaboradores em um único painel.'
+          )}
+        </p>
       </div>
 
       {error ? (
@@ -252,22 +285,29 @@ const SupervisorHoursPage = () => {
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold text-slate-900">Jornada da equipe</h3>
+          <h3 className="text-lg font-semibold text-slate-900">{t('Team workday', 'Jornada da equipe')}</h3>
           <button
             onClick={() => loadData().catch(() => undefined)}
             className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
           >
-            Atualizar
+            {t('Refresh', 'Atualizar')}
           </button>
         </div>
 
-        <p className="mt-2 text-xs text-slate-500">Defina jornada contratual, horário de início/fim e fuso da equipe.</p>
+        <p className="mt-2 text-xs text-slate-500">
+          {t(
+            'Define contracted workday, start/end time and team timezone.',
+            'Defina jornada contratual, horário de início/fim e fuso da equipe.'
+          )}
+        </p>
 
-        {loading && teamMembers.length === 0 ? <p className="mt-3 text-sm text-slate-500">Carregando equipe...</p> : null}
+        {loading && teamMembers.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-500">{t('Loading team...', 'Carregando equipe...')}</p>
+        ) : null}
 
         <div className="mt-5 space-y-3">
           {teamMembers.length === 0 ? (
-            <p className="text-sm text-slate-500">Nenhum colaborador disponível.</p>
+            <p className="text-sm text-slate-500">{t('No team members available.', 'Nenhum colaborador disponível.')}</p>
           ) : (
             teamMembers.map((member) => (
               <div key={member.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
@@ -294,7 +334,7 @@ const SupervisorHoursPage = () => {
                         },
                       }))
                     }
-                    placeholder="Jornada (hh:mm) ex: 8:20"
+                    placeholder={t('Workday (hh:mm), e.g. 8:20', 'Jornada (hh:mm) ex: 8:20')}
                     className="w-full rounded-full border border-slate-200 bg-white px-3 py-1 text-xs"
                   />
 
@@ -368,7 +408,7 @@ const SupervisorHoursPage = () => {
                     disabled={Boolean(teamWorkSettingsLoadingByUser[member.id])}
                     className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
                   >
-                    Salvar jornada
+                    {t('Save workday', 'Salvar jornada')}
                   </button>
                 </div>
 
@@ -386,22 +426,31 @@ const SupervisorHoursPage = () => {
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold text-slate-900">Banco de horas da equipe</h3>
+          <h3 className="text-lg font-semibold text-slate-900">{t('Team banked hours', 'Banco de horas da equipe')}</h3>
           <button
             onClick={() => loadTeamBankOverview().catch(() => undefined)}
             className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
           >
-            Atualizar
+            {t('Refresh', 'Atualizar')}
           </button>
         </div>
 
-        <p className="mt-2 text-xs text-slate-500">Consulte crédito, devedor, saldo pendente e valor pago por colaborador.</p>
+        <p className="mt-2 text-xs text-slate-500">
+          {t(
+            'Review credit, debt, pending balance and paid value per collaborator.',
+            'Consulte crédito, devedor, saldo pendente e valor pago por colaborador.'
+          )}
+        </p>
         {teamBankNotice ? <p className="mt-2 text-xs text-emerald-600">{teamBankNotice}</p> : null}
 
         <div className="mt-4 space-y-2">
-          {teamBankLoading ? <p className="text-sm text-slate-500">Carregando banco de horas...</p> : null}
+          {teamBankLoading ? (
+            <p className="text-sm text-slate-500">{t('Loading banked hours...', 'Carregando banco de horas...')}</p>
+          ) : null}
           {!teamBankLoading && teamBankOverview.length === 0 ? (
-            <p className="text-sm text-slate-500">Nenhum colaborador com dados de banco de horas.</p>
+            <p className="text-sm text-slate-500">
+              {t('No collaborators with banked-hours data.', 'Nenhum colaborador com dados de banco de horas.')}
+            </p>
           ) : null}
 
           {teamBankOverview.map((row) => (
@@ -416,16 +465,28 @@ const SupervisorHoursPage = () => {
                   disabled={Boolean(teamBankPayLoadingByUser[row.member.id]) || row.bankHours.pendingMinutes <= 0}
                   className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
                 >
-                  {teamBankPayLoadingByUser[row.member.id] ? 'Processando...' : 'Dar baixa pendente'}
+                  {teamBankPayLoadingByUser[row.member.id]
+                    ? t('Processing...', 'Processando...')
+                    : t('Post pending amount', 'Dar baixa pendente')}
                 </button>
               </div>
 
               <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-5">
-                <span className="rounded-full bg-white px-3 py-1">Saldo: {formatMinutesLabel(row.bankHours.balanceMinutes)}</span>
-                <span className="rounded-full bg-white px-3 py-1">Crédito: {formatMinutesLabel(row.bankHours.creditMinutes)}</span>
-                <span className="rounded-full bg-white px-3 py-1">Devedor: {formatMinutesLabel(row.bankHours.debtMinutes)}</span>
-                <span className="rounded-full bg-white px-3 py-1">Pendente: {formatMinutesLabel(row.bankHours.pendingMinutes)}</span>
-                <span className="rounded-full bg-white px-3 py-1">Pago: {formatMinutesLabel(row.bankHours.paidMinutes)}</span>
+                <span className="rounded-full bg-white px-3 py-1">
+                  {t('Balance:', 'Saldo:')} {formatMinutesLabel(row.bankHours.balanceMinutes)}
+                </span>
+                <span className="rounded-full bg-white px-3 py-1">
+                  {t('Credit:', 'Crédito:')} {formatMinutesLabel(row.bankHours.creditMinutes)}
+                </span>
+                <span className="rounded-full bg-white px-3 py-1">
+                  {t('Debt:', 'Devedor:')} {formatMinutesLabel(row.bankHours.debtMinutes)}
+                </span>
+                <span className="rounded-full bg-white px-3 py-1">
+                  {t('Pending:', 'Pendente:')} {formatMinutesLabel(row.bankHours.pendingMinutes)}
+                </span>
+                <span className="rounded-full bg-white px-3 py-1">
+                  {t('Paid:', 'Pago:')} {formatMinutesLabel(row.bankHours.paidMinutes)}
+                </span>
               </div>
             </div>
           ))}

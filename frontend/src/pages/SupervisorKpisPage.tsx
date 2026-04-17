@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
+import { useTranslation } from 'react-i18next'
 
 type KpiPeriod = 'daily' | 'weekly' | 'monthly'
 
@@ -42,6 +43,9 @@ const formatMinutesLabel = (minutes: number) => {
 
 const SupervisorKpisPage = () => {
   const { session } = useAuth()
+  const { t: i18nT, i18n } = useTranslation()
+  const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
+  const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
   const token = session?.access_token
 
   const [period, setPeriod] = useState<KpiPeriod>('weekly')
@@ -62,7 +66,7 @@ const SupervisorKpisPage = () => {
       setPayload(response)
     } catch (err) {
       setPayload(null)
-      setError(err instanceof Error ? err.message : 'Erro ao carregar KPIs')
+      setError(err instanceof Error ? err.message : t('Failed to load KPIs.', 'Erro ao carregar KPIs'))
     } finally {
       setLoading(false)
     }
@@ -80,9 +84,14 @@ const SupervisorKpisPage = () => {
   return (
     <section className="grid gap-6">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
-        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">Supervisor</p>
-        <h2 className="mt-4 text-3xl font-semibold text-slate-900">KPIs de horas</h2>
-        <p className="mt-3 text-sm text-slate-600">Acompanhe previsto, realizado e horas extras por período.</p>
+        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">{t('Supervisor', 'Supervisor')}</p>
+        <h2 className="mt-4 text-3xl font-semibold text-slate-900">{t('Hours KPIs', 'KPIs de horas')}</h2>
+        <p className="mt-3 text-sm text-slate-600">
+          {t(
+            'Track expected, worked and overtime hours by period.',
+            'Acompanhe previsto, realizado e horas extras por período.'
+          )}
+        </p>
       </div>
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
@@ -92,20 +101,20 @@ const SupervisorKpisPage = () => {
             onChange={(event) => setPeriod(event.target.value as KpiPeriod)}
             className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
           >
-            <option value="daily">Diário</option>
-            <option value="weekly">Semanal</option>
-            <option value="monthly">Mensal</option>
+            <option value="daily">{t('Daily', 'Diário')}</option>
+            <option value="weekly">{t('Weekly', 'Semanal')}</option>
+            <option value="monthly">{t('Monthly', 'Mensal')}</option>
           </select>
 
           <button
             onClick={() => loadKpis().catch(() => undefined)}
             className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
           >
-            Atualizar
+            {t('Refresh', 'Atualizar')}
           </button>
         </div>
 
-        {loading ? <p className="mt-3 text-sm text-slate-500">Carregando KPIs...</p> : null}
+        {loading ? <p className="mt-3 text-sm text-slate-500">{t('Loading KPIs...', 'Carregando KPIs...')}</p> : null}
         {error ? <p className="mt-3 text-xs text-rose-600">{error}</p> : null}
       </div>
 
@@ -113,24 +122,24 @@ const SupervisorKpisPage = () => {
         <>
           <div className="grid gap-4 md:grid-cols-3">
             <div className="rounded-3xl border border-slate-100 bg-white/90 p-5 shadow-sm">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Previsto</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('Expected', 'Previsto')}</p>
               <p className="mt-2 text-2xl font-semibold text-slate-900">{formatMinutesLabel(payload.summary.expectedMinutes)}</p>
             </div>
             <div className="rounded-3xl border border-slate-100 bg-white/90 p-5 shadow-sm">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Realizado</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('Worked', 'Realizado')}</p>
               <p className="mt-2 text-2xl font-semibold text-slate-900">{formatMinutesLabel(payload.summary.workedMinutes)}</p>
             </div>
             <div className="rounded-3xl border border-slate-100 bg-white/90 p-5 shadow-sm">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Horas Extras</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('Overtime Hours', 'Horas Extras')}</p>
               <p className="mt-2 text-2xl font-semibold text-rose-700">{formatMinutesLabel(payload.summary.overtimeMinutes)}</p>
             </div>
           </div>
 
           <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
-            <h3 className="text-lg font-semibold text-slate-900">Top horas extras</h3>
+            <h3 className="text-lg font-semibold text-slate-900">{t('Top overtime', 'Top horas extras')}</h3>
             <div className="mt-4 space-y-2 text-sm text-slate-700">
               {topOvertime.length === 0 ? (
-                <p className="text-slate-500">Sem dados no período selecionado.</p>
+                <p className="text-slate-500">{t('No data for the selected period.', 'Sem dados no período selecionado.')}</p>
               ) : (
                 topOvertime.map((item) => (
                   <div key={item.member.id} className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/70 px-3 py-2">
@@ -139,7 +148,7 @@ const SupervisorKpisPage = () => {
                       <p className="text-xs text-slate-500">{item.member.email}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs text-slate-500">HE</p>
+                      <p className="text-xs text-slate-500">{t('OT', 'HE')}</p>
                       <p className="font-semibold text-rose-700">{formatMinutesLabel(item.overtimeMinutes)}</p>
                     </div>
                   </div>

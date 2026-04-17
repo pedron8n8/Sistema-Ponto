@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { apiFetch } from '../lib/api'
+import { apiFetch, translateApiMessage } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from 'react-i18next'
 
@@ -154,11 +154,12 @@ const AdminBankHoursPage = () => {
       })
 
       setNotice(
-        response.message ||
-          t(
-            'Banked-hours payout recorded successfully.',
-            'Baixa de banco de horas registrada com sucesso.'
-          )
+        response.message
+          ? translateApiMessage(response.message)
+          : t(
+              'Banked-hours payout recorded successfully.',
+              'Baixa de banco de horas registrada com sucesso.'
+            )
       )
       await loadData()
     } catch (err) {

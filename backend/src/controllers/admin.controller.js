@@ -437,6 +437,13 @@ const setUserPin = async (req, res) => {
     const { userId } = req.params;
     const { pin } = req.body;
 
+    if (!['SUPERADMIN', 'ADMIN'].includes(req.user.role)) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Apenas ADMIN pode alterar PIN de usuarios',
+      });
+    }
+
     if (!isValidPinFormat(pin)) {
       return res.status(400).json({
         error: 'Bad Request',
@@ -446,13 +453,31 @@ const setUserPin = async (req, res) => {
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, role: true },
+      select: { id: true, email: true, role: true, organizationAdminId: true },
     });
 
     if (!user) {
       return res.status(404).json({
         error: 'Not Found',
         message: 'Usuário não encontrado',
+      });
+    }
+
+    if (
+      req.user.role === 'ADMIN' &&
+      user.id !== req.user.id &&
+      user.organizationAdminId !== req.user.id
+    ) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Voce so pode alterar PIN de usuarios do seu proprio time',
+      });
+    }
+
+    if (req.user.role === 'ADMIN' && !TEAM_MEMBER_ROLES.includes(user.role)) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Admin so pode alterar PIN de usuarios do time (HR, SUPERVISOR, MEMBER).',
       });
     }
 
@@ -496,15 +521,40 @@ const resetUserPin = async (req, res) => {
   try {
     const { userId } = req.params;
 
+    if (!['SUPERADMIN', 'ADMIN'].includes(req.user.role)) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Apenas ADMIN pode resetar PIN de usuarios',
+      });
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, role: true },
+      select: { id: true, email: true, role: true, organizationAdminId: true },
     });
 
     if (!user) {
       return res.status(404).json({
         error: 'Not Found',
         message: 'Usuário não encontrado',
+      });
+    }
+
+    if (
+      req.user.role === 'ADMIN' &&
+      user.id !== req.user.id &&
+      user.organizationAdminId !== req.user.id
+    ) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Voce so pode resetar PIN de usuarios do seu proprio time',
+      });
+    }
+
+    if (req.user.role === 'ADMIN' && !TEAM_MEMBER_ROLES.includes(user.role)) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Admin so pode resetar PIN de usuarios do time (HR, SUPERVISOR, MEMBER).',
       });
     }
 

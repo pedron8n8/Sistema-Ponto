@@ -7,6 +7,7 @@ import { formatDateTimeWithTimeZone, formatDateWithTimeZone } from '../lib/timez
 
 type VacationRequest = {
   id: string
+  requestType?: 'VACATION' | 'DAY_OFF'
   startDate: string
   endDate: string
   status:
@@ -31,13 +32,17 @@ type VacationRequest = {
   }>
 }
 
-const vacationStatusLabel: Record<string, string> = {
-  REQUESTED: 'Aguardando supervisor',
-  SUPERVISOR_APPROVED: 'Aguardando RH',
-  SUPERVISOR_REJECTED: 'Rejeitada pelo supervisor',
-  HR_CONFIRMED: 'Confirmada pelo RH',
-  HR_REJECTED: 'Rejeitada pelo RH',
-  CANCELED: 'Cancelada',
+const getVacationStatusLabel = (
+  status: VacationRequest['status'],
+  t: (en: string, pt: string) => string
+) => {
+  if (status === 'REQUESTED') return t('Awaiting supervisor', 'Aguardando supervisor')
+  if (status === 'SUPERVISOR_APPROVED') return t('Awaiting HR', 'Aguardando RH')
+  if (status === 'SUPERVISOR_REJECTED') return t('Rejected by supervisor', 'Rejeitada pelo supervisor')
+  if (status === 'HR_CONFIRMED') return t('Confirmed by HR', 'Confirmada pelo RH')
+  if (status === 'HR_REJECTED') return t('Rejected by HR', 'Rejeitada pelo RH')
+  if (status === 'CANCELED') return t('Canceled', 'Cancelada')
+  return status
 }
 
 const VacationMemberPage = () => {
@@ -53,10 +58,14 @@ const VacationMemberPage = () => {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [form, setForm] = useState({
+    requestType: 'VACATION' as 'VACATION' | 'DAY_OFF',
     startDate: '',
     endDate: '',
     reason: '',
   })
+
+  const getRequestTypeLabel = (requestType: 'VACATION' | 'DAY_OFF') =>
+    requestType === 'DAY_OFF' ? t('Day off', 'Folga') : t('Vacation', 'Férias')
 
   const loadRequests = async () => {
     if (!token) return
@@ -86,30 +95,46 @@ const VacationMemberPage = () => {
       return
     }
 
+    if (form.requestType === 'DAY_OFF' && form.startDate !== form.endDate) {
+      setError(t('Day-off request must be for a single day.', 'Solicitação de folga deve ser para um único dia.'))
+      return
+    }
+
     try {
       await apiFetch('/vacations/request', {
         token,
         method: 'POST',
         body: {
+          requestType: form.requestType,
           startDate: form.startDate,
           endDate: form.endDate,
           reason: form.reason,
         },
       })
 
-      setNotice(t('Vacation request sent successfully.', 'Solicitação de férias enviada com sucesso.'))
-      setForm({ startDate: '', endDate: '', reason: '' })
+      setNotice(
+        form.requestType === 'DAY_OFF'
+          ? t('Day-off request sent successfully.', 'Solicitação de folga enviada com sucesso.')
+          : t('Vacation request sent successfully.', 'Solicitação de férias enviada com sucesso.')
+      )
+      setForm((prev) => ({ ...prev, startDate: '', endDate: '', reason: '' }))
       await loadRequests()
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Failed to submit vacation request', 'Erro ao solicitar férias'))
+      setError(
+        err instanceof Error
+          ? err.message
+          : t('Failed to submit vacation/day-off request', 'Erro ao solicitar férias/folga')
+      )
     }
   }
 
   return (
     <section className="grid gap-6">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
-        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">{t('Vacation', 'Férias')}</p>
-        <h2 className="mt-4 text-3xl font-semibold text-slate-900">{t('Request and track your vacation.', 'Solicite e acompanhe suas férias.')}</h2>
+        <p className="text-xs uppercase tracking-[0.35em] text-teal-700">{t('Vacation and day off', 'Férias e folga')}</p>
+        <h2 className="mt-4 text-3xl font-semibold text-slate-900">
+          {t('Request and track your vacation/day off.', 'Solicite e acompanhe suas férias/folgas.')}
+        </h2>
         <p className="mt-3 text-sm text-slate-600">
           {t('The flow goes through supervisor approval and final HR confirmation.', 'O fluxo segue para aprovação do supervisor e confirmação final do RH.')}
         </p>
@@ -117,7 +142,20 @@ const VacationMemberPage = () => {
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
         <h3 className="text-lg font-semibold text-slate-900">{t('New request', 'Nova solicitação')}</h3>
-        <div className="mt-4 grid gap-2 md:grid-cols-2">
+        <div className="mt-4 grid gap-2 md:grid-cols-3">
+          <select
+            value={form.requestType}
+            onChange={(event) =>
+              setForm((prev) => ({
+                ...prev,
+                requestType: event.target.value as 'VACATION' | 'DAY_OFF',
+              }))
+            }
+            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+          >
+            <option value="VACATION">{t('Vacation', 'Férias')}</option>
+            <option value="DAY_OFF">{t('Day off', 'Folga')}</option>
+          </select>
           <input
             type="date"
             value={form.startDate}
@@ -134,7 +172,7 @@ const VacationMemberPage = () => {
             value={form.reason}
             onChange={(event) => setForm((prev) => ({ ...prev, reason: event.target.value }))}
             placeholder={t('Reason (optional)', 'Motivo (opcional)')}
-            className="h-24 w-full resize-none rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm md:col-span-2"
+            className="h-24 w-full resize-none rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm md:col-span-3"
           />
         </div>
 
@@ -144,7 +182,11 @@ const VacationMemberPage = () => {
             disabled={loading}
             className="rounded-full bg-teal-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
           >
-            {loading ? t('Sending...', 'Enviando...') : t('Request vacation', 'Solicitar férias')}
+            {loading
+              ? t('Sending...', 'Enviando...')
+              : form.requestType === 'DAY_OFF'
+                ? t('Request day off', 'Solicitar folga')
+                : t('Request vacation', 'Solicitar férias')}
           </button>
           <button
             onClick={() => loadRequests().catch(() => undefined)}
@@ -171,17 +213,10 @@ const VacationMemberPage = () => {
                 {formatDateWithTimeZone(request.endDate, viewTimeZone)}
               </p>
               <p className="mt-1 text-[11px] uppercase tracking-[0.2em] text-slate-500">
-                {t(
-                  {
-                    REQUESTED: 'Awaiting supervisor',
-                    SUPERVISOR_APPROVED: 'Awaiting HR',
-                    SUPERVISOR_REJECTED: 'Rejected by supervisor',
-                    HR_CONFIRMED: 'Confirmed by HR',
-                    HR_REJECTED: 'Rejected by HR',
-                    CANCELED: 'Canceled',
-                  }[request.status] || request.status,
-                  vacationStatusLabel[request.status] || request.status
-                )}
+                {getVacationStatusLabel(request.status, t)}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                {t('Type:', 'Tipo:')} {getRequestTypeLabel(request.requestType || 'VACATION')}
               </p>
               {request.reason ? <p className="mt-1 text-xs text-slate-600">{t('Reason:', 'Motivo:')} {request.reason}</p> : null}
               {request.logs[0] ? (

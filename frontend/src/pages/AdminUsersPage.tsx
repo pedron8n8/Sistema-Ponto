@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { API_BASE, apiFetch, buildIdempotencyHeaders } from '../lib/api'
+import { API_BASE, apiFetch, buildIdempotencyHeaders, translateApiMessage } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from 'react-i18next'
 
@@ -75,6 +75,7 @@ type TeamInviteLinkResponse = {
 }
 
 const TEAM_ROLES: Role[] = ['HR', 'SUPERVISOR', 'MEMBER']
+const PIN_REGEX = /^\d{4,8}$/
 
 const AdminUsersPage = () => {
   const { session, profile } = useAuth()
@@ -108,6 +109,17 @@ const AdminUsersPage = () => {
   const [inviteNotice, setInviteNotice] = useState('')
   const [inviteUrl, setInviteUrl] = useState('')
   const [invitePurchaseUrl, setInvitePurchaseUrl] = useState('')
+
+  const [editingUserId, setEditingUserId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState({
+    name: '',
+    role: 'MEMBER' as InvitableRole,
+    supervisorId: '',
+    pin: '',
+  })
+  const [editSaving, setEditSaving] = useState(false)
+  const [pinSaving, setPinSaving] = useState(false)
+  const [pinResetting, setPinResetting] = useState(false)
 
   const canManageUsers = profile?.role === 'ADMIN'
   const isSuperAdmin = profile?.role === 'SUPERADMIN'
@@ -288,7 +300,7 @@ const AdminUsersPage = () => {
 
       if (response.status === 202 && payload?.idempotency?.ignored) {
         setNotice(
-          payload.message ||
+          (payload.message ? translateApiMessage(payload.message) : '') ||
             t('Duplicate request ignored successfully.', 'Requisicao duplicada ignorada com sucesso.')
         )
         return
@@ -308,16 +320,20 @@ const AdminUsersPage = () => {
         }
 
         throw new Error(
-          payload.message ||
+          translateApiMessage(
+            payload.message ||
             t(
               'Seat limit exceeded for creating a new user.',
               'Limite de cadeiras excedido para criacao de novo usuario.'
             )
+          )
         )
       }
 
       if (!response.ok) {
-        throw new Error(payload.message || t('Could not create user.', 'Erro ao criar usuario.'))
+        throw new Error(
+          translateApiMessage(payload.message || t('Could not create user.', 'Erro ao criar usuario.'))
+        )
       }
 
       setForm({
@@ -375,7 +391,7 @@ const AdminUsersPage = () => {
 
       if (response.status === 202) {
         setInviteNotice(
-          payload?.message ||
+          (payload?.message ? translateApiMessage(payload.message) : '') ||
             t(
               'Duplicate request ignored. Click again to generate a new invite.',
               'Requisicao duplicada ignorada. Clique novamente para gerar novo convite.'
@@ -390,7 +406,11 @@ const AdminUsersPage = () => {
           setInvitePurchaseUrl(purchaseUrl)
         }
 
-        throw new Error(payload?.message || t('Could not generate invite link.', 'Erro ao gerar link de convite.'))
+        throw new Error(
+          translateApiMessage(
+            payload?.message || t('Could not generate invite link.', 'Erro ao gerar link de convite.')
+          )
+        )
       }
 
       const nextInviteUrl = String(payload?.invite?.url || '').trim()
@@ -425,6 +445,117 @@ const AdminUsersPage = () => {
           'Nao foi possivel copiar automaticamente. Copie manualmente no campo.'
         )
       )
+    }
+  }
+
+  const openUserEditor = (user: User) => {
+    const editableRole: InvitableRole = TEAM_ROLES.includes(user.role) ? (user.role as InvitableRole) : 'MEMBER'
+    setEditingUserId(user.id)
+    setEditDraft({
+      name: user.name || '',
+      role: editableRole,
+      supervisorId: user.supervisor?.id || '',
+      pin: '',
+    })
+    setError('')
+    setNotice('')
+  }
+
+  const closeUserEditor = () => {
+    setEditingUserId(null)
+    setEditDraft({
+      name: '',
+      role: 'MEMBER',
+      supervisorId: '',
+      pin: '',
+    })
+  }
+
+  const handleSaveUserData = async () => {
+    if (!token || !canManageUsers || !editingUserId || editSaving) return
+
+    const trimmedName = editDraft.name.trim()
+    if (trimmedName.length < 2) {
+      setError(t('Name must have at least 2 characters.', 'Nome deve ter pelo menos 2 caracteres.'))
+      return
+    }
+
+    setError('')
+    setNotice('')
+    setEditSaving(true)
+
+    try {
+      await apiFetch(`/users/${editingUserId}`, {
+        token,
+        method: 'PATCH',
+        body: {
+          name: trimmedName,
+          role: editDraft.role,
+          supervisorId: editDraft.supervisorId || null,
+        },
+      })
+
+      await refreshTeamData()
+      setNotice(t('User data updated successfully.', 'Dados do usuario atualizados com sucesso.'))
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : t('Could not update user data.', 'Nao foi possivel atualizar os dados do usuario.')
+      )
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  const handleSetUserPin = async () => {
+    if (!token || !canManageUsers || !editingUserId || pinSaving) return
+
+    const normalizedPin = editDraft.pin.replace(/\D/g, '')
+    if (!PIN_REGEX.test(normalizedPin)) {
+      setError(t('PIN must be numeric with 4 to 8 digits.', 'PIN deve ser numerico com 4 a 8 digitos.'))
+      return
+    }
+
+    setError('')
+    setNotice('')
+    setPinSaving(true)
+
+    try {
+      await apiFetch(`/admin/users/${editingUserId}/pin`, {
+        token,
+        method: 'PATCH',
+        body: { pin: normalizedPin },
+      })
+
+      setEditDraft((prev) => ({ ...prev, pin: '' }))
+      setNotice(t('PIN updated successfully.', 'PIN atualizado com sucesso.'))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Could not update PIN.', 'Nao foi possivel atualizar o PIN.'))
+    } finally {
+      setPinSaving(false)
+    }
+  }
+
+  const handleResetUserPin = async () => {
+    if (!token || !canManageUsers || !editingUserId || pinResetting) return
+
+    setError('')
+    setNotice('')
+    setPinResetting(true)
+
+    try {
+      await apiFetch(`/admin/users/${editingUserId}/pin`, {
+        token,
+        method: 'DELETE',
+      })
+
+      setEditDraft((prev) => ({ ...prev, pin: '' }))
+      setNotice(t('PIN reset successfully.', 'PIN resetado com sucesso.'))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Could not reset PIN.', 'Nao foi possivel resetar o PIN.'))
+    } finally {
+      setPinResetting(false)
     }
   }
 
@@ -752,6 +883,15 @@ const AdminUsersPage = () => {
                   {canManageUsers ? (
                     <div className="flex flex-wrap gap-2">
                       <button
+                        onClick={() => (editingUserId === user.id ? closeUserEditor() : openUserEditor(user))}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
+                      >
+                        {editingUserId === user.id
+                          ? t('Close editor', 'Fechar edicao')
+                          : t('Edit data and PIN', 'Editar dados e PIN')}
+                      </button>
+
+                      <button
                         onClick={() => handleDeactivate(user.id)}
                         disabled={user.id === profile?.id}
                         className="rounded-full border border-amber-200 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 disabled:opacity-50"
@@ -769,6 +909,98 @@ const AdminUsersPage = () => {
                     </div>
                   ) : null}
                 </div>
+
+                {canManageUsers && editingUserId === user.id ? (
+                  <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3">
+                    <p className="text-xs text-slate-500">
+                      {t(
+                        'Update user profile and PIN. Password is not changed here.',
+                        'Atualize dados do usuario e PIN. A senha nao e alterada aqui.'
+                      )}
+                    </p>
+
+                    <div className="mt-2 grid gap-2 md:grid-cols-3">
+                      <input
+                        type="text"
+                        value={editDraft.name}
+                        onChange={(event) => setEditDraft((prev) => ({ ...prev, name: event.target.value }))}
+                        placeholder={t('Name', 'Nome')}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm"
+                      />
+
+                      <select
+                        value={editDraft.role}
+                        onChange={(event) =>
+                          setEditDraft((prev) => ({ ...prev, role: event.target.value as InvitableRole }))
+                        }
+                        className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm"
+                      >
+                        <option value="MEMBER">MEMBER</option>
+                        <option value="SUPERVISOR">SUPERVISOR</option>
+                        <option value="HR">HR</option>
+                      </select>
+
+                      <select
+                        value={editDraft.supervisorId}
+                        onChange={(event) =>
+                          setEditDraft((prev) => ({ ...prev, supervisorId: event.target.value }))
+                        }
+                        className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm"
+                      >
+                        <option value="">{t('No supervisor', 'Sem supervisor')}</option>
+                        {supervisorOptions
+                          .filter((option) => option.id !== user.id)
+                          .map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.name} ({option.role})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        onClick={handleSaveUserData}
+                        disabled={editSaving}
+                        className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                      >
+                        {editSaving ? t('Saving...', 'Salvando...') : t('Save data', 'Salvar dados')}
+                      </button>
+                    </div>
+
+                    <div className="mt-3 grid gap-2 md:grid-cols-[1fr_auto_auto]">
+                      <input
+                        type="password"
+                        inputMode="numeric"
+                        value={editDraft.pin}
+                        onChange={(event) =>
+                          setEditDraft((prev) => ({
+                            ...prev,
+                            pin: event.target.value.replace(/\D/g, '').slice(0, 8),
+                          }))
+                        }
+                        placeholder={t('PIN (4-8 digits)', 'PIN (4-8 digitos)')}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm"
+                      />
+
+                      <button
+                        onClick={handleSetUserPin}
+                        disabled={pinSaving}
+                        className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-semibold text-cyan-800 disabled:opacity-60"
+                      >
+                        {pinSaving ? t('Saving PIN...', 'Salvando PIN...') : t('Set PIN', 'Definir PIN')}
+                      </button>
+
+                      <button
+                        onClick={handleResetUserPin}
+                        disabled={pinResetting}
+                        className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 disabled:opacity-60"
+                      >
+                        {pinResetting ? t('Resetting...', 'Resetando...') : t('Reset PIN', 'Resetar PIN')}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ))
           )}
@@ -791,14 +1023,117 @@ const AdminUsersPage = () => {
                   </div>
 
                   {canManageUsers ? (
-                    <button
-                      onClick={() => handleReactivate(user.id)}
-                      className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white"
-                    >
-                      {t('Reactivate', 'Reativar')}
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => (editingUserId === user.id ? closeUserEditor() : openUserEditor(user))}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
+                      >
+                        {editingUserId === user.id
+                          ? t('Close editor', 'Fechar edicao')
+                          : t('Edit data and PIN', 'Editar dados e PIN')}
+                      </button>
+
+                      <button
+                        onClick={() => handleReactivate(user.id)}
+                        className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white"
+                      >
+                        {t('Reactivate', 'Reativar')}
+                      </button>
+                    </div>
                   ) : null}
                 </div>
+
+                {canManageUsers && editingUserId === user.id ? (
+                  <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3">
+                    <p className="text-xs text-slate-500">
+                      {t(
+                        'Update user profile and PIN. Password is not changed here.',
+                        'Atualize dados do usuario e PIN. A senha nao e alterada aqui.'
+                      )}
+                    </p>
+
+                    <div className="mt-2 grid gap-2 md:grid-cols-3">
+                      <input
+                        type="text"
+                        value={editDraft.name}
+                        onChange={(event) => setEditDraft((prev) => ({ ...prev, name: event.target.value }))}
+                        placeholder={t('Name', 'Nome')}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm"
+                      />
+
+                      <select
+                        value={editDraft.role}
+                        onChange={(event) =>
+                          setEditDraft((prev) => ({ ...prev, role: event.target.value as InvitableRole }))
+                        }
+                        className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm"
+                      >
+                        <option value="MEMBER">MEMBER</option>
+                        <option value="SUPERVISOR">SUPERVISOR</option>
+                        <option value="HR">HR</option>
+                      </select>
+
+                      <select
+                        value={editDraft.supervisorId}
+                        onChange={(event) =>
+                          setEditDraft((prev) => ({ ...prev, supervisorId: event.target.value }))
+                        }
+                        className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm"
+                      >
+                        <option value="">{t('No supervisor', 'Sem supervisor')}</option>
+                        {supervisorOptions
+                          .filter((option) => option.id !== user.id)
+                          .map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.name} ({option.role})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        onClick={handleSaveUserData}
+                        disabled={editSaving}
+                        className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                      >
+                        {editSaving ? t('Saving...', 'Salvando...') : t('Save data', 'Salvar dados')}
+                      </button>
+                    </div>
+
+                    <div className="mt-3 grid gap-2 md:grid-cols-[1fr_auto_auto]">
+                      <input
+                        type="password"
+                        inputMode="numeric"
+                        value={editDraft.pin}
+                        onChange={(event) =>
+                          setEditDraft((prev) => ({
+                            ...prev,
+                            pin: event.target.value.replace(/\D/g, '').slice(0, 8),
+                          }))
+                        }
+                        placeholder={t('PIN (4-8 digits)', 'PIN (4-8 digitos)')}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm"
+                      />
+
+                      <button
+                        onClick={handleSetUserPin}
+                        disabled={pinSaving}
+                        className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-semibold text-cyan-800 disabled:opacity-60"
+                      >
+                        {pinSaving ? t('Saving PIN...', 'Salvando PIN...') : t('Set PIN', 'Definir PIN')}
+                      </button>
+
+                      <button
+                        onClick={handleResetUserPin}
+                        disabled={pinResetting}
+                        className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 disabled:opacity-60"
+                      >
+                        {pinResetting ? t('Resetting...', 'Resetando...') : t('Reset PIN', 'Resetar PIN')}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ))
           )}
