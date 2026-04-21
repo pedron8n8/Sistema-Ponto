@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
@@ -108,14 +108,6 @@ const sourceTypeLabel = (sourceType: string, t: (en: string, pt: string) => stri
   return sourceType || '-'
 }
 
-const normalizePlanCode = (value: string | null | undefined) => String(value || '').trim().toUpperCase()
-
-const buildChangePlanLink = (basePath: string | null | undefined) => {
-  const normalizedBasePath = String(basePath || '/app/escolher-plano').trim() || '/app/escolher-plano'
-  const separator = normalizedBasePath.includes('?') ? '&' : '?'
-  return `${normalizedBasePath}${separator}returnTo=${encodeURIComponent('/app/admin/financeiro')}`
-}
-
 const statusBadgeClass = (status: string | null | undefined) => {
   if (String(status || '').toLowerCase() === 'paid') {
     return 'border-emerald-200 bg-emerald-100 text-emerald-800'
@@ -142,10 +134,9 @@ const AdminFinancePage = () => {
   const [invoices, setInvoices] = useState<FinanceInvoice[]>([])
   const [loading, setLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const hasLoadedOnceRef = useRef(false)
-  const refreshInProgressRef = useRef(false)
 
   const loadOverview = useCallback(async () => {
     if (!token) return null
@@ -171,44 +162,11 @@ const AdminFinancePage = () => {
     return response
   }, [token])
 
-  const normalizeFinanceErrorMessage = useCallback(
-    (message: string) => {
-      const normalized = String(message || '').trim()
-      if (!normalized) {
-        return t('Could not load financial data.', 'Nao foi possivel carregar os dados financeiros.')
-      }
-
-      if (!isPt && /muitas\s+requisi[cç][oõ]es/i.test(normalized)) {
-        return 'Too many requests. Try again shortly.'
-      }
-
-      return normalized
-    },
-    [isPt, t]
-  )
-
-  const resolvePlanDisplayName = useCallback(
-    (planCode: string | null | undefined, planName: string | null | undefined) => {
-      const normalizedCode = normalizePlanCode(planCode)
-
-      if (normalizedCode === 'STARTER') return t('Starter', 'Starter')
-      if (normalizedCode === 'GROWTH') return t('Growth', 'Growth')
-      if (normalizedCode === 'PRO') return t('Pro', 'Pro')
-
-      const safeName = String(planName || '').trim()
-      return safeName || '-'
-    },
-    [t]
-  )
-
   const refreshFinanceData = useCallback(
-    async ({ showNotice, runSync }: { showNotice: boolean; runSync: boolean }) => {
+    async (showNotice: boolean) => {
       if (!token || !canAccess) return
-      if (refreshInProgressRef.current) return
 
-      refreshInProgressRef.current = true
-
-      if (!hasLoadedOnceRef.current) {
+      if (!hasLoadedOnce) {
         setLoading(true)
       } else {
         setRefreshing(true)
@@ -220,61 +178,44 @@ const AdminFinancePage = () => {
       }
 
       try {
-        let syncResponse: FinanceSyncResponse | null = null
-
-        if (runSync) {
-          syncResponse = await apiFetch<FinanceSyncResponse>('/users/me/finance/invoices/sync', {
-            token,
-            method: 'POST',
-            body: {},
-            timeoutMs: 30000,
-          })
-        }
+        const syncResponse = await apiFetch<FinanceSyncResponse>('/users/me/finance/invoices/sync', {
+          token,
+          method: 'POST',
+          body: {},
+          timeoutMs: 30000,
+        })
 
         await Promise.all([loadOverview(), loadInvoices()])
 
         if (showNotice) {
-          if (runSync && syncResponse?.stripe?.configured === false) {
-            setNotice(
-              t(
-                'Stripe is not configured. Showing persisted financial records only.',
-                'Stripe nao configurado. Exibindo apenas registros financeiros persistidos.'
-              )
-            )
-          } else {
-            setNotice(t('Financial data updated successfully.', 'Dados financeiros atualizados com sucesso.'))
-          }
+          setNotice(
+            syncResponse?.message ||
+              t('Financial data updated successfully.', 'Dados financeiros atualizados com sucesso.')
+          )
         }
       } catch (err) {
-        const rawMessage =
+        setError(
           err instanceof Error
             ? err.message
             : t('Could not load financial data.', 'Nao foi possivel carregar os dados financeiros.')
-
-        setError(normalizeFinanceErrorMessage(rawMessage))
+        )
       } finally {
-        hasLoadedOnceRef.current = true
-        refreshInProgressRef.current = false
+        setHasLoadedOnce(true)
         setLoading(false)
         setRefreshing(false)
       }
     },
-    [token, canAccess, loadOverview, loadInvoices, normalizeFinanceErrorMessage, t]
+    [token, canAccess, hasLoadedOnce, loadOverview, loadInvoices, t]
   )
 
   useEffect(() => {
     if (!token || !canAccess) return
-    refreshFinanceData({ showNotice: false, runSync: false }).catch(() => undefined)
-  }, [token, canAccess])
+    refreshFinanceData(false).catch(() => undefined)
+  }, [token, canAccess, refreshFinanceData])
 
   const nextBillingLabel = useMemo(
     () => formatDateTime(overview?.plan?.nextBillingAt, locale),
     [overview?.plan?.nextBillingAt, locale]
-  )
-
-  const changePlanLink = useMemo(
-    () => buildChangePlanLink(overview?.actions.changePlanPath),
-    [overview?.actions.changePlanPath]
   )
 
   if (!canAccess) {
@@ -312,7 +253,7 @@ const AdminFinancePage = () => {
           </div>
           <button
             type="button"
-            onClick={() => refreshFinanceData({ showNotice: true, runSync: true })}
+            onClick={() => refreshFinanceData(true)}
             disabled={loading || refreshing}
             className="rounded-full border border-slate-200 bg-white px-5 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700 disabled:opacity-60"
           >
@@ -332,10 +273,8 @@ const AdminFinancePage = () => {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('Active plan', 'Plano ativo')}</p>
-          <p className="mt-2 text-xl font-semibold text-slate-900">
-            {resolvePlanDisplayName(overview?.plan.code, overview?.plan.name)}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">{normalizePlanCode(overview?.plan.code) || '-'}</p>
+          <p className="mt-2 text-xl font-semibold text-slate-900">{overview?.plan.name || '-'}</p>
+          <p className="mt-1 text-xs text-slate-500">{overview?.plan.code || '-'}</p>
           <p className="mt-2 text-sm text-slate-700">{formatCurrency(overview?.plan.monthlyPriceUsd, 'USD')}</p>
         </article>
 
@@ -379,7 +318,7 @@ const AdminFinancePage = () => {
 
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
-            to={changePlanLink}
+            to={overview?.actions.changePlanPath || '/app/escolher-plano'}
             className="rounded-full bg-slate-900 px-5 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white"
           >
             {t('Change plan', 'Mudar plano')}

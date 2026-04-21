@@ -10,6 +10,34 @@ const {
 
 const TEAM_MEMBER_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];
 
+const resolveTenantOwnerId = (user) => {
+  if (!user) return null;
+  if (user.role === 'ADMIN') return user.id;
+  return user.organizationAdminId || null;
+};
+
+const canManageUserWithinTenant = ({ actor, targetUser }) => {
+  if (!actor || !targetUser) return false;
+
+  if (actor.role === 'SUPERADMIN') {
+    return true;
+  }
+
+  if (actor.role === 'ADMIN') {
+    return targetUser.id === actor.id || targetUser.organizationAdminId === actor.id;
+  }
+
+  if (actor.role === 'HR') {
+    const actorTenantOwnerId = resolveTenantOwnerId(actor);
+    const targetTenantOwnerId = resolveTenantOwnerId(targetUser);
+    return Boolean(
+      actorTenantOwnerId && targetTenantOwnerId && actorTenantOwnerId === targetTenantOwnerId
+    );
+  }
+
+  return false;
+};
+
 /**
  * Controller para funcionalidades administrativas e auditoria
  */
@@ -183,6 +211,7 @@ const getUserTimeEntries = async (req, res) => {
         name: true,
         email: true,
         role: true,
+        organizationAdminId: true,
         supervisor: {
           select: {
             id: true,
@@ -197,6 +226,13 @@ const getUserTimeEntries = async (req, res) => {
       return res.status(404).json({
         error: 'Not Found',
         message: 'Usuário não encontrado',
+      });
+    }
+
+    if (!canManageUserWithinTenant({ actor: req.user, targetUser: user })) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você não tem permissão para listar registros deste usuário',
       });
     }
 
@@ -340,6 +376,13 @@ const changeUserSupervisor = async (req, res) => {
       });
     }
 
+    if (!canManageUserWithinTenant({ actor: req.user, targetUser: user })) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você não tem permissão para alterar supervisor deste usuário',
+      });
+    }
+
     // Validações
     if (supervisorId === userId) {
       return res.status(400).json({
@@ -374,6 +417,29 @@ const changeUserSupervisor = async (req, res) => {
         error: 'Not Found',
         message: 'Novo supervisor não encontrado',
       });
+    }
+
+    if (!canManageUserWithinTenant({ actor: req.user, targetUser: newSupervisor })) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você não tem permissão para vincular este supervisor',
+      });
+    }
+
+    if (req.user.role !== 'SUPERADMIN') {
+      const userTenantOwnerId = resolveTenantOwnerId(user);
+      const supervisorTenantOwnerId = resolveTenantOwnerId(newSupervisor);
+
+      if (
+        !userTenantOwnerId ||
+        !supervisorTenantOwnerId ||
+        userTenantOwnerId !== supervisorTenantOwnerId
+      ) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Supervisor deve pertencer ao mesmo tenant do usuário',
+        });
+      }
     }
 
     // Verifica se pode ser supervisor
@@ -1139,13 +1205,20 @@ const payUserBankHours = async (req, res) => {
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, name: true, email: true, role: true },
+      select: { id: true, name: true, email: true, role: true, organizationAdminId: true },
     });
 
     if (!user) {
       return res.status(404).json({
         error: 'Not Found',
         message: 'Usuário não encontrado',
+      });
+    }
+
+    if (!canManageUserWithinTenant({ actor: req.user, targetUser: user })) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você não tem permissão para dar baixa de banco de horas deste usuário',
       });
     }
 

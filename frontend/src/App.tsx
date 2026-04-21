@@ -318,7 +318,7 @@ const App = () => {
                 <Route
                   path="/app/colaborador/ferias"
                   element={
-                    <ProtectedRoute>
+                    <ProtectedRoute allowedPlans={['GROWTH', 'PRO']}>
                       <ShellLayout>
                         <VacationMemberPage />
                       </ShellLayout>
@@ -328,7 +328,7 @@ const App = () => {
                 <Route
                   path="/app/ferias-equipe"
                   element={
-                    <ProtectedRoute allowedRoles={['SUPERVISOR', 'HR', 'ADMIN', 'SUPERADMIN']}>
+                    <ProtectedRoute allowedRoles={['SUPERVISOR', 'HR', 'ADMIN', 'SUPERADMIN']} allowedPlans={['GROWTH', 'PRO']}>
                       <ShellLayout>
                         <VacationSupervisorPage />
                       </ShellLayout>

@@ -1,7 +1,6 @@
 {
   "brand": {
-    "name": "SystemaPonto",
-    "product": "Attendance Intelligence"
+    "name": "OmniPunt"
   },
   "language": {
     "switchLabel": "Language selector",
@@ -21,27 +20,27 @@
   },
   "seo": {
     "landing": {
-      "title": "SystemaPonto | Real-time Attendance Intelligence",
+      "title": "OmniPunt | Real-time Attendance",
       "description": "Track attendance in real time with approvals, geolocation, face verification, terminal QR, reports, and vacation workflows."
     },
     "pricing": {
-      "title": "Pricing | SystemaPonto",
+      "title": "Pricing | OmniPunt",
       "description": "Choose the right monthly plan for your team with transparent seat-based pricing and direct Stripe checkout links."
     },
     "privacy": {
-      "title": "Privacy Policy | SystemaPonto",
-      "description": "Understand how SystemaPonto processes attendance, geolocation, and facial verification data with GDPR/LGPD-ready principles."
+      "title": "Privacy Policy | OmniPunt",
+      "description": "Understand how OmniPunt processes attendance, geolocation, and facial verification data with GDPR/LGPD-ready principles."
     },
     "terms": {
-      "title": "Terms of Service | SystemaPonto",
-      "description": "Review acceptable use, account responsibilities, cancellation, refund policy, and liability limitations for SystemaPonto."
+      "title": "Terms of Service | OmniPunt",
+      "description": "Review acceptable use, account responsibilities, cancellation, refund policy, and liability limitations for OmniPunt."
     },
     "login": {
-      "title": "Login | SystemaPonto",
+      "title": "Login | OmniPunt",
       "description": "Sign in with Google or email and password to access your attendance workspace."
     },
     "signup": {
-      "title": "Create account | SystemaPonto",
+      "title": "Create account | OmniPunt",
       "description": "Create your account with name, email, phone, and password or continue with Google."
     }
   },
@@ -56,8 +55,8 @@
     "terms": "Terms of Service",
     "pricing": "Pricing",
     "contact": "Contact",
-    "contactValue": "support@systemaponto.com",
-    "copyright": "SystemaPonto helps operations teams run accurate attendance workflows."
+    "contactValue": "support@omnipunt.com",
+    "copyright": "OmniPunt helps operations teams run accurate attendance workflows."
   },
   "auth": {
     "eyebrow": "Secure access",
@@ -126,7 +125,7 @@
     "hero": {
       "badge": "Built for attendance operations",
       "headline": "Stop using spreadsheets. Track your team's attendance in real time.",
-      "subheadline": "SystemaPonto combines secure clock events, approvals, and operational analytics in one workflow.",
+      "subheadline": "OmniPunt combines secure clock events, approvals, and operational analytics in one workflow.",
       "primary": "Get started free",
       "secondary": "View pricing"
     },
@@ -220,14 +219,13 @@
     "featurePro3": "Real-time proactive alerts",
     "featurePro4": "API access & 5-year retention",
     "cta": "Subscribe now",
-    "missingCheckout": "Checkout link not configured",
-    "envNote": "Set VITE_STRIPE_LINK_STARTER, VITE_STRIPE_LINK_GROWTH, and VITE_STRIPE_LINK_PRO in your frontend environment."
+    "missingCheckout": "Coming soon"
   },
   "privacy": {
     "eyebrow": "Privacy Policy",
     "title": "Privacy Policy",
     "updated": "Last updated: April 8, 2026",
-    "intro": "This policy explains how SystemaPonto collects, uses, stores, and protects personal data while providing attendance and workforce management services.",
+    "intro": "This policy explains how OmniPunt collects, uses, stores, and protects personal data while providing attendance and workforce management services.",
     "section1Title": "1. Data Collection",
     "section1Body": "We process account data (name, email, role), attendance records (clock-in/out timestamps, notes, status), technical metadata (IP and device information), optional geolocation coordinates, vacation and approval workflow records, and facial verification vectors generated through face-api.js. We do not store raw facial video as a persistent attendance record.",
     "section2Title": "2. Data Usage",
@@ -235,7 +233,7 @@
     "section3Title": "3. Storage and Security",
     "section3Body": "Operational records are stored in PostgreSQL and protected by role-based access controls. Authentication is handled by Supabase. We apply access logging, request metadata tracking, and least-privilege controls to reduce unauthorized access risk.",
     "section4Title": "4. Cookies and Local Storage",
-    "section4Body": "SystemaPonto uses browser storage for session continuity, language preferences, and product behavior required for authenticated usage. These technologies are used for platform functionality, not behavioral advertising.",
+    "section4Body": "OmniPunt uses browser storage for session continuity, language preferences, and product behavior required for authenticated usage. These technologies are used for platform functionality, not behavioral advertising.",
     "section5Title": "5. User Rights (GDPR/LGPD)",
     "section5Body": "Depending on jurisdiction, users may request access, correction, portability, restriction, or deletion of personal data, subject to legal and operational retention requirements. Requests can be routed through the customer account administrator.",
     "section6Title": "6. Data Retention",
@@ -249,7 +247,7 @@
     "eyebrow": "Terms of Service",
     "title": "Terms of Service",
     "updated": "Last updated: April 8, 2026",
-    "intro": "These Terms govern access to and use of SystemaPonto by customer organizations and their authorized users.",
+    "intro": "These Terms govern access to and use of OmniPunt by customer organizations and their authorized users.",
     "section1Title": "1. Acceptable Use",
     "section1Body": "You agree to use the platform only for lawful workforce and attendance management activities. Attempts to bypass security controls, scrape restricted data, or misuse authentication mechanisms are prohibited.",
     "section2Title": "2. Account Responsibilities",
@@ -261,7 +259,7 @@
     "section5Title": "5. Data and Compliance",
     "section5Body": "Customers remain responsible for compliance with local labor and privacy regulations when configuring attendance, geolocation, and biometric verification policies.",
     "section6Title": "6. Limitation of Liability",
-    "section6Body": "To the maximum extent permitted by law, SystemaPonto and its providers are not liable for indirect, incidental, special, consequential, or punitive damages, including lost profits or business interruption.",
+    "section6Body": "To the maximum extent permitted by law, OmniPunt and its providers are not liable for indirect, incidental, special, consequential, or punitive damages, including lost profits or business interruption.",
     "section7Title": "7. Changes to Terms",
     "section7Body": "We may update these Terms periodically. Continued use after an effective update constitutes acceptance of the revised Terms.",
     "section8Title": "8. Contact",

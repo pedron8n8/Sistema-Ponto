@@ -6,6 +6,7 @@ import { TIME_ZONE_OPTIONS } from '../lib/timezone'
 import { splitMessageLink } from '../lib/errorMessage'
 import { useTranslation } from 'react-i18next'
 import LanguageSwitcher from './LanguageSwitcher'
+import BrandWordmark from './BrandWordmark'
 import UserAvatar from './UserAvatar'
 
 const iconClassName = 'h-5 w-5 shrink-0'
@@ -116,11 +117,15 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
       items: [
         { to: '/app/colaborador', label: t('Time clock', 'Ponto'), icon: <TimeClockIcon /> },
         { to: '/app/colaborador/historico', label: t('History', 'Historico'), icon: <HistoryIcon /> },
-        {
-          to: '/app/colaborador/ferias',
-          label: t('My vacation/day off', 'Minhas ferias/folgas'),
-          icon: <TeamVacationIcon />, // Usando o icone de equipe
-        },
+        ...(isGrowthOrBetter
+          ? [
+              {
+                to: '/app/colaborador/ferias',
+                label: t('My vacations', 'Minhas Ferias'),
+                icon: <TeamVacationIcon />, // Usando o icone de equipe
+              },
+            ]
+          : []),
       ],
     },
     {
@@ -147,11 +152,15 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
           label: t('Supervisor Pendings', 'Supervisor Pendings'),
           icon: <SupervisorIcon />,
         },
-        {
-          to: '/app/ferias-equipe',
-          label: t('Team vacation/day off', 'Ferias/folgas da equipe'),
-          icon: <TeamVacationIcon />,
-        },
+        ...(isGrowthOrBetter
+          ? [
+              {
+                to: '/app/ferias-equipe',
+                label: t('Team vacation', 'Ferias equipe'),
+                icon: <TeamVacationIcon />,
+              },
+            ]
+          : []),
       ],
     },
     {
@@ -232,10 +241,7 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
             >
               <UserAvatar name={profile?.name} photoUrl={profile?.photoUrl} size="sm" />
               <div className="truncate transition-all duration-200 md:max-w-0 md:opacity-0 md:group-hover/sidebar:max-w-[170px] md:group-hover/sidebar:opacity-100 md:group-focus-within/sidebar:max-w-[170px] md:group-focus-within/sidebar:opacity-100">
-                <p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">
-                  {t('Time tracking', 'Sistema de ponto')}
-                </p>
-                <p className="text-sm font-semibold text-slate-800">SystemaPonto</p>
+                <BrandWordmark className="text-xl" />
               </div>
             </Link>
 
@@ -360,8 +366,7 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
                 <div className="mb-3 flex items-center gap-3">
                   <UserAvatar name={profile?.name} photoUrl={profile?.photoUrl} size="sm" />
                   <div>
-                    <p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">{t('Time tracking', 'Sistema de ponto')}</p>
-                    <p className="text-sm font-semibold text-slate-800">SystemaPonto</p>
+                    <BrandWordmark className="text-lg" />
                   </div>
                 </div>
                 <div className="grid gap-2">

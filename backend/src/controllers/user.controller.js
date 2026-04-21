@@ -173,6 +173,39 @@ const parseOptionalBoolean = (value) => {
   return { provided: true, value: null };
 };
 
+const WEAK_PASSWORD_DENYLIST = new Set([
+  '123456',
+  '12345678',
+  'password',
+  'qwerty',
+  'admin',
+  'admin123',
+  'teste@123456',
+]);
+
+const validateStrongPassword = (password) => {
+  const normalizedPassword = String(password || '');
+
+  if (normalizedPassword.length < 12) {
+    return 'Senha deve ter no minimo 12 caracteres';
+  }
+
+  const hasUppercase = /[A-Z]/.test(normalizedPassword);
+  const hasLowercase = /[a-z]/.test(normalizedPassword);
+  const hasDigit = /\d/.test(normalizedPassword);
+  const hasSpecial = /[^A-Za-z0-9]/.test(normalizedPassword);
+
+  if (!hasUppercase || !hasLowercase || !hasDigit || !hasSpecial) {
+    return 'Senha deve conter letra maiuscula, letra minuscula, numero e caractere especial';
+  }
+
+  if (WEAK_PASSWORD_DENYLIST.has(normalizedPassword.toLowerCase())) {
+    return 'Senha muito fraca. Escolha uma senha mais robusta';
+  }
+
+  return null;
+};
+
 const resolveSelfServicePlanSelection = ({ planCode, seatLimit, seats }) => {
   const normalizedPlanCode = String(planCode || '').trim().toUpperCase();
   const selectedPlan = SELF_SERVICE_ADMIN_PLAN_CATALOG[normalizedPlanCode];
@@ -414,10 +447,18 @@ const createUser = async (req, res) => {
       });
     }
 
-    if (!password || password.length < 6) {
+    if (!password) {
       return res.status(400).json({
         error: 'Bad Request',
-        message: 'Senha deve ter pelo menos 6 caracteres',
+        message: 'Senha e obrigatoria',
+      });
+    }
+
+    const passwordValidationError = validateStrongPassword(password);
+    if (passwordValidationError) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: passwordValidationError,
       });
     }
 
@@ -1457,8 +1498,35 @@ const getUserById = async (req, res) => {
 
     const user = await prisma.user.findUnique({
       where: { id },
-      include: {
-        supervisor: {
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isActive: true,
+        phone: true,
+        photoPath: true,
+        photoUpdatedAt: true,
+        contractDailyMinutes: true,
+        workdayStartTime: true,
+        workdayEndTime: true,
+        hourlyRate: true,
+        timeZone: true,
+        bankHoursBalanceMinutes: true,
+        bankHoursLimitMinutes: true,
+        bankHoursExpiryMonths: true,
+        bankHoursPolicyCode: true,
+        createdAt: true,
+        supervisorId: true,
+        organizationAdminId: true,
+        adminSeatLimit: true,
+        adminExtraSeatPrice: true,
+        adminActiveSeats: true,
+        adminExtraSeatsContracted: true,
+        adminPlanId: true,
+        adminPlanStatus: true,
+        adminPlanLinkedAt: true,
+        organizationAdmin: {
           select: {
             id: true,
             email: true,
@@ -1466,7 +1534,7 @@ const getUserById = async (req, res) => {
             role: true,
           },
         },
-        organizationAdmin: {
+        supervisor: {
           select: {
             id: true,
             email: true,
@@ -1492,12 +1560,7 @@ const getUserById = async (req, res) => {
             isActive: true,
           },
         },
-        _count: {
-          select: {
-            timeEntries: true,
-            reviewedLogs: true,
-          },
-        },
+        _count: true,
       },
     });
 
@@ -2015,13 +2078,57 @@ const getMyCompleteProfile = async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      include: {
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isActive: true,
+        phone: true,
+        photoPath: true,
+        photoUpdatedAt: true,
+        contractDailyMinutes: true,
+        workdayStartTime: true,
+        workdayEndTime: true,
+        hourlyRate: true,
+        timeZone: true,
+        bankHoursBalanceMinutes: true,
+        bankHoursLimitMinutes: true,
+        bankHoursExpiryMonths: true,
+        bankHoursPolicyCode: true,
+        createdAt: true,
+        supervisorId: true,
+        organizationAdminId: true,
+        adminSeatLimit: true,
+        adminExtraSeatPrice: true,
+        adminActiveSeats: true,
+        adminExtraSeatsContracted: true,
+        adminPlanId: true,
+        adminPlanStatus: true,
+        adminPlanLinkedAt: true,
         supervisor: {
           select: {
             id: true,
             name: true,
             email: true,
             role: true,
+          },
+        },
+        organizationAdmin: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+          },
+        },
+        adminPlan: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            monthlyPrice: true,
+            isActive: true,
           },
         },
       },
@@ -2081,11 +2188,14 @@ const updateMyAccount = async (req, res) => {
       }
     }
 
-    if (normalizedPassword !== undefined && normalizedPassword.length > 0 && normalizedPassword.length < 6) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Senha deve ter pelo menos 6 caracteres',
-      });
+    if (normalizedPassword !== undefined && normalizedPassword.length > 0) {
+      const passwordValidationError = validateStrongPassword(normalizedPassword);
+      if (passwordValidationError) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: passwordValidationError,
+        });
+      }
     }
 
     if (normalizedPhone !== undefined && normalizedPhone.length > 0 && normalizedPhone.length < 3) {
@@ -2471,6 +2581,15 @@ const chooseMyPlan = async (req, res) => {
 
       selectedPlan = selection.selectedPlan;
       requestedSeatLimit = selection.requestedSeatLimit;
+      const stripeConfigured = Boolean(process.env.STRIPE_SECRET_KEY);
+
+      if (stripeConfigured && !shouldStartCheckout) {
+        return res.status(402).json({
+          error: 'Payment Required',
+          message: 'Conclua o checkout Stripe para ativar o plano selecionado.',
+          reason: 'CHECKOUT_REQUIRED',
+        });
+      }
 
       if (shouldStartCheckout) {
         const checkout = await createBasePlanCheckoutSession({

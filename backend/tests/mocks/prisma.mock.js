@@ -65,37 +65,7 @@ const mockPrisma = {
     count: jest.fn(),
     groupBy: jest.fn(),
   },
-  vacationRequest: {
-    findUnique: jest.fn(),
-    findFirst: jest.fn(),
-    findMany: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
-    count: jest.fn(),
-    groupBy: jest.fn(),
-  },
-  vacationApprovalLog: {
-    findUnique: jest.fn(),
-    findFirst: jest.fn(),
-    findMany: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
-    count: jest.fn(),
-    groupBy: jest.fn(),
-  },
-  $transaction: jest.fn((input) => {
-    if (typeof input === 'function') {
-      return input(mockPrisma);
-    }
-
-    if (Array.isArray(input)) {
-      return Promise.all(input);
-    }
-
-    return Promise.resolve(input);
-  }),
+  $transaction: jest.fn((callbacks) => Promise.all(callbacks)),
   $connect: jest.fn(),
   $disconnect: jest.fn(),
 };

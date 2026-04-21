@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
 import LanguageSwitcher from '../components/LanguageSwitcher'
+import BrandWordmark from '../components/BrandWordmark'
 import PageMeta from '../components/PageMeta'
 import { apiFetch } from '../lib/api'
 import { splitMessageLink } from '../lib/errorMessage'
@@ -143,10 +144,9 @@ const Signup = () => {
 
       <div className="mx-auto flex w-full max-w-5xl items-center justify-between">
         <div className="flex items-center gap-3">
-          <span className="h-10 w-10 rounded-2xl bg-teal-700/90" />
+          <span className="h-10 w-10 rounded-2xl bg-gradient-to-br from-teal-500 to-sky-500 shadow-[0_8px_16px_-6px_rgba(14,116,144,0.4)]" />
           <div className="leading-tight">
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-500">{t('brand.product')}</p>
-            <h1 className="text-xl font-semibold text-slate-900">{t('brand.name')}</h1>
+            <BrandWordmark className="text-2xl" />
           </div>
         </div>
         <span className="text-xs uppercase tracking-[0.3em] text-slate-400">

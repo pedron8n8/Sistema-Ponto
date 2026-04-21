@@ -8,6 +8,8 @@
   --surface-strong: #ede9e3;
   --accent: #0f766e;
   --accent-strong: #115e59;
+  --brand-omni: var(--accent);
+  --brand-punt: #0284c7;
   --ring: rgba(15, 118, 110, 0.35);
   font-family: "IBM Plex Sans", "Space Grotesk", sans-serif;
 }

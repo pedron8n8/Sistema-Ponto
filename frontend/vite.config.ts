@@ -10,13 +10,13 @@ export default defineConfig({
       includeAssets: ['pwa-icon.svg', 'pwa-maskable.svg'],
       manifest: {
         id: '/',
-        name: 'Sistema Ponto',
-        short_name: 'Ponto',
-        description: 'Controle de ponto com aprovacoes e relatorios.',
+        name: 'OmniPunt',
+        short_name: 'OmniPunt',
+        description: 'OmniPunt: controle de ponto com aprovacoes e relatorios.',
         lang: 'pt-BR',
         start_url: '/',
         scope: '/',
-        theme_color: '#0f172a',
+        theme_color: '#0f766e',
         background_color: '#f5f3ef',
         display: 'standalone',
         icons: [

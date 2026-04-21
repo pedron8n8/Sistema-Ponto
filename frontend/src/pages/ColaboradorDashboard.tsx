@@ -107,7 +107,8 @@ const FACE_TURN_DELTA = 0.08
 const FACE_VERTICAL_CENTER_MIN = 0.44
 const FACE_VERTICAL_CENTER_MAX = 0.56
 const FACE_VERTICAL_TURN_DELTA = 0.06
-const OFFLINE_CLOCK_QUEUE_KEY = 'systemaponto.offlineClockQueue'
+const OFFLINE_CLOCK_QUEUE_KEY = 'omnipunt.offlineClockQueue'
+const LEGACY_OFFLINE_CLOCK_QUEUE_KEY = 'systemaponto.offlineClockQueue'
 
 const getBarcodeDetector = () =>
   (window as Window & { BarcodeDetector?: BarcodeDetectorStatic }).BarcodeDetector
@@ -219,11 +220,20 @@ const ColaboradorDashboard = () => {
 
   const readOfflineQueue = (): OfflineClockAction[] => {
     try {
-      const raw = window.localStorage.getItem(OFFLINE_CLOCK_QUEUE_KEY)
+      const currentRaw = window.localStorage.getItem(OFFLINE_CLOCK_QUEUE_KEY)
+      const legacyRaw = currentRaw ? null : window.localStorage.getItem(LEGACY_OFFLINE_CLOCK_QUEUE_KEY)
+      const raw = currentRaw || legacyRaw
       if (!raw) return []
       const parsed = JSON.parse(raw)
       if (!Array.isArray(parsed)) return []
-      return parsed.filter((item) => item?.id && item?.path && item?.body)
+      const sanitized = parsed.filter((item) => item?.id && item?.path && item?.body)
+
+      if (!currentRaw && legacyRaw) {
+        window.localStorage.setItem(OFFLINE_CLOCK_QUEUE_KEY, JSON.stringify(sanitized))
+        window.localStorage.removeItem(LEGACY_OFFLINE_CLOCK_QUEUE_KEY)
+      }
+
+      return sanitized
     } catch (_error) {
       return []
     }
@@ -231,6 +241,7 @@ const ColaboradorDashboard = () => {
 
   const writeOfflineQueue = (queue: OfflineClockAction[]) => {
     window.localStorage.setItem(OFFLINE_CLOCK_QUEUE_KEY, JSON.stringify(queue))
+    window.localStorage.removeItem(LEGACY_OFFLINE_CLOCK_QUEUE_KEY)
     setPendingSyncCount(queue.length)
   }
 

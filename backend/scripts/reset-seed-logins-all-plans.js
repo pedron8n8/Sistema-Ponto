@@ -11,75 +11,6 @@ const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-const SEED_USER_DEFINITIONS = [
-  {
-    key: 'ADMIN',
-    emailEnv: 'SEED_ADMIN_EMAIL',
-    passwordEnv: 'SEED_ADMIN_PASSWORD',
-    nameEnv: 'SEED_ADMIN_NAME',
-    defaultName: 'Administrador',
-    role: 'ADMIN',
-  },
-  {
-    key: 'RH',
-    emailEnv: 'SEED_RH_EMAIL',
-    passwordEnv: 'SEED_RH_PASSWORD',
-    nameEnv: 'SEED_RH_NAME',
-    defaultName: 'RH Empresa',
-    role: 'HR',
-  },
-  {
-    key: 'SUPERVISOR1',
-    emailEnv: 'SEED_SUPERVISOR1_EMAIL',
-    passwordEnv: 'SEED_SUPERVISOR1_PASSWORD',
-    nameEnv: 'SEED_SUPERVISOR1_NAME',
-    defaultName: 'Supervisor 1',
-    role: 'SUPERVISOR',
-  },
-  {
-    key: 'SUPERVISOR2',
-    emailEnv: 'SEED_SUPERVISOR2_EMAIL',
-    passwordEnv: 'SEED_SUPERVISOR2_PASSWORD',
-    nameEnv: 'SEED_SUPERVISOR2_NAME',
-    defaultName: 'Supervisor 2',
-    role: 'SUPERVISOR',
-  },
-  {
-    key: 'MEMBER1',
-    emailEnv: 'SEED_MEMBER1_EMAIL',
-    passwordEnv: 'SEED_MEMBER1_PASSWORD',
-    nameEnv: 'SEED_MEMBER1_NAME',
-    defaultName: 'Colaborador 1',
-    role: 'MEMBER',
-  },
-  {
-    key: 'MEMBER2',
-    emailEnv: 'SEED_MEMBER2_EMAIL',
-    passwordEnv: 'SEED_MEMBER2_PASSWORD',
-    nameEnv: 'SEED_MEMBER2_NAME',
-    defaultName: 'Colaborador 2',
-    role: 'MEMBER',
-  },
-];
-
-const CREATE_ORDER = [
-  'ADMIN',
-  'SUPERVISOR1',
-  'SUPERVISOR2',
-  'MEMBER1',
-  'MEMBER2',
-  'RH',
-];
-
-const parsedExtraAdminSeatMonthlyUsd = Number(process.env.EXTRA_ADMIN_SEAT_MONTHLY_USD);
-const EXTRA_ADMIN_SEAT_MONTHLY_USD = Number(
-  (
-    Number.isFinite(parsedExtraAdminSeatMonthlyUsd) && parsedExtraAdminSeatMonthlyUsd >= 0
-      ? parsedExtraAdminSeatMonthlyUsd
-      : 7.5
-  ).toFixed(2)
-);
-
 const ADMIN_PLAN_CATALOG = {
   STARTER: {
     code: 'STARTER',
@@ -101,23 +32,46 @@ const ADMIN_PLAN_CATALOG = {
   },
 };
 
-const resolveSeedPlanConfig = () => {
-  const defaultPlanCode = String(process.env.DEFAULT_ADMIN_PLAN_CODE || 'STARTER').trim().toUpperCase();
-  return ADMIN_PLAN_CATALOG[defaultPlanCode] || ADMIN_PLAN_CATALOG.STARTER;
-};
+const PLAN_CODES = ['STARTER', 'GROWTH', 'PRO'];
+const PLAN_ROLE_SPECS = [
+  { role: 'ADMIN', localPart: 'admin', defaultNamePrefix: 'Admin' },
+  { role: 'HR', localPart: 'hr', defaultNamePrefix: 'HR' },
+  { role: 'SUPERVISOR', localPart: 'supervisor', defaultNamePrefix: 'Supervisor' },
+  { role: 'MEMBER', localPart: 'member', defaultNamePrefix: 'Collaborator' },
+];
 
-const buildSeedPaidInvoices = ({ adminUserId, adminEmail, planConfig }) => {
+const CREATE_ORDER = [
+  ...PLAN_CODES.flatMap((planCode) => PLAN_ROLE_SPECS.map((spec) => `${planCode}_${spec.role}`)),
+];
+
+const normalize = (value) => String(value || '').trim();
+
+const defaultSeedPassword =
+  normalize(process.env.SEED_DEFAULT_PASSWORD) ||
+  normalize(process.env.PENTEST_STRONG_DEFAULT_PASSWORD) ||
+  'Rhea!2026#SeedStrong';
+const defaultEmailDomain = normalize(process.env.SEED_EMAIL_DOMAIN).toLowerCase() || 'empresa.com';
+
+const parsedExtraAdminSeatMonthlyUsd = Number(process.env.EXTRA_ADMIN_SEAT_MONTHLY_USD);
+const EXTRA_ADMIN_SEAT_MONTHLY_USD = Number(
+  (
+    Number.isFinite(parsedExtraAdminSeatMonthlyUsd) && parsedExtraAdminSeatMonthlyUsd >= 0
+      ? parsedExtraAdminSeatMonthlyUsd
+      : 7.5
+  ).toFixed(2)
+);
+
+const buildSeedPaidInvoices = ({ adminUserId, adminEmail, planConfig, additionalSeats }) => {
   const now = new Date();
   const currentCyclePaidAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 10, 13, 0, 0));
   const previousCyclePaidAt = new Date(currentCyclePaidAt);
   previousCyclePaidAt.setUTCMonth(previousCyclePaidAt.getUTCMonth() - 1);
 
-  const additionalSeats = 2;
   const basePlanAmount = Number(planConfig.monthlyPrice.toFixed(2));
   const additionalSeatsAmount = Number((additionalSeats * EXTRA_ADMIN_SEAT_MONTHLY_USD).toFixed(2));
   const invoiceIdSuffix = String(adminUserId || 'admin').replace(/[^a-zA-Z0-9]/g, '').slice(0, 16) || 'admin';
 
-  return [
+  const invoices = [
     {
       sourceType: 'BASE_PLAN',
       stripeSessionId: `seed_base_plan_prev_${invoiceIdSuffix}`,
@@ -152,7 +106,10 @@ const buildSeedPaidInvoices = ({ adminUserId, adminEmail, planConfig }) => {
       sessionCreatedAt: currentCyclePaidAt,
       paidAt: currentCyclePaidAt,
     },
-    {
+  ];
+
+  if (additionalSeats > 0) {
+    invoices.push({
       sourceType: 'ADDITIONAL_SEATS',
       stripeSessionId: `seed_extra_seats_curr_${invoiceIdSuffix}`,
       stripeInvoiceId: `seed_inv_extra_curr_${invoiceIdSuffix}`,
@@ -168,22 +125,42 @@ const buildSeedPaidInvoices = ({ adminUserId, adminEmail, planConfig }) => {
       customerEmail: adminEmail,
       sessionCreatedAt: currentCyclePaidAt,
       paidAt: currentCyclePaidAt,
-    },
-  ];
+    });
+  }
+
+  return invoices;
 };
 
-const normalize = (value) => String(value || '').trim();
+const buildPlanSeeds = () => {
+  const users = [];
 
-const getSeedUsersFromEnv = () => {
-  return SEED_USER_DEFINITIONS.map((definition) => ({
-    key: definition.key,
-    role: definition.role,
-    email: normalize(process.env[definition.emailEnv]),
-    password: normalize(process.env[definition.passwordEnv]),
-    name: normalize(process.env[definition.nameEnv]) || definition.defaultName,
-    emailEnv: definition.emailEnv,
-    passwordEnv: definition.passwordEnv,
-  }));
+  for (const planCode of PLAN_CODES) {
+    const planConfig = ADMIN_PLAN_CATALOG[planCode];
+    const planSlug = planCode.toLowerCase();
+
+    for (const spec of PLAN_ROLE_SPECS) {
+      const envPrefix = `SEED_${planCode}_${spec.role}`;
+      const defaultEmail = `${planSlug}.${spec.localPart}@${defaultEmailDomain}`;
+      const defaultName = `${spec.defaultNamePrefix} ${planConfig.name}`;
+
+      users.push({
+        key: `${planCode}_${spec.role}`,
+        planCode,
+        role: spec.role,
+        email: normalize(process.env[`${envPrefix}_EMAIL`]) || defaultEmail,
+        password: normalize(process.env[`${envPrefix}_PASSWORD`]) || defaultSeedPassword,
+        name: normalize(process.env[`${envPrefix}_NAME`]) || defaultName,
+        emailEnv: `${envPrefix}_EMAIL`,
+        passwordEnv: `${envPrefix}_PASSWORD`,
+      });
+    }
+  }
+
+  return users;
+};
+
+const buildSeedUsers = () => {
+  return buildPlanSeeds();
 };
 
 const validateRequiredConfiguration = (seedUsers) => {
@@ -198,17 +175,26 @@ const validateRequiredConfiguration = (seedUsers) => {
   }
 
   for (const user of seedUsers) {
-    if (!user.email) {
+    if (!normalize(user.email)) {
       missing.push(user.emailEnv);
     }
 
-    if (!user.password) {
+    if (!normalize(user.password)) {
       missing.push(user.passwordEnv);
     }
   }
 
+  const seenEmails = new Set();
+  for (const user of seedUsers) {
+    const lowerEmail = user.email.toLowerCase();
+    if (seenEmails.has(lowerEmail)) {
+      throw new Error(`Email duplicado no seed: ${user.email}`);
+    }
+    seenEmails.add(lowerEmail);
+  }
+
   if (missing.length > 0) {
-    throw new Error(`Variáveis de ambiente ausentes: ${missing.join(', ')}`);
+    throw new Error(`Variaveis de ambiente ausentes: ${missing.join(', ')}`);
   }
 };
 
@@ -230,7 +216,7 @@ const listAllSupabaseUsers = async (supabaseAdmin) => {
     const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage });
 
     if (error) {
-      throw new Error(`Erro ao listar usuários do Supabase: ${error.message}`);
+      throw new Error(`Erro ao listar usuarios do Supabase: ${error.message}`);
     }
 
     const pageUsers = data?.users || [];
@@ -258,14 +244,14 @@ const deleteExistingSeedUsersInSupabase = async (supabaseAdmin, seedUsers) => {
     const { error } = await supabaseAdmin.auth.admin.deleteUser(user.id);
 
     if (error) {
-      throw new Error(`Erro ao excluir usuário ${user.email} (${user.id}) no Supabase: ${error.message}`);
+      throw new Error(`Erro ao excluir usuario ${user.email} (${user.id}) no Supabase: ${error.message}`);
     }
 
-    console.log(`🗑️ Supabase: usuário removido -> ${user.email} (${user.id})`);
+    console.log(`Supabase user removed: ${user.email} (${user.id})`);
   }
 
   if (usersToDelete.length === 0) {
-    console.log('ℹ️ Supabase: nenhum usuário seed existente para excluir.');
+    console.log('Supabase: no previous seed users to remove.');
   }
 };
 
@@ -277,7 +263,7 @@ const createSeedUsersInSupabase = async (supabaseAdmin, seedUsers) => {
     const user = byKey.get(key);
 
     if (!user) {
-      throw new Error(`Usuário ${key} não encontrado na configuração de seed.`);
+      throw new Error(`Usuario ${key} nao encontrado na configuracao de seed.`);
     }
 
     const metadata = {
@@ -285,18 +271,22 @@ const createSeedUsersInSupabase = async (supabaseAdmin, seedUsers) => {
       role: user.role,
     };
 
-    if (['SUPERVISOR', 'MEMBER', 'HR'].includes(user.role)) {
-      const admin = createdByKey.get('ADMIN');
+    if (user.planCode) {
+      metadata.planCode = user.planCode;
+    }
+
+    if (['HR', 'SUPERVISOR', 'MEMBER'].includes(user.role)) {
+      const admin = createdByKey.get(`${user.planCode}_ADMIN`);
       if (!admin) {
-        throw new Error('ADMIN precisa ser criado antes de SUPERVISOR/MEMBER/HR.');
+        throw new Error(`ADMIN do plano ${user.planCode} precisa ser criado antes de ${user.role}.`);
       }
       metadata.organizationAdminId = admin.id;
     }
 
     if (user.role === 'MEMBER') {
-      const supervisor = createdByKey.get('SUPERVISOR1');
+      const supervisor = createdByKey.get(`${user.planCode}_SUPERVISOR`);
       if (!supervisor) {
-        throw new Error('SUPERVISOR1 precisa ser criado antes dos MEMBERs.');
+        throw new Error(`SUPERVISOR do plano ${user.planCode} precisa ser criado antes de MEMBER.`);
       }
       metadata.supervisorId = supervisor.id;
     }
@@ -309,12 +299,12 @@ const createSeedUsersInSupabase = async (supabaseAdmin, seedUsers) => {
     });
 
     if (error) {
-      throw new Error(`Erro ao criar usuário ${user.email} no Supabase: ${error.message}`);
+      throw new Error(`Erro ao criar usuario ${user.email} no Supabase: ${error.message}`);
     }
 
     const created = data?.user;
     if (!created?.id) {
-      throw new Error(`Supabase não retornou ID para ${user.email}.`);
+      throw new Error(`Supabase nao retornou ID para ${user.email}.`);
     }
 
     if (user.role === 'ADMIN') {
@@ -331,20 +321,18 @@ const createSeedUsersInSupabase = async (supabaseAdmin, seedUsers) => {
     }
 
     createdByKey.set(user.key, {
+      ...user,
       id: created.id,
-      email: created.email,
-      name: user.name,
-      role: user.role,
+      email: normalize(created.email || user.email),
     });
 
-    console.log(`✅ Supabase: usuário criado -> ${created.email} (${created.id})`);
+    console.log(`Supabase user created: ${created.email} (${created.id})`);
   }
 
   return createdByKey;
 };
 
 const resetLocalUserDomain = async () => {
-  // Limpa tabelas dependentes antes de recriar usuários com novos IDs.
   await prisma.vacationApprovalLog.deleteMany();
   await prisma.vacationRequest.deleteMany();
   await prisma.approvalLog.deleteMany();
@@ -359,18 +347,15 @@ const resetLocalUserDomain = async () => {
     },
   });
 
-  console.log('🗑️ Banco local: dados de usuários não-SUPERADMIN e dependências removidos.');
+  console.log('Local database: non-superadmin user domain data removed.');
 };
 
-const seedLocalUsers = async (createdByKey) => {
-  const seedPlanConfig = resolveSeedPlanConfig();
-  const seedExtraSeatsContracted = 2;
-  const seedTeamActiveSeats = 5;
-  const seedSeatLimit = seedPlanConfig.maxSeats + seedExtraSeatsContracted;
+const upsertAdminPlans = async () => {
+  const plans = {};
 
-  const planByCode = {};
-  for (const planConfig of Object.values(ADMIN_PLAN_CATALOG)) {
-    const upsertedPlan = await prisma.adminPlan.upsert({
+  for (const planCode of PLAN_CODES) {
+    const planConfig = ADMIN_PLAN_CATALOG[planCode];
+    const plan = await prisma.adminPlan.upsert({
       where: { code: planConfig.code },
       update: {
         name: planConfig.name,
@@ -387,136 +372,137 @@ const seedLocalUsers = async (createdByKey) => {
       },
     });
 
-    planByCode[planConfig.code] = upsertedPlan;
+    plans[planCode] = plan;
   }
 
-  const selectedAdminPlan = planByCode[seedPlanConfig.code] || planByCode.STARTER;
-
-  const admin = createdByKey.get('ADMIN');
-  const rh = createdByKey.get('RH');
-  const supervisor1 = createdByKey.get('SUPERVISOR1');
-  const supervisor2 = createdByKey.get('SUPERVISOR2');
-  const member1 = createdByKey.get('MEMBER1');
-  const member2 = createdByKey.get('MEMBER2');
-
-  await prisma.user.create({
-    data: {
-      id: admin.id,
-      email: admin.email,
-      name: admin.name,
-      role: 'ADMIN',
-      supervisorId: null,
-      organizationAdminId: admin.id,
-      adminPlanId: selectedAdminPlan.id,
-      adminPlanStatus: 'ACTIVE',
-      adminPlanLinkedAt: new Date(),
-      adminSeatLimit: seedSeatLimit,
-      adminExtraSeatPrice: EXTRA_ADMIN_SEAT_MONTHLY_USD,
-      adminActiveSeats: seedTeamActiveSeats,
-      adminExtraSeatsContracted: seedExtraSeatsContracted,
-    },
-  });
-
-  await prisma.user.create({
-    data: {
-      id: supervisor1.id,
-      email: supervisor1.email,
-      name: supervisor1.name,
-      role: 'SUPERVISOR',
-      supervisorId: null,
-      organizationAdminId: admin.id,
-    },
-  });
-
-  await prisma.user.create({
-    data: {
-      id: supervisor2.id,
-      email: supervisor2.email,
-      name: supervisor2.name,
-      role: 'SUPERVISOR',
-      supervisorId: null,
-      organizationAdminId: admin.id,
-    },
-  });
-
-  await prisma.user.create({
-    data: {
-      id: member1.id,
-      email: member1.email,
-      name: member1.name,
-      role: 'MEMBER',
-      supervisorId: supervisor1.id,
-      organizationAdminId: admin.id,
-    },
-  });
-
-  await prisma.user.create({
-    data: {
-      id: member2.id,
-      email: member2.email,
-      name: member2.name,
-      role: 'MEMBER',
-      supervisorId: supervisor1.id,
-      organizationAdminId: admin.id,
-    },
-  });
-
-  await prisma.user.create({
-    data: {
-      id: rh.id,
-      email: rh.email,
-      name: rh.name,
-      role: 'HR',
-      supervisorId: null,
-      organizationAdminId: admin.id,
-    },
-  });
-
-  const seedInvoices = buildSeedPaidInvoices({
-    adminUserId: admin.id,
-    adminEmail: admin.email,
-    planConfig: seedPlanConfig,
-  });
-
-  for (const invoiceData of seedInvoices) {
-    await prisma.adminBillingInvoice.upsert({
-      where: { stripeSessionId: invoiceData.stripeSessionId },
-      update: {
-        ...invoiceData,
-        adminUserId: admin.id,
-        syncedAt: new Date(),
-      },
-      create: {
-        ...invoiceData,
-        adminUserId: admin.id,
-      },
-    });
-  }
-
-  console.log('✅ Banco local: usuários seed recriados e sincronizados.');
+  return plans;
 };
 
-const printSummary = (seedUsers, createdByKey) => {
-  console.log('\n📋 Resumo dos logins recriados:');
-  console.log('─────────────────────────────────────────────────────');
+const seedLocalUsers = async (createdByKey) => {
+  const planByCode = await upsertAdminPlans();
 
-  for (const user of seedUsers) {
-    const created = createdByKey.get(user.key);
-    console.log(`${created.email} (${user.role}) -> ${created.id}`);
+  for (const planCode of PLAN_CODES) {
+    const planConfig = ADMIN_PLAN_CATALOG[planCode];
+    const plan = planByCode[planCode];
+
+    const admin = createdByKey.get(`${planCode}_ADMIN`);
+    const hr = createdByKey.get(`${planCode}_HR`);
+    const supervisor = createdByKey.get(`${planCode}_SUPERVISOR`);
+    const member = createdByKey.get(`${planCode}_MEMBER`);
+
+    if (!admin || !hr || !supervisor || !member) {
+      throw new Error(`Usuarios do plano ${planCode} estao incompletos para seed local.`);
+    }
+
+    const teamActiveSeats = 4;
+    const additionalSeats = Math.max(teamActiveSeats - planConfig.maxSeats, 0);
+    const seatLimit = planConfig.maxSeats + additionalSeats;
+
+    await prisma.user.create({
+      data: {
+        id: admin.id,
+        email: admin.email,
+        name: admin.name,
+        role: 'ADMIN',
+        supervisorId: null,
+        organizationAdminId: admin.id,
+        adminPlanId: plan.id,
+        adminPlanStatus: 'ACTIVE',
+        adminPlanLinkedAt: new Date(),
+        adminSeatLimit: seatLimit,
+        adminExtraSeatPrice: EXTRA_ADMIN_SEAT_MONTHLY_USD,
+        adminActiveSeats: teamActiveSeats,
+        adminExtraSeatsContracted: additionalSeats,
+      },
+    });
+
+    await prisma.user.create({
+      data: {
+        id: hr.id,
+        email: hr.email,
+        name: hr.name,
+        role: 'HR',
+        supervisorId: null,
+        organizationAdminId: admin.id,
+      },
+    });
+
+    await prisma.user.create({
+      data: {
+        id: supervisor.id,
+        email: supervisor.email,
+        name: supervisor.name,
+        role: 'SUPERVISOR',
+        supervisorId: null,
+        organizationAdminId: admin.id,
+      },
+    });
+
+    await prisma.user.create({
+      data: {
+        id: member.id,
+        email: member.email,
+        name: member.name,
+        role: 'MEMBER',
+        supervisorId: supervisor.id,
+        organizationAdminId: admin.id,
+      },
+    });
+
+    const invoices = buildSeedPaidInvoices({
+      adminUserId: admin.id,
+      adminEmail: admin.email,
+      planConfig,
+      additionalSeats,
+    });
+
+    for (const invoice of invoices) {
+      await prisma.adminBillingInvoice.upsert({
+        where: { stripeSessionId: invoice.stripeSessionId },
+        update: {
+          ...invoice,
+          adminUserId: admin.id,
+          syncedAt: new Date(),
+        },
+        create: {
+          ...invoice,
+          adminUserId: admin.id,
+        },
+      });
+    }
   }
 
-  console.log('─────────────────────────────────────────────────────');
-  console.log('🔐 Senhas: mantidas conforme variáveis SEED_*_PASSWORD do .env\n');
+  console.log('Local database: plans, users and invoices seeded.');
+};
+
+const printSummary = (createdByKey) => {
+  console.log('\nSeeded logins by plan:');
+  console.log('-----------------------------------------------------');
+
+  for (const planCode of PLAN_CODES) {
+    console.log(`\n${planCode}`);
+
+    for (const spec of PLAN_ROLE_SPECS) {
+      const key = `${planCode}_${spec.role}`;
+      const user = createdByKey.get(key);
+
+      console.log(`  ${spec.role.padEnd(10)} ${user.email} / ${user.password}`);
+    }
+  }
+  console.log('\nSUPERADMIN was not modified by this script.');
+  console.log('Configure SUPERADMIN only via .env and run npm run create:superadmin when needed.');
+
+  console.log('-----------------------------------------------------\n');
 };
 
 (async () => {
   try {
-    const seedUsers = getSeedUsersFromEnv();
+    const seedUsers = buildSeedUsers();
     validateRequiredConfiguration(seedUsers);
 
     const supabaseAdmin = buildSupabaseAdminClient();
 
-    console.log('🚀 Resetando logins seed no Supabase e sincronizando banco local...\n');
+    console.log('Resetting all-plan seed users in Supabase and syncing local database...\n');
 
     await deleteExistingSeedUsersInSupabase(supabaseAdmin, seedUsers);
     const createdByKey = await createSeedUsersInSupabase(supabaseAdmin, seedUsers);
@@ -524,10 +510,10 @@ const printSummary = (seedUsers, createdByKey) => {
     await resetLocalUserDomain();
     await seedLocalUsers(createdByKey);
 
-    printSummary(seedUsers, createdByKey);
-    console.log('✅ Processo concluído com sucesso.');
+    printSummary(createdByKey);
+    console.log('Done.');
   } catch (error) {
-    console.error('❌ Falha ao resetar logins seed:', error.message || error);
+    console.error('Failed to seed all plans:', error.message || error);
     process.exitCode = 1;
   } finally {
     await prisma.$disconnect();

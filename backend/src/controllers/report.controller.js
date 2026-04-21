@@ -5,6 +5,55 @@ const prisma = require('../config/database');
 
 const SUPPORTED_EXPORT_FORMATS = ['csv', 'xlsx'];
 
+const resolveTenantOwnerId = (user) => {
+  if (!user) return null;
+  if (user.role === 'ADMIN') return user.id;
+  return user.organizationAdminId || null;
+};
+
+const resolveActorTenantOwnerId = async (actor) => {
+  if (!actor?.id) return null;
+
+  const fromToken = resolveTenantOwnerId(actor);
+  if (fromToken) {
+    return fromToken;
+  }
+
+  const actorFromDb = await prisma.user.findUnique({
+    where: { id: actor.id },
+    select: {
+      id: true,
+      role: true,
+      organizationAdminId: true,
+    },
+  });
+
+  return resolveTenantOwnerId(actorFromDb);
+};
+
+const canAccessBreakdownUserWithinTenant = ({ actor, actorTenantOwnerId, targetUser }) => {
+  if (!actor || !targetUser) return false;
+
+  if (actor.role === 'SUPERADMIN') {
+    return true;
+  }
+
+  if (actor.role === 'ADMIN') {
+    return targetUser.id === actor.id || targetUser.organizationAdminId === actor.id;
+  }
+
+  if (actor.role === 'HR') {
+    const targetTenantOwnerId = resolveTenantOwnerId(targetUser);
+    return Boolean(
+      actorTenantOwnerId &&
+      targetTenantOwnerId &&
+      actorTenantOwnerId === targetTenantOwnerId
+    );
+  }
+
+  return false;
+};
+
 /**
  * Controller para geração de relatórios
  */
@@ -16,6 +65,24 @@ const SUPPORTED_EXPORT_FORMATS = ['csv', 'xlsx'];
 const createExportJob = async (req, res) => {
   try {
     const user = req.user;
+    const contentType = String(req.headers['content-type'] || '').toLowerCase();
+    const acceptsJsonBody = !contentType || contentType.includes('application/json') || contentType.includes('+json');
+    const hasObjectBody = req.body && typeof req.body === 'object' && !Array.isArray(req.body);
+
+    if (!acceptsJsonBody) {
+      return res.status(415).json({
+        error: 'Unsupported Media Type',
+        message: 'Content-Type inválido. Use application/json',
+      });
+    }
+
+    if (!hasObjectBody) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Body JSON inválido',
+      });
+    }
+
     const { startDate, endDate, status, userId, teamId, format = 'xlsx' } = req.body;
     const normalizedFormat = String(format || 'xlsx').toLowerCase();
 
@@ -349,6 +416,7 @@ const getDailyBreakdown = async (req, res) => {
     endDate.setUTCDate(endDate.getUTCDate() + 1);
 
     let allowedUserIds = null;
+    let actorTenantOwnerId = null;
 
     if (requester.role === 'MEMBER') {
       allowedUserIds = [requester.id];
@@ -371,6 +439,99 @@ const getDailyBreakdown = async (req, res) => {
           message: 'Você só pode consultar dados de seus subordinados.',
         });
       }
+    } else if (['ADMIN', 'HR'].includes(requester.role)) {
+      actorTenantOwnerId = await resolveActorTenantOwnerId(requester);
+
+      if (!actorTenantOwnerId) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Não foi possível resolver o escopo de tenant do usuário atual.',
+        });
+      }
+
+      if (userId) {
+        const targetUser = await prisma.user.findUnique({
+          where: { id: userId },
+          select: {
+            id: true,
+            role: true,
+            organizationAdminId: true,
+          },
+        });
+
+        if (!targetUser) {
+          return res.status(404).json({
+            error: 'Not Found',
+            message: 'Usuário não encontrado.',
+          });
+        }
+
+        if (
+          !canAccessBreakdownUserWithinTenant({
+            actor: requester,
+            actorTenantOwnerId,
+            targetUser,
+          })
+        ) {
+          return res.status(403).json({
+            error: 'Forbidden',
+            message: 'Você não tem permissão para consultar dados desse usuário.',
+          });
+        }
+
+        allowedUserIds = [targetUser.id];
+      } else if (teamId) {
+        const targetTeamSupervisor = await prisma.user.findUnique({
+          where: { id: teamId },
+          select: {
+            id: true,
+            role: true,
+            organizationAdminId: true,
+          },
+        });
+
+        if (!targetTeamSupervisor) {
+          return res.status(404).json({
+            error: 'Not Found',
+            message: 'Supervisor do time não encontrado.',
+          });
+        }
+
+        if (
+          !canAccessBreakdownUserWithinTenant({
+            actor: requester,
+            actorTenantOwnerId,
+            targetUser: targetTeamSupervisor,
+          })
+        ) {
+          return res.status(403).json({
+            error: 'Forbidden',
+            message: 'Você não tem permissão para consultar este time.',
+          });
+        }
+
+        const teamMembers = await prisma.user.findMany({
+          where: {
+            supervisorId: teamId,
+            organizationAdminId: actorTenantOwnerId,
+          },
+          select: { id: true },
+        });
+
+        allowedUserIds = teamMembers.map((member) => member.id);
+      } else {
+        const tenantUsers = await prisma.user.findMany({
+          where: {
+            OR: [
+              { id: actorTenantOwnerId },
+              { organizationAdminId: actorTenantOwnerId },
+            ],
+          },
+          select: { id: true },
+        });
+
+        allowedUserIds = tenantUsers.map((user) => user.id);
+      }
     }
 
     const where = {
@@ -382,7 +543,7 @@ const getDailyBreakdown = async (req, res) => {
 
     if (userId) {
       where.userId = userId;
-    } else if (allowedUserIds) {
+    } else if (Array.isArray(allowedUserIds)) {
       where.userId = { in: allowedUserIds };
     } else if (teamId) {
       const members = await prisma.user.findMany({

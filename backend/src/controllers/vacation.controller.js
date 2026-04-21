@@ -6,6 +6,42 @@ const isElevatedVacationViewer = (role) => ['SUPERADMIN', 'ADMIN', 'HR'].include
 const VACATION_REQUEST_TYPES = ['VACATION', 'DAY_OFF'];
 const DAY_OFF_REASON_PREFIX = '[DAY_OFF]';
 
+const resolveTenantOwnerId = (user) => {
+  if (!user) return null;
+  if (user.role === 'ADMIN') return user.id;
+  return user.organizationAdminId || null;
+};
+
+const resolveActorTenantOwnerId = async (actor) => {
+  if (!actor?.id) return null;
+
+  const fromToken = resolveTenantOwnerId(actor);
+  if (fromToken) {
+    return fromToken;
+  }
+
+  const actorFromDb = await prisma.user.findUnique({
+    where: { id: actor.id },
+    select: {
+      id: true,
+      role: true,
+      organizationAdminId: true,
+    },
+  });
+
+  return resolveTenantOwnerId(actorFromDb);
+};
+
+const canReviewVacationWithinTenant = ({ actorTenantOwnerId, targetUser }) => {
+  if (!targetUser) return false;
+  const targetTenantOwnerId = resolveTenantOwnerId(targetUser);
+  return Boolean(
+    actorTenantOwnerId &&
+    targetTenantOwnerId &&
+    actorTenantOwnerId === targetTenantOwnerId
+  );
+};
+
 const normalizeVacationRequestType = (value) => {
   const normalized = String(value || 'VACATION').trim().toUpperCase();
   return VACATION_REQUEST_TYPES.includes(normalized) ? normalized : null;
@@ -467,6 +503,8 @@ const reviewVacationByHr = async (req, res) => {
             id: true,
             name: true,
             email: true,
+            role: true,
+            organizationAdminId: true,
           },
         },
       },
@@ -477,6 +515,22 @@ const reviewVacationByHr = async (req, res) => {
         error: 'Not Found',
         message: 'Solicitação de férias não encontrada.',
       });
+    }
+
+    if (req.user.role !== 'SUPERADMIN') {
+      const actorTenantOwnerId = await resolveActorTenantOwnerId(req.user);
+
+      if (
+        !canReviewVacationWithinTenant({
+          actorTenantOwnerId,
+          targetUser: request.user,
+        })
+      ) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Você não tem permissão para revisar esta solicitação de férias',
+        });
+      }
     }
 
     if (request.status !== 'SUPERVISOR_APPROVED') {

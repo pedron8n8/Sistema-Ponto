@@ -59,6 +59,30 @@ const isPortugueseLanguage = () => {
 
 const localizeMessage = (en: string, pt: string) => (isPortugueseLanguage() ? pt : en)
 
+const validateStrongPassword = (password: string) => {
+  const normalized = String(password || '')
+  if (normalized.length < 12) {
+    return localizeMessage(
+      'Password must have at least 12 characters.',
+      'Senha deve ter pelo menos 12 caracteres.'
+    )
+  }
+
+  const hasUppercase = /[A-Z]/.test(normalized)
+  const hasLowercase = /[a-z]/.test(normalized)
+  const hasDigit = /\d/.test(normalized)
+  const hasSpecial = /[^A-Za-z0-9]/.test(normalized)
+
+  if (!hasUppercase || !hasLowercase || !hasDigit || !hasSpecial) {
+    return localizeMessage(
+      'Password must include uppercase, lowercase, number and special character.',
+      'Senha deve conter letra maiuscula, minuscula, numero e caractere especial.'
+    )
+  }
+
+  return null
+}
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
@@ -170,10 +194,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       throw new Error(localizeMessage('Invalid email address.', 'Email invalido'))
     }
 
-    if (normalizedPassword.length < 6) {
-      throw new Error(
-        localizeMessage('Password must have at least 6 characters.', 'Senha deve ter pelo menos 6 caracteres')
-      )
+    const passwordValidationError = validateStrongPassword(normalizedPassword)
+    if (passwordValidationError) {
+      throw new Error(passwordValidationError)
     }
 
     const { data, error } = await supabase.auth.signUp({

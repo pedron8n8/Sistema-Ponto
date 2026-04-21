@@ -6,11 +6,12 @@ type TimezoneState = {
   setViewTimeZone: (value: string) => void
 }
 
-const STORAGE_KEY = 'systemaPonto.viewTimeZone'
+const STORAGE_KEY = 'omniPunt.viewTimeZone'
+const LEGACY_STORAGE_KEY = 'systemaPonto.viewTimeZone'
 
 const getInitialTimeZone = () => {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
+    const raw = window.localStorage.getItem(STORAGE_KEY) || window.localStorage.getItem(LEGACY_STORAGE_KEY)
     if (raw && isValidTimeZone(raw)) {
       return raw
     }
@@ -32,6 +33,7 @@ export const TimezoneProvider = ({ children }: { children: React.ReactNode }) =>
     setViewTimeZoneState(value)
     try {
       window.localStorage.setItem(STORAGE_KEY, value)
+      window.localStorage.removeItem(LEGACY_STORAGE_KEY)
     } catch {
       // noop
     }

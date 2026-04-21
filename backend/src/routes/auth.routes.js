@@ -91,9 +91,19 @@ router.get('/me', authMiddleware, (req, res) => {
 router.get('/profile', authMiddleware, (req, res) => {
   const photoUrl = buildUserPhotoUrl(req, req.user.photoPath);
 
+  const safeProfile = { ...req.user };
+  delete safeProfile.pinHash;
+  delete safeProfile.pinSalt;
+  delete safeProfile.pinUpdatedAt;
+  delete safeProfile.pinFailedAttempts;
+  delete safeProfile.pinLockedUntil;
+  delete safeProfile.facialEmbedding;
+  delete safeProfile.facialEmbeddingUpdatedAt;
+  delete safeProfile.publicApiTokenHash;
+
   res.json({
     user: {
-      ...req.user,
+      ...safeProfile,
       photoUrl,
     },
     supabase: {

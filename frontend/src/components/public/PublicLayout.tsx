@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import LanguageSwitcher from '../LanguageSwitcher'
+import BrandWordmark from '../BrandWordmark'
 import { useAuth } from '../../context/AuthContext'
 
 type PublicLayoutProps = {
@@ -23,10 +24,9 @@ const PublicLayout = ({ children }: PublicLayoutProps) => {
       <header className="fixed inset-x-0 top-0 z-50 border-b border-white/70 bg-white/85 backdrop-blur-lg">
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-5 py-3 sm:px-8">
           <Link to="/" className="group flex items-center gap-3">
-            <span className="h-9 w-9 rounded-2xl bg-gradient-to-br from-teal-500 via-cyan-500 to-sky-500 shadow-[0_10px_22px_-14px_rgba(14,116,144,0.8)]" />
+            <span className="h-9 w-9 rounded-2xl bg-gradient-to-br from-teal-500 to-sky-500 shadow-[0_8px_16px_-6px_rgba(14,116,144,0.4)]" />
             <div className="leading-tight">
-              <p className="text-[10px] uppercase tracking-[0.26em] text-slate-500">{t('brand.product')}</p>
-              <p className="text-base font-semibold text-slate-900">{t('brand.name')}</p>
+              <BrandWordmark className="text-xl" />
             </div>
           </Link>
 
@@ -59,10 +59,10 @@ const PublicLayout = ({ children }: PublicLayoutProps) => {
               </Link>
             ) : (
               <Link
-                to="/signup"
+                to="/login"
                 className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white transition hover:bg-slate-700"
               >
-                {t('publicNav.signUp')}
+                {t('publicNav.login')}
               </Link>
             )}
           </div>
@@ -74,7 +74,7 @@ const PublicLayout = ({ children }: PublicLayoutProps) => {
       <footer className="border-t border-slate-200/70 bg-white/75 px-5 py-10 sm:px-8">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-base font-semibold text-slate-900">{t('brand.name')}</p>
+            <BrandWordmark className="text-base" />
             <p className="mt-1 text-xs text-slate-500">{t('footer.copyright')}</p>
           </div>
 
