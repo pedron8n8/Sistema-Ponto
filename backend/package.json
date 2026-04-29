@@ -30,13 +30,15 @@
     "pentest:phase6": "node scripts/pentest-phase6.js",
     "pentest:phase7": "node scripts/pentest-phase7.js",
     "pentest:phase8": "node scripts/pentest-phase8.js",
-    "pentest:phase9": "node scripts/pentest-phase9.js"
+    "pentest:phase9": "node scripts/pentest-phase9.js",
+    "test:connections": "node scripts/test-connections.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@prisma/adapter-pg": "latest",
     "@prisma/client": "^7.5.0",
     "@supabase/supabase-js": "^2.99.1",
     "bullmq": "^5.70.4",
@@ -47,6 +49,7 @@
     "ioredis": "^5.10.0",
     "multer": "^2.1.1",
     "nodemailer": "^8.0.2",
+    "pg": "^8.11.0",
     "stripe": "^21.0.1",
     "xlsx": "^0.18.5"
   },

@@ -38,13 +38,13 @@ Edite o arquivo `.env` e configure:
 - Credenciais do PostgreSQL (se necessário)
 - Senha do Redis (se necessário)
 
-3. **Inicie o backend com Docker, apontando para o Postgres e Redis já existentes na VPS:**
+3. **Inicie o stack com Docker a partir da raiz do repositório:**
 
 ```bash
-docker-compose up -d
+docker compose up -d --build
 ```
 
-O arquivo `docker-compose.yml` do backend não sobe mais PostgreSQL nem Redis. Ele espera que `DATABASE_URL` e `REDIS_*` apontem para os serviços já rodando na VPS.
+O `docker-compose.yml` da raiz não sobe PostgreSQL nem Redis. Ele espera que `DATABASE_URL` e `REDIS_*` apontem para os serviços já rodando na VPS.
 
 4. **Execute as migrations do Prisma:**
 
@@ -72,7 +72,7 @@ npm run dev
 npm start
 ```
 
-O servidor estará disponível em `http://localhost:3000`
+O servidor estará disponível na porta configurada em `PORT` (padrão: 3001)
 
 ## 🧪 Scripts disponíveis
 
@@ -101,7 +101,6 @@ backend/
 │   └── index.js          # Ponto de entrada da aplicação
 ├── .env                  # Variáveis de ambiente (não commitado)
 ├── .env.example          # Exemplo de variáveis de ambiente
-├── docker-compose.yml    # Configuração do Docker
 └── package.json
 
 ```

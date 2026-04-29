@@ -20,5 +20,4 @@ docker compose up -d --build
 
 ## Observações
 
-- O arquivo `backend/docker-compose.yml` foi deixado apenas para subir o backend isoladamente.
 - Nenhum compose deste projeto cria Postgres ou Redis locais.

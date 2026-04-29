@@ -13,6 +13,8 @@ services:
       PORT: ${PORT:-3001}
     expose:
       - "3001"
+    networks:
+      - rede_externa_comum
     volumes:
       - backend_uploads:/app/uploads
     healthcheck:
@@ -43,6 +45,12 @@ services:
         condition: service_healthy
     ports:
       - "80:80"
+    networks:
+      - rede_externa_comum
 
 volumes:
   backend_uploads:
+
+networks:
+  rede_externa_comum:
+    external: true
