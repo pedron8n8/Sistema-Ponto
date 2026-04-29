@@ -38,15 +38,13 @@ Edite o arquivo `.env` e configure:
 - Credenciais do PostgreSQL (se necessário)
 - Senha do Redis (se necessário)
 
-3. **Inicie os serviços com Docker:**
+3. **Inicie o backend com Docker, apontando para o Postgres e Redis já existentes na VPS:**
 
 ```bash
 docker-compose up -d
 ```
 
-Isso irá iniciar:
-- PostgreSQL na porta 5432
-- Redis na porta 6379
+O arquivo `docker-compose.yml` do backend não sobe mais PostgreSQL nem Redis. Ele espera que `DATABASE_URL` e `REDIS_*` apontem para os serviços já rodando na VPS.
 
 4. **Execute as migrations do Prisma:**
 

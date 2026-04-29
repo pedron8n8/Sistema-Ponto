@@ -1,0 +1,48 @@
+services:
+  backendPonto:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sistema-ponto-backend
+    restart: unless-stopped
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      NODE_ENV: production
+      PORT: ${PORT:-3001}
+    expose:
+      - "3001"
+    volumes:
+      - backend_uploads:/app/uploads
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "require('http').get('http://127.0.0.1:3001/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL}
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+        VITE_STRIPE_LINK_STARTER: ${VITE_STRIPE_LINK_STARTER}
+        VITE_STRIPE_LINK_GROWTH: ${VITE_STRIPE_LINK_GROWTH}
+        VITE_STRIPE_LINK_PRO: ${VITE_STRIPE_LINK_PRO}
+    container_name: sistema-ponto-frontend
+    restart: unless-stopped
+    depends_on:
+      backendPonto:
+        condition: service_healthy
+    ports:
+      - "80:80"
+
+volumes:
+  backend_uploads:
