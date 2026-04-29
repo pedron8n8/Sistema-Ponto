@@ -110,6 +110,12 @@ app.use((err, req, res, next) => {
   });
 });
 
+setTimeout(() => {
+  createProactiveAlertWorker().catch((error) => {
+    console.error('❌ Falha ao inicializar proactive alert worker:', error?.message || error);
+  });
+}, 3000);
+
 // Start server and worker
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);

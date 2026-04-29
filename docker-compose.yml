@@ -6,8 +6,7 @@ services:
     container_name: sistema-ponto-backend
     restart: unless-stopped
     env_file:
-      - path: ./.env
-        required: false
+      - ./backend/.env
     environment:
       NODE_ENV: production
       PORT: ${PORT:-3001}
@@ -18,14 +17,11 @@ services:
     volumes:
       - backend_uploads:/app/uploads
     healthcheck:
-      test:
-        - CMD-SHELL
-        - >-
-          node -e "require('http').get('http://127.0.0.1:3001/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
-      interval: 10s
-      timeout: 5s
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
       retries: 5
-      start_period: 20s
+      start_period: 30s
 
   frontend:
     build:
