@@ -455,30 +455,26 @@ const processDispatchJob = async (job) => {
 };
 
 const createProactiveAlertWorker = async () => {
-  await proactiveAlertQueue.add(
-    SCAN_JOB_NAME,
-    {},
+  // ✅ Remove jobs repetidos órfãos de reinicializações anteriores
+  await proactiveAlertQueue.upsertJobScheduler(
+    SCAN_REPEAT_JOB_ID,         // ID único — garante que só existe 1
     {
-      jobId: SCAN_REPEAT_JOB_ID,
-      repeat: {
-        every: PROACTIVE_SCAN_INTERVAL_MS,
+      every: PROACTIVE_SCAN_INTERVAL_MS,
+    },
+    {
+      name: SCAN_JOB_NAME,
+      opts: {
+        removeOnComplete: true,
+        removeOnFail: true,
       },
-      removeOnComplete: true,
-      removeOnFail: true,
     }
   );
 
   const worker = new Worker(
     'proactive-overtime-alerts',
     async (job) => {
-      if (job.name === SCAN_JOB_NAME) {
-        return processScanJob();
-      }
-
-      if (job.name === DISPATCH_JOB_NAME) {
-        return processDispatchJob(job);
-      }
-
+      if (job.name === SCAN_JOB_NAME) return processScanJob();
+      if (job.name === DISPATCH_JOB_NAME) return processDispatchJob(job);
       return null;
     },
     {
@@ -487,16 +483,16 @@ const createProactiveAlertWorker = async () => {
     }
   );
 
-  worker.on('completed', (job, result) => {
-    if (job.name === SCAN_JOB_NAME) {
-      console.log(
-        `🔔 Proactive scan concluído (scanned=${result?.scanned || 0}, enqueued=${result?.enqueued || 0})`
-      );
-      return;
-    }
-
-    console.log(`✅ Proactive alert job ${job.id} concluído.`);
-  });
+    worker.on('completed', (job, result) => {
+      if (job.name === SCAN_JOB_NAME) {
+        // ✅ Só loga se fez algo
+        if (result?.enqueued > 0) {
+          console.log(`🔔 Proactive scan: ${result.enqueued} alertas enfileirados`);
+        }
+        return;
+      }
+        console.log(`✅ Proactive alert job ${job.id} concluído.`);
+    });
 
   worker.on('failed', (job, err) => {
     console.error(`❌ Proactive alert job ${job?.id} falhou:`, err.message);

@@ -119,13 +119,9 @@ app.listen(PORT, () => {
   const reportWorker = createReportWorker();
   console.log('📋 Report worker initialized');
 
-  createProactiveAlertWorker()
-    .then(() => {
-      console.log('🔔 Proactive overtime alert worker initialized');
-    })
-    .catch((error) => {
-      console.error('❌ Falha ao inicializar proactive alert worker:', error?.message || error);
-    });
+  createProactiveAlertWorker().catch((error) => {
+  console.error('❌ Falha ao inicializar proactive alert worker:', error?.message || error);
+  });
 });
 
 module.exports = app;
