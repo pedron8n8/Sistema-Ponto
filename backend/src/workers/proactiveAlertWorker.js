@@ -1,5 +1,5 @@
 const { Queue, Worker } = require('bullmq');
-const prisma = require('../config/database');
+const { prisma } = require('../config/database');
 const redis = require('../config/redis');
 const {
   sendOvertimeThresholdNotification,
@@ -206,6 +206,7 @@ const resolveDispatchChannels = ({ managerEmail }) => {
 };
 
 const processScanJob = async () => {
+  // console.log('🔍 Worker DB URL:', process.env.DATABASE_URL);
   const now = new Date();
   const utcStart = new Date(now);
   utcStart.setUTCHours(0, 0, 0, 0);

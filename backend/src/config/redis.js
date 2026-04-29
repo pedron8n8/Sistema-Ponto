@@ -1,19 +1,18 @@
 const Redis = require('ioredis');
 require('dotenv').config();
 
-const redisConfig = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT) || 6379,
-  password: process.env.REDIS_PASSWORD || undefined,
+// Pegamos a URL do .env ou usamos o padrão de rede do Docker que descobrimos
+const redisUrl = process.env.REDIS_URL || 'redis://redis_shared:6379';
+
+// Cliente Redis usando a URL
+const redis = new Redis(redisUrl, {
+  // Configurações obrigatórias para o BullMQ funcionar corretamente
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
-};
-
-// Cliente Redis para BullMQ
-const redis = new Redis(redisConfig);
+});
 
 redis.on('connect', () => {
-  console.log('✅ Redis connected successfully');
+  console.log('✅ Redis connected successfully to:', redisUrl);
 });
 
 redis.on('error', (err) => {

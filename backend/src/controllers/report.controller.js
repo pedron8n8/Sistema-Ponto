@@ -1,7 +1,7 @@
 const { reportQueue, REPORTS_DIR } = require('../workers/reportWorker');
 const fs = require('fs');
 const path = require('path');
-const prisma = require('../config/database');
+const { prisma } = require('../config/database');
 
 const SUPPORTED_EXPORT_FORMATS = ['csv', 'xlsx'];
 
@@ -129,7 +129,7 @@ const createExportJob = async (req, res) => {
 
     // Supervisor só pode exportar dados de seus subordinados
     if (user.role === 'SUPERVISOR' && userId) {
-      const prisma = require('../config/database');
+      const { prisma } = require('../config/database');
       const targetUser = await prisma.user.findUnique({
         where: { id: userId },
         select: { supervisorId: true },

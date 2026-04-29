@@ -15,12 +15,12 @@ const { createReportWorker } = require('./workers/reportWorker');
 const { createProactiveAlertWorker } = require('./workers/proactiveAlertWorker');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 const permissionsPolicyHeader =
   process.env.PERMISSIONS_POLICY_HEADER ||
   'camera=(), microphone=(), geolocation=(), payment=(), usb=(), midi=()';
 
-const defaultAllowedOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+const defaultAllowedOrigins = ['http://localhost:5173', 'http://178.105.61.219:5173'];
 const allowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || defaultAllowedOrigins.join(','))
   .split(',')
   .map((origin) => origin.trim())

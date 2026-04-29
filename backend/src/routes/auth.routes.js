@@ -1,7 +1,7 @@
 const express = require('express');
 const { authMiddleware, roleCheck } = require('../middlewares');
 const { buildUserPhotoUrl } = require('../utils/userPhoto');
-const prisma = require('../config/database');
+const { prisma } = require('../config/database');
 const { verifyTeamInviteToken } = require('../utils/teamInviteToken');
 
 const router = express.Router();

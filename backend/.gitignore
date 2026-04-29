@@ -55,3 +55,5 @@ prisma/.env
 logins.md
 CREDENTIALS.md
 get-token.js
+
+.env.vps

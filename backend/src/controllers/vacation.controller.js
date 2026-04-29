@@ -1,4 +1,4 @@
-const prisma = require('../config/database');
+const { prisma } = require('../config/database');
 const { buildUserPhotoUrl } = require('../utils/userPhoto');
 
 const ACTIVE_VACATION_STATUSES = ['REQUESTED', 'SUPERVISOR_APPROVED', 'HR_CONFIRMED'];

@@ -1,4 +1,4 @@
-const prisma = require('../config/database');
+const { prisma } = require('../config/database');
 const { captureRequestMetadata } = require('../utils/requestMetadata');
 const { calculateDuration, getStartOfDay, getEndOfDay } = require('../utils/timeCalculations');
 const {

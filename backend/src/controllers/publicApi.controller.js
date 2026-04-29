@@ -1,4 +1,4 @@
-const prisma = require('../config/database');
+const { prisma } = require('../config/database');
 
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const PAYROLL_USER_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];

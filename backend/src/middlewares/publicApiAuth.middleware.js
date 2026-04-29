@@ -1,4 +1,4 @@
-const prisma = require('../config/database');
+const { prisma } = require('../config/database');
 const { createPrismaAdminRepository } = require('../adapters/adminRepository.prisma');
 const { createPublicApiTokenService } = require('../adapters/publicApiToken.service');
 const {

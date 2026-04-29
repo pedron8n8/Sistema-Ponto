@@ -1,4 +1,4 @@
-const prisma = require('../config/database');
+const { prisma } = require('../config/database');
 const fs = require('fs');
 const path = require('path');
 const { supabaseAdmin } = require('../config/supabase');

@@ -2,25 +2,23 @@ const { PrismaClient } = require('@prisma/client');
 const { PrismaPg } = require('@prisma/adapter-pg');
 const { Pool } = require('pg');
 
-// Criar pool de conexão do PostgreSQL
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
-exports.pool = pool;
 
-// Criar adapter do Prisma
-const adapter = new PrismaPg(pool);
-
-// Criar instância do Prisma Client com o adapter
-const prisma = new PrismaClient({
-  adapter,
-  log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+// ✅ Passa o schema direto no adapter — forma correta com PrismaPg
+const adapter = new PrismaPg(pool, {
+  schema: 'schema_automation',
 });
 
-// Graceful shutdown
+const prisma = new PrismaClient({
+  log: ['query', 'info', 'warn', 'error'],
+  adapter,
+});
+
 process.on('beforeExit', async () => {
   await prisma.$disconnect();
   await pool.end();
 });
 
-module.exports = prisma;
+module.exports = { prisma, pool };

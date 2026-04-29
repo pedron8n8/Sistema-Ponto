@@ -1,5 +1,5 @@
 const { Worker, Queue } = require('bullmq');
-const prisma = require('../config/database');
+const { prisma } = require('../config/database');
 const redis = require('../config/redis');
 const fs = require('fs');
 const path = require('path');

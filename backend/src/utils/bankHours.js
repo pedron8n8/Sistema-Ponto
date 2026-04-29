@@ -1,4 +1,4 @@
-const prisma = require('../config/database');
+const { prisma } = require('../config/database');
 
 const clampPositiveInteger = (value, fallback) => {
   const parsed = Number(value);

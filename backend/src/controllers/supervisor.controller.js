@@ -1,4 +1,4 @@
-const prisma = require('../config/database');
+const { prisma } = require('../config/database');
 const { adjustBankHours, settleBankHoursAccruals } = require('../utils/bankHours');
 const { normalizeMinutes, normalizeTime, normalizeTimeZone } = require('../utils/workSettings');
 
