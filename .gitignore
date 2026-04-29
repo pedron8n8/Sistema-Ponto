@@ -1,9 +1,7 @@
-*.md
+/md
 node_modules
 dist
-backend/*.md
 backend/node_modules
 backend/dist
-frontend/*.md
 frontend/node_modules
 frontend/dist
