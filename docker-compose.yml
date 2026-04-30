@@ -16,6 +16,7 @@ services:
       - rede_externa_comum
     volumes:
       - backend_uploads:/app/uploads
+      - backend_exports:/app/exports
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
@@ -38,6 +39,7 @@ services:
       - rede_externa_comum
     volumes:
       - backend_uploads:/app/uploads
+      - backend_exports:/app/exports
 
   frontend:
     build:
@@ -62,6 +64,7 @@ services:
 
 volumes:
   backend_uploads:
+  backend_exports:
 
 networks:
   rede_externa_comum:
