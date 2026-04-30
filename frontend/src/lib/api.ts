@@ -1,7 +1,7 @@
 import i18next from 'i18next'
 
 export const API_BASE =
-  (import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:3000/api/v1'
+  (import.meta.env.VITE_API_URL as string | undefined) || '/api/v1'
 
 const IDEMPOTENCY_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 const IDEMPOTENCY_KEY_HEADER = 'X-Idempotency-Key'
@@ -403,7 +403,7 @@ export const resolveApiAssetUrl = (rawUrl?: string | null) => {
   if (!rawUrl) return null
   if (/^https?:\/\//i.test(rawUrl)) return rawUrl
 
-  const apiRoot = new URL(API_BASE)
+  const apiRoot = new URL(API_BASE, window.location.origin)
   const origin = `${apiRoot.protocol}//${apiRoot.host}`
   const normalizedPath = rawUrl.startsWith('/') ? rawUrl : `/${rawUrl}`
   return `${origin}${normalizedPath}`

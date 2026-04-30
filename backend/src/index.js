@@ -10,17 +10,13 @@ const { ensureUserPhotoDir } = require('./utils/userPhoto');
 // Import routes
 const routes = require('./routes');
 
-// Import BullMQ worker
-const { createReportWorker } = require('./workers/reportWorker');
-const { createProactiveAlertWorker } = require('./workers/proactiveAlertWorker');
-
 const app = express();
 const PORT = process.env.PORT || 3001;
 const permissionsPolicyHeader =
   process.env.PERMISSIONS_POLICY_HEADER ||
   'camera=(), microphone=(), geolocation=(), payment=(), usb=(), midi=()';
 
-const defaultAllowedOrigins = ['http://localhost:5173', 'http://178.105.61.219:5173'];
+const defaultAllowedOrigins = ['http://localhost:5173', 'http://178.105.61.219:9481'];
 const allowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || defaultAllowedOrigins.join(','))
   .split(',')
   .map((origin) => origin.trim())
@@ -36,7 +32,7 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    return callback(new Error('Origin não permitida por CORS'));
+    return callback(new Error('Origin nao permitida por CORS'));
   },
   methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Idempotency-Key', 'X-Idempotency-Date'],
@@ -93,14 +89,14 @@ app.use((err, req, res, next) => {
   if (err?.type === 'entity.parse.failed') {
     return res.status(400).json({
       error: 'Bad Request',
-      message: 'JSON inválido no corpo da requisição',
+      message: 'JSON invalido no corpo da requisicao',
     });
   }
 
-  if (err?.message === 'Origin não permitida por CORS') {
+  if (err?.message === 'Origin nao permitida por CORS') {
     return res.status(403).json({
       error: 'Forbidden',
-      message: 'Origem não permitida',
+      message: 'Origem nao permitida',
     });
   }
 
@@ -110,24 +106,10 @@ app.use((err, req, res, next) => {
   });
 });
 
-setTimeout(() => {
-  createProactiveAlertWorker().catch((error) => {
-    console.error('❌ Falha ao inicializar proactive alert worker:', error?.message || error);
-  });
-}, 3000);
-
-// Start server and worker
+// Start only the HTTP server here. BullMQ workers run in a separate container/process.
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-
-  // Inicializa o worker de relatórios
-  const reportWorker = createReportWorker();
-  console.log('📋 Report worker initialized');
-
-  createProactiveAlertWorker().catch((error) => {
-  console.error('❌ Falha ao inicializar proactive alert worker:', error?.message || error);
-  });
+  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
 module.exports = app;

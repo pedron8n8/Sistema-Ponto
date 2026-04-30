@@ -1,5 +1,5 @@
 services:
-  backendPonto:
+  backendponto:
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -9,7 +9,7 @@ services:
       - ./backend/.env
     environment:
       NODE_ENV: production
-      PORT: ${PORT:-3001}
+      PORT: 3001
     expose:
       - "3001"
     networks:
@@ -17,11 +17,27 @@ services:
     volumes:
       - backend_uploads:/app/uploads
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 30s
+
+  backend-workers:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sistema-ponto-backend-workers
+    restart: unless-stopped
+    command: ["npm", "run", "start:workers"]
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+    networks:
+      - rede_externa_comum
+    volumes:
+      - backend_uploads:/app/uploads
 
   frontend:
     build:
@@ -37,10 +53,10 @@ services:
     container_name: sistema-ponto-frontend
     restart: unless-stopped
     depends_on:
-      backendPonto:
+      backendponto:
         condition: service_healthy
     ports:
-      - "80:80"
+      - "9481:80"
     networks:
       - rede_externa_comum
 
@@ -49,4 +65,4 @@ volumes:
 
 networks:
   rede_externa_comum:
-    external: true
+    driver: bridge
