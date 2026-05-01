@@ -38,7 +38,19 @@ const ProtectedRoute = ({ children, allowedRoles, allowedPlans, allowInactivePla
     )
   }
 
+  if (!profile && profileError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-6 text-center text-sm text-rose-600">
+        {profileError}
+      </div>
+    )
+  }
+
   const hasActivePlan = profile?.role === 'SUPERADMIN' || profile?.currentPlanStatus === 'ACTIVE'
+
+  if (allowInactivePlan && profile?.role === 'SUPERADMIN') {
+    return <Navigate to="/app/superadmin/accounts" replace />
+  }
 
   if (!allowInactivePlan && !hasActivePlan) {
     return <Navigate to="/app/escolher-plano" replace />

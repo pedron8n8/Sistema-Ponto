@@ -243,6 +243,32 @@ type FormDataRequestOptions = {
   timeoutMs?: number
 }
 
+const readJsonResponse = async (res: Response) => {
+  const contentType = res.headers.get('content-type') || ''
+  if (contentType.toLowerCase().includes('application/json')) {
+    return res.json()
+  }
+
+  const bodyText = await res.text().catch(() => '')
+  const looksLikeHtml = /^\s*<!doctype html|^\s*<html[\s>]/i.test(bodyText)
+
+  if (looksLikeHtml) {
+    throw new Error(
+      localizeMessage(
+        `Backend API did not respond with JSON for ${res.url}. Check if Vite is proxying /api to the backend service.`,
+        `A API do backend nao respondeu JSON em ${res.url}. Verifique se o Vite esta encaminhando /api para o backend.`
+      )
+    )
+  }
+
+  throw new Error(
+    localizeMessage(
+      `Backend API returned an unexpected response for ${res.url}.`,
+      `A API do backend retornou uma resposta inesperada em ${res.url}.`
+    )
+  )
+}
+
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   return Object.prototype.toString.call(value) === '[object Object]'
 }
@@ -350,11 +376,11 @@ export const apiFetch = async <T>(path: string, options: RequestOptions = {}): P
   clearTimeout(timeoutId)
 
   if (!res.ok) {
-    const payload = await res.json().catch(() => ({}))
+    const payload = await readJsonResponse(res).catch(() => ({}))
     throw new Error(translateApiMessage(payload?.message || localizeMessage('Request failed.', 'Erro na requisicao')))
   }
 
-  return res.json() as Promise<T>
+  return readJsonResponse(res) as Promise<T>
 }
 
 export const apiFetchFormData = async <T>(
@@ -392,11 +418,11 @@ export const apiFetchFormData = async <T>(
   clearTimeout(timeoutId)
 
   if (!res.ok) {
-    const payload = await res.json().catch(() => ({}))
+    const payload = await readJsonResponse(res).catch(() => ({}))
     throw new Error(translateApiMessage(payload?.message || localizeMessage('Request failed.', 'Erro na requisicao')))
   }
 
-  return res.json() as Promise<T>
+  return readJsonResponse(res) as Promise<T>
 }
 
 export const resolveApiAssetUrl = (rawUrl?: string | null) => {

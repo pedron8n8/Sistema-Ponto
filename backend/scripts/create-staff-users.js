@@ -4,14 +4,17 @@ const path = require('path');
 const { PrismaClient } = require('@prisma/client');
 const { PrismaPg } = require('@prisma/adapter-pg');
 const { Pool } = require('pg');
-const { supabaseAdmin } = require('../src/config/supabase');
+const { supabase, supabaseAdmin } = require('../src/config/supabase');
 require('dotenv').config();
 
 const fallbackConnectionString = `postgresql://${encodeURIComponent(process.env.POSTGRES_USER || 'postgres')}:${encodeURIComponent(process.env.POSTGRES_PASSWORD || 'postgres')}@${process.env.POSTGRES_HOST || 'localhost'}:${process.env.POSTGRES_PORT || '5432'}/${process.env.POSTGRES_DB || 'sistema_ponto'}`;
 const connectionString = process.env.DATABASE_URL || fallbackConnectionString;
+const databaseSchema = process.env.DATABASE_SCHEMA || 'schema_automation';
 
 const pool = new Pool({ connectionString });
-const adapter = new PrismaPg(pool);
+const adapter = new PrismaPg(pool, {
+  schema: databaseSchema,
+});
 const prisma = new PrismaClient({ adapter });
 
 const EMAIL_DOMAIN = String(process.env.STAFF_SEED_EMAIL_DOMAIN || 'systemaponto.test')
@@ -58,7 +61,7 @@ const generatePassword = () => {
   const lower = 'abcdefghijkmnopqrstuvwxyz';
   const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
   const digits = '23456789';
-  const symbols = '!@#$%*?';
+  const symbols = '!';
   const all = lower + upper + digits + symbols;
   const required = [
     lower[crypto.randomInt(lower.length)],
@@ -72,6 +75,60 @@ const generatePassword = () => {
   }
 
   return required.sort(() => crypto.randomInt(3) - 1).join('');
+};
+
+const verifySupabaseLogin = async ({ email, password }) => {
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+  if (error) {
+    return {
+      ok: false,
+      message: error.message,
+    };
+  }
+
+  if (data?.session?.access_token) {
+    await supabase.auth.signOut().catch(() => {});
+    return {
+      ok: true,
+      message: 'Login verificado',
+    };
+  }
+
+  return {
+    ok: false,
+    message: 'Supabase nao retornou sessao para este login.',
+  };
+};
+
+const ensureVerifiedPassword = async ({ supabaseUserId, email, password }) => {
+  let currentPassword = password;
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const verification = await verifySupabaseLogin({ email, password: currentPassword });
+
+    if (verification.ok) {
+      return currentPassword;
+    }
+
+    const nextPassword = generatePassword();
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(supabaseUserId, {
+      password: nextPassword,
+    });
+
+    if (error) {
+      throw new Error(`Erro ao resetar senha de ${email}: ${error.message}`);
+    }
+
+    currentPassword = nextPassword;
+  }
+
+  const finalVerification = await verifySupabaseLogin({ email, password: currentPassword });
+  if (!finalVerification.ok) {
+    throw new Error(`Login de ${email} ainda falhou apos reset de senha: ${finalVerification.message}`);
+  }
+
+  return currentPassword;
 };
 
 const buildEmail = (name, usedEmails) => {
@@ -220,9 +277,64 @@ const upsertLocalUser = async ({ supabaseUser, email, name, role, organizationAd
 
   const localByEmail = await prisma.user.findUnique({ where: { email } });
   if (localByEmail) {
-    return prisma.user.update({
-      where: { id: localByEmail.id },
-      data,
+    await prisma.$transaction(async (tx) => {
+      const relatedUsers = await tx.user.findMany({
+        where: {
+          OR: [
+            { id: localByEmail.id },
+            { organizationAdminId: localByEmail.id },
+            { supervisorId: localByEmail.id },
+          ],
+        },
+        select: { id: true },
+      });
+      const relatedUserIds = relatedUsers.map((user) => user.id);
+
+      await tx.vacationApprovalLog.deleteMany({
+        where: {
+          OR: [
+            { vacationRequest: { userId: { in: relatedUserIds } } },
+            { vacationRequest: { supervisorId: { in: relatedUserIds } } },
+            { vacationRequest: { hrReviewerId: { in: relatedUserIds } } },
+            { actorId: { in: relatedUserIds } },
+          ],
+        },
+      });
+      await tx.vacationRequest.deleteMany({
+        where: {
+          OR: [
+            { userId: { in: relatedUserIds } },
+            { supervisorId: { in: relatedUserIds } },
+            { hrReviewerId: { in: relatedUserIds } },
+          ],
+        },
+      });
+      await tx.approvalLog.deleteMany({
+        where: {
+          OR: [
+            { reviewerId: { in: relatedUserIds } },
+            { timeEntry: { userId: { in: relatedUserIds } } },
+          ],
+        },
+      });
+      await tx.bankHoursEntry.deleteMany({
+        where: {
+          OR: [
+            { userId: { in: relatedUserIds } },
+            { timeEntry: { userId: { in: relatedUserIds } } },
+          ],
+        },
+      });
+      await tx.timeEntry.deleteMany({ where: { userId: { in: relatedUserIds } } });
+      await tx.adminBillingInvoice.deleteMany({ where: { adminUserId: { in: relatedUserIds } } });
+      await tx.user.deleteMany({ where: { id: { in: relatedUserIds } } });
+    });
+
+    return prisma.user.create({
+      data: {
+        id: supabaseUser.id,
+        ...data,
+      },
     });
   }
 
@@ -347,17 +459,23 @@ const main = async () => {
       proPlan,
     });
 
+    const verifiedPassword = await ensureVerifiedPassword({
+      supabaseUserId: supabaseUser.id,
+      email: person.email,
+      password: person.password,
+    });
+
     createdByName.set(person.name, {
       id: localUser.id,
       name: localUser.name,
       role: localUser.role,
       email: person.email,
-      password: person.password,
+      password: verifiedPassword,
       organizationAdminId: localUser.organizationAdminId,
       supervisorId: localUser.supervisorId,
     });
 
-    console.log(`OK ${person.name} (${person.role}) -> ${person.email}`);
+    console.log(`OK ${person.name} (${person.role}) -> ${person.email} (login verificado)`);
   }
 
   const createdUsers = STAFF.map((person) => createdByName.get(person.name));

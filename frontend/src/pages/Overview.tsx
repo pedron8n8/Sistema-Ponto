@@ -102,7 +102,7 @@ const Overview = () => {
   }
 
   return (
-    <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+    <section className="mx-auto grid w-full max-w-6xl gap-6 lg:grid-cols-[1.2fr_0.8fr]">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
         <p className="text-xs uppercase tracking-[0.35em] text-teal-700">{t('Overview', 'Visao geral')}</p>
         <h2 className="mt-4 text-3xl font-semibold text-slate-900">{t('Hi', 'Oi')} {profile?.name || t('team', 'time')}.</h2>

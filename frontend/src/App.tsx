@@ -59,9 +59,9 @@ const MissingEnvScreen = () => {
           )}
         </p>
         <pre className="mt-5 overflow-x-auto rounded-2xl bg-white p-4 text-xs text-slate-700">
-{`VITE_SUPABASE_URL=https://SEU-PROJETO.supabase.co
-VITE_SUPABASE_ANON_KEY=SEU_ANON_KEY
-VITE_API_URL=/api/v1`}
+          {`VITE_SUPABASE_URL=https://SEU-PROJETO.supabase.co
+          VITE_SUPABASE_ANON_KEY=SEU_ANON_KEY
+          VITE_API_URL=/api/v1`}
         </pre>
         <p className="mt-4 text-xs text-slate-600">
           {t('After that, restart Vite with npm run dev.', 'Depois disso, reinicie o Vite com npm run dev.')}
@@ -192,7 +192,7 @@ const App = () => {
                 <Route
                   path="/app/admin"
                   element={
-                    <ProtectedRoute allowedRoles={['ADMIN', 'HR']}>
+                    <ProtectedRoute allowedRoles={['ADMIN']}>
                       <Navigate to="/app/admin/users" replace />
                     </ProtectedRoute>
                   }
@@ -200,7 +200,7 @@ const App = () => {
                 <Route
                   path="/app/admin/overview"
                   element={
-                    <ProtectedRoute allowedRoles={['ADMIN', 'HR']}>
+                    <ProtectedRoute allowedRoles={['ADMIN']}>
                       <Navigate to="/app/admin/users" replace />
                     </ProtectedRoute>
                   }
@@ -208,7 +208,7 @@ const App = () => {
                 <Route
                   path="/app/admin/users"
                   element={
-                    <ProtectedRoute allowedRoles={['ADMIN', 'HR']}>
+                    <ProtectedRoute allowedRoles={['ADMIN']}>
                       <ShellLayout>
                         <AdminUsersPage />
                       </ShellLayout>
@@ -218,7 +218,7 @@ const App = () => {
                 <Route
                   path="/app/admin/bank-hours"
                   element={
-                    <ProtectedRoute allowedRoles={['ADMIN', 'HR']}>
+                    <ProtectedRoute allowedRoles={['ADMIN']}>
                       <ShellLayout>
                         <AdminBankHoursPage />
                       </ShellLayout>
@@ -228,7 +228,7 @@ const App = () => {
                 <Route
                   path="/app/admin/pending-approvals"
                   element={
-                    <ProtectedRoute allowedRoles={['ADMIN', 'HR']}>
+                    <ProtectedRoute allowedRoles={['ADMIN']}>
                       <ShellLayout>
                         <AdminPendingApprovalsPage />
                       </ShellLayout>
@@ -268,7 +268,7 @@ const App = () => {
                 <Route
                   path="/app/admin/pro-settings"
                   element={
-                    <ProtectedRoute allowedRoles={['ADMIN', 'HR']} allowedPlans={['PRO']}>
+                    <ProtectedRoute allowedRoles={['ADMIN']} allowedPlans={['PRO']}>
                       <ShellLayout>
                         <AdminProSettingsPage />
                       </ShellLayout>

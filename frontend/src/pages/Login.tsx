@@ -8,7 +8,7 @@ import PageMeta from '../components/PageMeta'
 
 const Login = () => {
   const navigate = useNavigate()
-  const { signIn, signInWithGoogle, session, profile, loading } = useAuth()
+  const { signIn, signInWithGoogle, session, profile, loading, profileError } = useAuth()
   const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -19,8 +19,12 @@ const Login = () => {
   useEffect(() => {
     if (loading || !session || !profile) return
 
-    const hasActivePlan = profile.role === 'SUPERADMIN' || profile.currentPlanStatus === 'ACTIVE'
-    navigate(hasActivePlan ? '/app' : '/app/escolher-plano', { replace: true })
+    if (profile.role === 'SUPERADMIN') {
+      navigate('/app/superadmin/accounts', { replace: true })
+      return
+    }
+
+    navigate(profile.currentPlanStatus === 'ACTIVE' ? '/app' : '/app/escolher-plano', { replace: true })
   }, [loading, navigate, profile, session])
 
   const resolveGoogleSignInError = (err: unknown) => {
@@ -47,7 +51,6 @@ const Login = () => {
 
     try {
       await signIn(email, password)
-      navigate('/app', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : t('auth.signinFail'))
     } finally {
@@ -77,12 +80,12 @@ const Login = () => {
       <PageMeta titleKey="seo.login.title" descriptionKey="seo.login.description" />
       <LanguageSwitcher fixed />
       <div className="mx-auto flex w-full max-w-5xl items-center justify-between">
-        <div className="flex items-center gap-3">
+        <Link to="/" className="flex items-center gap-3 transition hover:opacity-80" aria-label="Voltar para o inicio">
           <span className="h-10 w-10 rounded-2xl bg-gradient-to-br from-teal-500 to-sky-500 shadow-[0_8px_16px_-6px_rgba(14,116,144,0.4)]" />
           <div className="leading-tight">
             <BrandWordmark className="text-2xl" />
           </div>
-        </div>
+        </Link>
         <span className="text-xs uppercase tracking-[0.3em] text-slate-400">{t('common.login')}</span>
       </div>
 
@@ -148,7 +151,9 @@ const Login = () => {
             className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
           />
 
-          {error ? <p className="mt-4 text-xs text-rose-600">{error}</p> : null}
+          {error || profileError ? (
+            <p className="mt-4 text-xs text-rose-600">{error || profileError}</p>
+          ) : null}
 
           <button
             type="submit"

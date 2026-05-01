@@ -91,7 +91,7 @@ router.patch('/team/:userId/bank-hours', roleCheck(['HR', 'ADMIN']), adjustTeamM
  * GET /supervisor/team/bank-hours/overview
  * Lista saldo e pendências de banco de horas da equipe
  */
-router.get('/team/bank-hours/overview', roleCheck(['HR', 'ADMIN']), getTeamBankHoursOverview);
+router.get('/team/bank-hours/overview', getTeamBankHoursOverview);
 
 /**
  * PATCH /supervisor/team/:userId/bank-hours/pay

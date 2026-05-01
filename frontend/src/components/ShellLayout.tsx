@@ -99,7 +99,6 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
   const isSuperAdmin = profile?.role === 'SUPERADMIN'
   const isAdmin = profile?.role === 'ADMIN' || profile?.role === 'SUPERADMIN'
   const isOnlyAdmin = profile?.role === 'ADMIN'
-  const isHr = profile?.role === 'HR'
   const canManageProSettings = profile?.role === 'ADMIN' || profile?.role === 'HR'
   const isSupervisor = profile?.role === 'SUPERVISOR' || profile?.role === 'HR' || isAdmin
   const navSections: NavSection[] = [
@@ -176,7 +175,7 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
     },
     {
       title: t('Admin', 'Admin'),
-      visible: isOnlyAdmin || isHr,
+      visible: isOnlyAdmin,
       items: [
         {
           to: '/app/admin/users',

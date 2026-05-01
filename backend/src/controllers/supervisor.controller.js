@@ -23,11 +23,11 @@ const PRESENCE_STATUS = {
 const KPI_PERIODS = new Set(['daily', 'weekly', 'monthly']);
 const TEAM_MEMBER_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];
 
-const isElevatedRole = (role) => ['SUPERADMIN', 'ADMIN', 'HR'].includes(role);
+const isElevatedRole = (role) => ['SUPERADMIN', 'ADMIN'].includes(role);
 
 const buildSupervisorScopeWhere = ({ supervisorId, isAdmin }) =>
   isAdmin
-    ? { role: { in: TEAM_MEMBER_ROLES }, isActive: true }
+    ? { role: { in: TEAM_MEMBER_ROLES }, isActive: true, organizationAdminId: supervisorId }
     : { supervisorId, isActive: true };
 
 const normalizeFilterValue = (value) => {
@@ -709,7 +709,9 @@ const getTeamPendingEntries = async (req, res) => {
     // Se for SUPERVISOR, visualiza apenas os subordinados
     const subordinates = await prisma.user.findMany({
       where: {
-        ...(isAdmin ? { role: { in: TEAM_MEMBER_ROLES } } : { supervisorId: supervisorId }),
+        ...(isAdmin
+          ? { role: { in: TEAM_MEMBER_ROLES }, organizationAdminId: supervisorId }
+          : { supervisorId: supervisorId }),
         isActive: true,
       },
       select: {
@@ -875,6 +877,7 @@ const approveEntry = async (req, res) => {
             name: true,
             email: true,
             supervisorId: true,
+            organizationAdminId: true,
           },
         },
       },
@@ -892,6 +895,13 @@ const approveEntry = async (req, res) => {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode aprovar registros de seus subordinados',
+      });
+    }
+
+    if (req.user.role === 'ADMIN' && entry.user.organizationAdminId !== supervisorId) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você só pode aprovar registros do seu tenant',
       });
     }
 
@@ -982,6 +992,7 @@ const rejectEntry = async (req, res) => {
             name: true,
             email: true,
             supervisorId: true,
+            organizationAdminId: true,
           },
         },
       },
@@ -999,6 +1010,13 @@ const rejectEntry = async (req, res) => {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode rejeitar registros de seus subordinados',
+      });
+    }
+
+    if (req.user.role === 'ADMIN' && entry.user.organizationAdminId !== supervisorId) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você só pode rejeitar registros do seu tenant',
       });
     }
 
@@ -1081,6 +1099,7 @@ const requestEdit = async (req, res) => {
             name: true,
             email: true,
             supervisorId: true,
+            organizationAdminId: true,
           },
         },
       },
@@ -1098,6 +1117,13 @@ const requestEdit = async (req, res) => {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode solicitar edição de registros de seus subordinados',
+      });
+    }
+
+    if (req.user.role === 'ADMIN' && entry.user.organizationAdminId !== supervisorId) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você só pode solicitar ajustes em registros do seu tenant',
       });
     }
 
@@ -1231,7 +1257,9 @@ const getTeamMembers = async (req, res) => {
 
     const subordinates = await prisma.user.findMany({
       where: {
-        ...(isAdmin ? { role: { in: TEAM_MEMBER_ROLES } } : { supervisorId: supervisorId }),
+        ...(isAdmin
+          ? { role: { in: TEAM_MEMBER_ROLES }, organizationAdminId: supervisorId }
+          : { supervisorId: supervisorId }),
         isActive: true,
       },
       select: {
@@ -1604,7 +1632,7 @@ const getTeamBankHoursOverview = async (req, res) => {
 
     const team = await prisma.user.findMany({
       where: isAdmin
-        ? { role: { in: TEAM_MEMBER_ROLES }, isActive: true }
+        ? { role: { in: TEAM_MEMBER_ROLES }, organizationAdminId: supervisorId, isActive: true }
         : { supervisorId: supervisorId, isActive: true },
       select: {
         id: true,
