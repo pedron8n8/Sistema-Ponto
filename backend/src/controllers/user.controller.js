@@ -308,7 +308,7 @@ const resolveSeatAvailability = ({ seatSummary, occupiedSeats }) => {
 };
 
 const buildFrontendAppUrl = (pathWithQuery = '') => {
-  const frontendUrl = String(process.env.FRONTEND_URL || 'http://localhost:5173').trim();
+  const frontendUrl = String(process.env.FRONTEND_URL || 'https://app.omnipunt.com').trim();
   const normalizedPath = String(pathWithQuery || '').startsWith('/')
     ? String(pathWithQuery || '')
     : `/${String(pathWithQuery || '').trim()}`;

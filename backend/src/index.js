@@ -16,7 +16,7 @@ const permissionsPolicyHeader =
   process.env.PERMISSIONS_POLICY_HEADER ||
   'camera=(), microphone=(), geolocation=(), payment=(), usb=(), midi=()';
 
-const defaultAllowedOrigins = ['http://localhost:5173', 'http://178.105.61.219:9481'];
+const defaultAllowedOrigins = ['http://localhost:5173', 'https://app.omnipunt.com', 'http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001'];
 const allowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || defaultAllowedOrigins.join(','))
   .split(',')
   .map((origin) => origin.trim())

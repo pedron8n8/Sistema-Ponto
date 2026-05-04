@@ -99,7 +99,7 @@ const createBasePlanCheckoutSession = async ({
 
   const resolvedPlan = resolveBasePlanPriceId(planCode);
   const safeSeatLimit = toPositiveInteger(seatLimit, 1);
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const frontendUrl = process.env.FRONTEND_URL || 'https://app.omnipunt.com';
   const successUrl =
     process.env.STRIPE_PLAN_SELECTION_SUCCESS_URL ||
     `${frontendUrl}/app/escolher-plano?status=success&session_id={CHECKOUT_SESSION_ID}`;
@@ -421,7 +421,7 @@ const createAdditionalSeatsCheckoutSession = async ({
 
   const quantity = toPositiveInteger(overageSeats, 1);
   const safeAmountDue = toCurrencyAmount(amountDue, quantity * EXTRA_ADMIN_SEAT_MONTHLY_USD);
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const frontendUrl = process.env.FRONTEND_URL || 'https://app.omnipunt.com';
   const successUrl =
     process.env.STRIPE_ADDITIONAL_SEAT_SUCCESS_URL ||
     `${frontendUrl}/app/admin/obrigado?status=success&session_id={CHECKOUT_SESSION_ID}`;

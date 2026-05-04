@@ -3,7 +3,7 @@ $ProgressPreference = 'SilentlyContinue'
 $apiKey = $env:SUPABASE_KEY
 $supabaseUrl = $env:SUPABASE_URL
 $authUrl = if ($supabaseUrl) { "$supabaseUrl/auth/v1/token?grant_type=password" } else { '' }
-$base = if ($env:BACKEND_BASE_URL) { $env:BACKEND_BASE_URL } else { 'http://localhost:3000' }
+$base = if ($env:BACKEND_BASE_URL) { $env:BACKEND_BASE_URL } else { 'https://api.omnipunt.com' }
 $api = "$base/api/v1"
 
 function Get-Token([string]$email, [string]$password) {
@@ -215,7 +215,7 @@ $md = @()
 $md += '# Matriz de Autorizacao da API'
 $md += ''
 $md += 'Data: 2026-03-26'
-$md += 'Base URL: http://localhost:3000/api/v1'
+$md += 'Base URL: https://api.omnipunt.com/api/v1'
 $md += ''
 $md += 'Criterio de classificacao:'
 $md += '- BLOQUEADO: status 401 ou 403'

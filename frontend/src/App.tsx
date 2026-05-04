@@ -61,7 +61,7 @@ const MissingEnvScreen = () => {
         <pre className="mt-5 overflow-x-auto rounded-2xl bg-white p-4 text-xs text-slate-700">
           {`VITE_SUPABASE_URL=https://SEU-PROJETO.supabase.co
           VITE_SUPABASE_ANON_KEY=SEU_ANON_KEY
-          VITE_API_URL=/api/v1`}
+          VITE_API_URL=https://api.omnipunt.com/api/v1`}
         </pre>
         <p className="mt-4 text-xs text-slate-600">
           {t('After that, restart Vite with npm run dev.', 'Depois disso, reinicie o Vite com npm run dev.')}

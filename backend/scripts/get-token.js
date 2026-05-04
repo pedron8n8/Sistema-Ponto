@@ -41,7 +41,7 @@ async function login(email, password) {
 
     console.log('📝 Exemplo de uso:');
     console.log('─────────────────────────────────────────────────────');
-    console.log(`curl http://localhost:3000/api/v1/auth/me \\`);
+    console.log(`curl https://api.omnipunt.com/api/v1/auth/me \\`);
     console.log(`  -H "Authorization: Bearer ${data.session.access_token.substring(0, 30)}..."`);
     console.log('─────────────────────────────────────────────────────\n');
 

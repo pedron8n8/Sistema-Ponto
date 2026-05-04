@@ -75,7 +75,7 @@ const resolveInviteTokenFromMetadata = (supabaseUser) => {
 };
 
 const buildAdminSeatPurchaseUrl = () => {
-  const frontendUrl = String(process.env.FRONTEND_URL || 'http://localhost:5173').trim();
+  const frontendUrl = String(process.env.FRONTEND_URL || 'https://app.omnipunt.com').trim();
   return `${frontendUrl}/app/admin/comprar-assentos`;
 };
 

@@ -67,7 +67,7 @@ const sendEmail = async ({ to, subject, text }) => {
     return { channel: 'EMAIL', delivered: false, reason: 'SMTP_NOT_CONFIGURED' };
   }
 
-  const from = process.env.NOTIFICATION_FROM_EMAIL || process.env.SMTP_FROM || 'no-reply@systemaponto.local';
+  const from = process.env.NOTIFICATION_FROM_EMAIL || process.env.SMTP_FROM || 'no-reply@omnipunt.com';
 
   await transporter.sendMail({
     from,

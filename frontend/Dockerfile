@@ -2,7 +2,7 @@ FROM node:20-slim AS builder
 
 WORKDIR /app
 
-ARG VITE_API_URL=/api/v1
+ARG VITE_API_URL=https://api.omnipunt.com/api/v1
 ARG VITE_SUPABASE_URL=
 ARG VITE_SUPABASE_ANON_KEY=
 ARG VITE_STRIPE_LINK_STARTER=

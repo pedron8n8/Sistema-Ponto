@@ -57,3 +57,8 @@ CREDENTIALS.md
 get-token.js
 
 .env.vps
+
+/scripts/get-token.js
+/scripts/pentest-phase*
+
+
