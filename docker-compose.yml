@@ -59,6 +59,9 @@ services:
         condition: service_healthy
     ports:
       - "9481:80"
+      - "443:443"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     networks:
       - rede_externa_comum
 
