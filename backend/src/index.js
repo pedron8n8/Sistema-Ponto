@@ -30,15 +30,18 @@ const developmentOrigins = [
   'http://127.0.0.1:3000',
   'http://127.0.0.1:3001',
 ];
-const baseAllowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || defaultAllowedOrigins.join(','))
+
+const envOrigins = String(process.env.CORS_ALLOWED_ORIGINS || '')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
 
 const allowedOrigins = Array.from(
-  new Set(
-    isDevelopment ? baseAllowedOrigins.concat(developmentOrigins) : baseAllowedOrigins
-  )
+  new Set([
+    ...defaultAllowedOrigins,
+    ...envOrigins,
+    ...(isDevelopment ? developmentOrigins : [])
+  ])
 );
 
 const corsOptions = {
@@ -51,11 +54,13 @@ const corsOptions = {
       return callback(null, true);
     }
 
+    console.warn(`[CORS] Rejected origin: '${origin}'. Allowed origins:`, allowedOrigins);
     return callback(new Error('Origin nao permitida por CORS'));
   },
-  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'],
+  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Idempotency-Key', 'X-Idempotency-Date'],
   credentials: true,
+  optionsSuccessStatus: 200,
 };
 
 // Middlewares
