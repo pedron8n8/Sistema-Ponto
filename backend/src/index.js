@@ -27,7 +27,7 @@ const defaultAllowedOrigins = [
 ];
 const allowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || defaultAllowedOrigins.join(','))
   .split(',')
-  .map((origin) => origin.trim())
+  .map((origin) => origin.trim().replace(/^['"]|['"]$/g, '').replace(/\/$/, ''))
   .filter(Boolean);
 
 const corsOptions = {
@@ -36,11 +36,13 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    if (allowedOrigins.includes(origin)) {
+    const cleanOrigin = origin.trim().replace(/\/$/, '');
+
+    if (allowedOrigins.includes(cleanOrigin)) {
       return callback(null, true);
     }
 
-    console.warn(`[CORS] Rejected origin: '${origin}'. Allowed origins:`, allowedOrigins);
+    console.warn(`[CORS] Rejected origin: '${origin}'. Clean origin: '${cleanOrigin}'. Allowed origins:`, allowedOrigins);
     return callback(new Error('Origin nao permitida por CORS'));
   },
   methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
@@ -64,6 +66,7 @@ app.use((req, res, next) => {
 });
 
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(rateLimitMiddleware);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
