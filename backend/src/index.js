@@ -16,33 +16,19 @@ const permissionsPolicyHeader =
   process.env.PERMISSIONS_POLICY_HEADER ||
   'camera=(), microphone=(), geolocation=(), payment=(), usb=(), midi=()';
 
-const isDevelopment = (process.env.NODE_ENV || 'development') === 'development';
+
 const defaultAllowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:3001',
   'https://omnipunt.com',
   'https://www.omnipunt.com',
   'https://app.omnipunt.com',
 ];
-const developmentOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'http://localhost:3001',
-  'http://127.0.0.1:5173',
-  'http://127.0.0.1:3000',
-  'http://127.0.0.1:3001',
-];
-
-const envOrigins = String(process.env.CORS_ALLOWED_ORIGINS || '')
+const allowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || defaultAllowedOrigins.join(','))
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
-
-const allowedOrigins = Array.from(
-  new Set([
-    ...defaultAllowedOrigins,
-    ...envOrigins,
-    ...(isDevelopment ? developmentOrigins : [])
-  ])
-);
 
 const corsOptions = {
   origin: (origin, callback) => {

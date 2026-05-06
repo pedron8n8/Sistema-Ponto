@@ -1,9 +1,8 @@
 import i18next from 'i18next'
 import { toast } from 'sonner'
 
-export const API_BASE = import.meta.env.DEV
-  ? '/api/v1'
-  : (import.meta.env.VITE_API_URL as string | undefined) || 'https://api.omnipunt.com/api/v1'
+export const API_BASE =
+  (import.meta.env.VITE_API_URL as string | undefined) || 'https://api.omnipunt.com/api/v1'
 
 const IDEMPOTENCY_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 const IDEMPOTENCY_KEY_HEADER = 'X-Idempotency-Key'
