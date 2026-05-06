@@ -160,11 +160,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         )
       )
     }
-    console.log('Signing in with email:', email)
-    console.log('Supabase client:', supabase)
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
-      console.log('Mensagem:', error.message)
       throw new Error(error.message)
     }
 

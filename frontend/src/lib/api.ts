@@ -1,7 +1,9 @@
 import i18next from 'i18next'
+import { toast } from 'sonner'
 
-export const API_BASE =
-  (import.meta.env.VITE_API_URL as string | undefined) || 'https://api.omnipunt.com/api/v1'
+export const API_BASE = import.meta.env.DEV
+  ? '/api/v1'
+  : (import.meta.env.VITE_API_URL as string | undefined) || 'https://api.omnipunt.com/api/v1'
 
 const IDEMPOTENCY_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 const IDEMPOTENCY_KEY_HEADER = 'X-Idempotency-Key'
@@ -255,16 +257,16 @@ const readJsonResponse = async (res: Response) => {
   if (looksLikeHtml) {
     throw new Error(
       localizeMessage(
-        `Backend API did not respond with JSON for ${res.url}. Check if Vite is proxying /api to the backend service.`,
-        `A API do backend nao respondeu JSON em ${res.url}. Verifique se o Vite esta encaminhando /api para o backend.`
+        'Service temporarily unavailable. Please try again later.',
+        'Serviço temporariamente indisponível. Tente novamente mais tarde.'
       )
     )
   }
 
   throw new Error(
     localizeMessage(
-      `Backend API returned an unexpected response for ${res.url}.`,
-      `A API do backend retornou uma resposta inesperada em ${res.url}.`
+      'An unexpected error occurred. Please try again.',
+      'Ocorreu um erro inesperado. Tente novamente.'
     )
   )
 }
@@ -363,12 +365,12 @@ export const apiFetch = async <T>(path: string, options: RequestOptions = {}): P
   } catch (error) {
     clearTimeout(timeoutId)
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error(
-        localizeMessage(
-          'Request timed out. Check if the backend service is running.',
-          'Tempo de resposta excedido. Verifique se o backend está ativo.'
-        )
+      const msg = localizeMessage(
+        'Request timed out. Please check your internet connection.',
+        'Tempo de resposta excedido. Verifique sua conexão com a internet.'
       )
+      toast.error(msg)
+      throw new Error(msg)
     }
     throw error
   }
@@ -377,7 +379,9 @@ export const apiFetch = async <T>(path: string, options: RequestOptions = {}): P
 
   if (!res.ok) {
     const payload = await readJsonResponse(res).catch(() => ({}))
-    throw new Error(translateApiMessage(payload?.message || localizeMessage('Request failed.', 'Erro na requisicao')))
+    const errorMessage = translateApiMessage(payload?.message || localizeMessage('Request failed.', 'Erro na requisicao'))
+    toast.error(errorMessage)
+    throw new Error(errorMessage)
   }
 
   return readJsonResponse(res) as Promise<T>
@@ -405,12 +409,12 @@ export const apiFetchFormData = async <T>(
   } catch (error) {
     clearTimeout(timeoutId)
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error(
-        localizeMessage(
-          'Request timed out. Check if the backend service is running.',
-          'Tempo de resposta excedido. Verifique se o backend está ativo.'
-        )
+      const msg = localizeMessage(
+        'Request timed out. Please check your internet connection.',
+        'Tempo de resposta excedido. Verifique sua conexão com a internet.'
       )
+      toast.error(msg)
+      throw new Error(msg)
     }
     throw error
   }
@@ -419,7 +423,9 @@ export const apiFetchFormData = async <T>(
 
   if (!res.ok) {
     const payload = await readJsonResponse(res).catch(() => ({}))
-    throw new Error(translateApiMessage(payload?.message || localizeMessage('Request failed.', 'Erro na requisicao')))
+    const errorMessage = translateApiMessage(payload?.message || localizeMessage('Request failed.', 'Erro na requisicao'))
+    toast.error(errorMessage)
+    throw new Error(errorMessage)
   }
 
   return readJsonResponse(res) as Promise<T>

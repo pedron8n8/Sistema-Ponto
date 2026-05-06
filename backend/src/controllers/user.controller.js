@@ -1391,6 +1391,25 @@ const listUsers = async (req, res) => {
       accessFilters.push({ OR: [{ id: req.user.id }, { organizationAdminId: req.user.id }] });
     }
 
+    // HR visualiza apenas membros da sua organização
+    if (req.user.role === 'HR') {
+      const currentUser = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { organizationAdminId: true },
+      });
+      if (currentUser?.organizationAdminId) {
+        accessFilters.push({
+          OR: [
+            { id: currentUser.organizationAdminId },
+            { organizationAdminId: currentUser.organizationAdminId },
+          ],
+        });
+      } else {
+        // Se a HR não tiver organização, não vê ninguém além de si mesma
+        accessFilters.push({ id: req.user.id });
+      }
+    }
+
     if (accessFilters.length > 0) {
       where.AND = [...(where.AND || []), ...accessFilters];
     }

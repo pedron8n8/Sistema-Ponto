@@ -6,7 +6,8 @@ const path = require('path');
 const xlsx = require('xlsx');
 
 // Fila de exportação de relatórios
-const reportQueue = new Queue('report-export', {
+const QUEUE_NAME = process.env.NODE_ENV === 'development' ? 'report-export-dev' : 'report-export';
+const reportQueue = new Queue(QUEUE_NAME, {
   connection: redis,
 });
 
@@ -34,23 +35,203 @@ const parseDateFilter = (value, endOfDay = false) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
-const getReportRows = async (filters) => {
+const STATUS_LABELS = {
+  PENDING: 'Open',
+  APPROVED: 'Approved',
+  REJECTED: 'Rejected',
+};
+
+const ACTION_LABELS = {
+  APPROVED: 'Approved',
+  REJECTED: 'Rejected',
+  EDIT_REQUESTED: 'Edit Requested',
+  EDIT_RESPONSE: 'Edit Response',
+};
+
+const formatDate = (value) => (value ? new Date(value).toLocaleDateString('en-US') : '');
+const formatTime = (value) =>
+  value
+    ? new Date(value).toLocaleTimeString('en-US', { hour12: false })
+    : '';
+
+const resolveStatusLabel = (status) => STATUS_LABELS[status] || status || '';
+const resolveActionLabel = (action) => ACTION_LABELS[action] || action || '';
+
+const resolveBreakMinutes = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 0;
+  }
+  return Math.floor(parsed);
+};
+
+const resolveWorkedMinutes = (entry) => {
+  const stored = Number(entry.workedMinutes);
+  if (Number.isFinite(stored) && stored > 0) {
+    return Math.floor(stored);
+  }
+
+  if (!entry.clockIn || !entry.clockOut) {
+    return 0;
+  }
+
+  const diffMs = new Date(entry.clockOut) - new Date(entry.clockIn);
+  if (!Number.isFinite(diffMs) || diffMs <= 0) {
+    return 0;
+  }
+
+  const breakMinutes = resolveBreakMinutes(entry.breakMinutes);
+  const totalMinutes = Math.floor(diffMs / 60000) - breakMinutes;
+  return Math.max(0, totalMinutes);
+};
+
+const resolvePaymentSettled = (entry) => {
+  const accrual = entry.bankHoursEntries?.[0];
+  if (!accrual) {
+    return 'N/A';
+  }
+  return accrual.paymentStatus === 'PAID' ? 'Yes' : 'No';
+};
+
+const buildDailyLogs = (entries) => {
+  const headers = [
+    'Entry ID',
+    'User',
+    'Email',
+    'Supervisor',
+    'Clock In Date',
+    'Clock In Time',
+    'Clock Out Date',
+    'Clock Out Time',
+    'Worked Hours',
+    'Worked Minutes',
+    'Break Minutes',
+    'Status',
+    'Notes',
+    'IP Address',
+    'Device',
+    'Last Action',
+    'Reviewer',
+    'Payment Settled',
+  ];
+
+  const rows = entries.map((entry) => {
+    const workedMinutes = resolveWorkedMinutes(entry);
+    const workedHours = workedMinutes > 0 ? (workedMinutes / 60).toFixed(2) : '';
+    const breakMinutes = resolveBreakMinutes(entry.breakMinutes);
+    const lastLog = entry.logs[0];
+
+    return [
+      entry.id,
+      entry.user.name || entry.user.email,
+      entry.user.email,
+      entry.user.supervisor?.name || 'N/A',
+      formatDate(entry.clockIn),
+      formatTime(entry.clockIn),
+      formatDate(entry.clockOut),
+      formatTime(entry.clockOut),
+      workedHours,
+      workedMinutes || '',
+      breakMinutes || '',
+      resolveStatusLabel(entry.status),
+      entry.notes || '',
+      entry.ipAddress || '',
+      entry.device || '',
+      lastLog ? resolveActionLabel(lastLog.action) : '',
+      lastLog?.reviewer?.name || '',
+      resolvePaymentSettled(entry),
+    ];
+  });
+
+  return { headers, rows };
+};
+
+const buildSummary = (entries) => {
+  const headers = [
+    'User',
+    'Email',
+    'Open Entries',
+    'Total Worked Hours',
+    'Total Worked Minutes',
+    'Total Break Minutes',
+    'Payment Settled',
+  ];
+
+  const grouped = new Map();
+
+  entries
+    .filter((entry) => entry.status === 'PENDING')
+    .forEach((entry) => {
+      const userKey = entry.user.id;
+      if (!grouped.has(userKey)) {
+        grouped.set(userKey, {
+          user: entry.user,
+          totalWorkedMinutes: 0,
+          totalBreakMinutes: 0,
+          openEntries: 0,
+          hasAccrual: false,
+          hasPending: false,
+          hasPaid: false,
+        });
+      }
+
+      const summary = grouped.get(userKey);
+      const workedMinutes = resolveWorkedMinutes(entry);
+      const breakMinutes = resolveBreakMinutes(entry.breakMinutes);
+      const accrual = entry.bankHoursEntries?.[0];
+
+      summary.totalWorkedMinutes += workedMinutes;
+      summary.totalBreakMinutes += breakMinutes;
+      summary.openEntries += 1;
+
+      if (accrual) {
+        summary.hasAccrual = true;
+        if (accrual.paymentStatus === 'PENDING') {
+          summary.hasPending = true;
+        }
+        if (accrual.paymentStatus === 'PAID') {
+          summary.hasPaid = true;
+        }
+      }
+    });
+
+  const rows = Array.from(grouped.values())
+    .sort((a, b) => (a.user.name || '').localeCompare(b.user.name || '', 'en-US'))
+    .map((summary) => {
+      const paymentSettled = summary.hasAccrual
+        ? summary.hasPending
+          ? 'No'
+          : 'Yes'
+        : 'N/A';
+
+      return [
+        summary.user.name || summary.user.email,
+        summary.user.email,
+        summary.openEntries,
+        summary.totalWorkedMinutes > 0 ? (summary.totalWorkedMinutes / 60).toFixed(2) : '0.00',
+        summary.totalWorkedMinutes,
+        summary.totalBreakMinutes,
+        paymentSettled,
+      ];
+    });
+
+  return { headers, rows };
+};
+
+const getReportData = async (filters) => {
   const { userId, teamId, startDate, endDate, status, supervisorId } = filters;
 
-  // Construir filtro dinâmico
   const where = {};
 
   if (userId) {
     where.userId = userId;
   } else if (supervisorId) {
-    // Supervisor sempre fica restrito aos próprios subordinados
     const subordinates = await prisma.user.findMany({
       where: { supervisorId },
       select: { id: true },
     });
     where.userId = { in: subordinates.map((s) => s.id) };
   } else if (teamId) {
-    // Busca membros da equipe de um supervisor específico
     const teamMembers = await prisma.user.findMany({
       where: { supervisorId: teamId },
       select: { id: true },
@@ -82,7 +263,6 @@ const getReportRows = async (filters) => {
     }
   }
 
-  // Busca os registros
   const entries = await prisma.timeEntry.findMany({
     where,
     include: {
@@ -111,70 +291,28 @@ const getReportRows = async (filters) => {
           },
         },
       },
+      bankHoursEntries: {
+        where: {
+          type: 'ACCRUAL',
+          minutes: { gt: 0 },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: {
+          paymentStatus: true,
+          minutes: true,
+        },
+      },
     },
     orderBy: [{ clockIn: 'desc' }],
   });
 
-  // Cabeçalho do relatório
-  const headers = [
-    'ID',
-    'Colaborador',
-    'Email',
-    'Supervisor',
-    'Data Entrada',
-    'Hora Entrada',
-    'Data Saída',
-    'Hora Saída',
-    'Duração (horas)',
-    'Duração (minutos)',
-    'Status',
-    'Notas',
-    'IP',
-    'Dispositivo',
-    'Última Ação',
-    'Revisor',
-  ];
-
-  // Converter para linhas do relatório
-  const rows = entries.map((entry) => {
-    // Calcular duração
-    let durationHours = '';
-    let durationMinutes = '';
-    if (entry.clockIn && entry.clockOut) {
-      const diff = new Date(entry.clockOut) - new Date(entry.clockIn);
-      const totalMinutes = Math.floor(diff / 60000);
-      durationHours = (totalMinutes / 60).toFixed(2);
-      durationMinutes = totalMinutes;
-    }
-
-    const clockInDate = entry.clockIn ? new Date(entry.clockIn) : null;
-    const clockOutDate = entry.clockOut ? new Date(entry.clockOut) : null;
-
-    const lastLog = entry.logs[0];
-
-    return [
-      entry.id,
-      entry.user.name || entry.user.email,
-      entry.user.email,
-      entry.user.supervisor?.name || 'N/A',
-      clockInDate ? clockInDate.toLocaleDateString('pt-BR') : '',
-      clockInDate ? clockInDate.toLocaleTimeString('pt-BR') : '',
-      clockOutDate ? clockOutDate.toLocaleDateString('pt-BR') : '',
-      clockOutDate ? clockOutDate.toLocaleTimeString('pt-BR') : '',
-      durationHours,
-      durationMinutes,
-      translateStatus(entry.status),
-      entry.notes || '',
-      entry.ipAddress || '',
-      entry.device || '',
-      lastLog ? translateAction(lastLog.action) : '',
-      lastLog?.reviewer?.name || '',
-    ];
-  });
+  const daily = buildDailyLogs(entries);
+  const summary = buildSummary(entries);
 
   return {
-    headers,
-    rows,
+    daily,
+    summary,
     totalRecords: entries.length,
   };
 };
@@ -183,7 +321,8 @@ const getReportRows = async (filters) => {
  * Gera CSV de registros de ponto
  */
 const generateTimeEntriesCSV = async (filters) => {
-  const { headers, rows, totalRecords } = await getReportRows(filters);
+  const { daily, totalRecords } = await getReportData(filters);
+  const { headers, rows } = daily;
 
   // Montar CSV
   const csvContent = [
@@ -201,40 +340,18 @@ const generateTimeEntriesCSV = async (filters) => {
  * Gera XLSX de registros de ponto
  */
 const generateTimeEntriesXLSX = async (filters) => {
-  const { headers, rows, totalRecords } = await getReportRows(filters);
-  const worksheet = xlsx.utils.aoa_to_sheet([headers, ...rows]);
+  const { daily, summary, totalRecords } = await getReportData(filters);
+  const worksheet = xlsx.utils.aoa_to_sheet([daily.headers, ...daily.rows]);
+  const summaryWorksheet = xlsx.utils.aoa_to_sheet([summary.headers, ...summary.rows]);
   const workbook = xlsx.utils.book_new();
-  xlsx.utils.book_append_sheet(workbook, worksheet, 'RelatorioPonto');
+  xlsx.utils.book_append_sheet(workbook, worksheet, 'Daily Logs');
+  xlsx.utils.book_append_sheet(workbook, summaryWorksheet, 'Summary & Pending');
   const content = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
   return {
     content,
     totalRecords,
   };
-};
-
-/**
- * Traduz status para português
- */
-const translateStatus = (status) => {
-  const translations = {
-    PENDING: 'Pendente',
-    APPROVED: 'Aprovado',
-    REJECTED: 'Rejeitado',
-  };
-  return translations[status] || status;
-};
-
-/**
- * Traduz ação para português
- */
-const translateAction = (action) => {
-  const translations = {
-    APPROVED: 'Aprovado',
-    REJECTED: 'Rejeitado',
-    EDIT_REQUESTED: 'Edição Solicitada',
-  };
-  return translations[action] || action;
 };
 
 /**
@@ -254,7 +371,7 @@ const escapeCSV = (value) => {
  */
 const createReportWorker = () => {
   const worker = new Worker(
-    'report-export',
+    QUEUE_NAME,
     async (job) => {
       console.log(`📊 Processando job de relatório: ${job.id}`);
 
@@ -335,4 +452,5 @@ module.exports = {
   generateTimeEntriesCSV,
   generateTimeEntriesXLSX,
   REPORTS_DIR,
+  QUEUE_NAME,
 };

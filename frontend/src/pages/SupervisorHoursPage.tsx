@@ -70,11 +70,12 @@ const parseHoursToMinutes = (value: string) => {
 }
 
 const SupervisorHoursPage = () => {
-  const { session } = useAuth()
+  const { session, profile } = useAuth()
   const { t: i18nT, i18n } = useTranslation()
   const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
   const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
   const token = session?.access_token
+  const canPostBankPayments = profile?.role === 'ADMIN'
 
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [teamWorkSettingsByUser, setTeamWorkSettingsByUser] = useState<Record<string, TeamWorkSettingsForm>>({})
@@ -236,6 +237,11 @@ const SupervisorHoursPage = () => {
 
   const handlePayTeamMemberPendingBankHours = async (userId: string) => {
     if (!token) return
+
+    if (!canPostBankPayments) {
+      setError(t('Only admins can post banked-hours payments.', 'Apenas admins podem dar baixa no banco de horas.'))
+      return
+    }
 
     setError('')
     setTeamBankNotice('')
@@ -462,12 +468,18 @@ const SupervisorHoursPage = () => {
                 </div>
                 <button
                   onClick={() => handlePayTeamMemberPendingBankHours(row.member.id)}
-                  disabled={Boolean(teamBankPayLoadingByUser[row.member.id]) || row.bankHours.pendingMinutes <= 0}
+                  disabled={
+                    !canPostBankPayments ||
+                    Boolean(teamBankPayLoadingByUser[row.member.id]) ||
+                    row.bankHours.pendingMinutes <= 0
+                  }
                   className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
                 >
-                  {teamBankPayLoadingByUser[row.member.id]
-                    ? t('Processing...', 'Processando...')
-                    : t('Post pending amount', 'Dar baixa pendente')}
+                  {!canPostBankPayments
+                    ? t('Admins only', 'Apenas admin')
+                    : teamBankPayLoadingByUser[row.member.id]
+                      ? t('Processing...', 'Processando...')
+                      : t('Post pending amount', 'Dar baixa pendente')}
                 </button>
               </div>
 

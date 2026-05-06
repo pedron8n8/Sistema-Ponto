@@ -31,6 +31,14 @@ const resolveContractDailyMinutes = (userContractDailyMinutes) => {
   return DEFAULT_DAILY_WORK_MINUTES;
 };
 
+const resolveBreakMinutes = (breakMinutes) => {
+  const parsed = Number(breakMinutes);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 0;
+  }
+  return Math.floor(parsed);
+};
+
 const resolveDayType = (date) => {
   const targetDate = new Date(date);
   const holidays = getHolidaySet();
@@ -44,7 +52,7 @@ const resolveDayType = (date) => {
   };
 };
 
-const calculateOvertimeSummary = ({ clockIn, clockOut, contractDailyMinutes }) => {
+const calculateOvertimeSummary = ({ clockIn, clockOut, contractDailyMinutes, breakMinutes = 0 }) => {
   const start = new Date(clockIn);
   const end = new Date(clockOut);
   const diffMs = end.getTime() - start.getTime();
@@ -60,7 +68,10 @@ const calculateOvertimeSummary = ({ clockIn, clockOut, contractDailyMinutes }) =
     };
   }
 
-  const workedMinutes = Math.floor(diffMs / (1000 * 60));
+  const workedMinutes = Math.max(
+    0,
+    Math.floor(diffMs / (1000 * 60)) - resolveBreakMinutes(breakMinutes)
+  );
   const effectiveContractMinutes = resolveContractDailyMinutes(contractDailyMinutes);
   const overtimeMinutes = Math.max(0, workedMinutes - effectiveContractMinutes);
   const { isSpecialDay, dayType } = resolveDayType(start);
@@ -80,6 +91,7 @@ const calculateIncrementalOvertimeSummary = ({
   clockOut,
   contractDailyMinutes,
   workedMinutesBeforeEntry,
+  breakMinutes = 0,
 }) => {
   const start = new Date(clockIn);
   const end = new Date(clockOut);
@@ -99,7 +111,10 @@ const calculateIncrementalOvertimeSummary = ({
     };
   }
 
-  const workedMinutes = Math.floor(diffMs / (1000 * 60));
+  const workedMinutes = Math.max(
+    0,
+    Math.floor(diffMs / (1000 * 60)) - resolveBreakMinutes(breakMinutes)
+  );
   const effectiveContractMinutes = resolveContractDailyMinutes(contractDailyMinutes);
   const minutesBefore = Math.max(0, Math.floor(Number(workedMinutesBeforeEntry) || 0));
   const totalAfterEntry = minutesBefore + workedMinutes;
@@ -126,11 +141,15 @@ const calculateCurrentDailyProgress = ({
   now,
   contractDailyMinutes,
   workedMinutesBeforeEntry,
+  breakMinutes = 0,
 }) => {
   const start = new Date(clockIn);
   const end = new Date(now || new Date());
   const diffMs = end.getTime() - start.getTime();
-  const currentEntryWorkedMinutes = Math.max(0, Math.floor(diffMs / (1000 * 60)));
+  const currentEntryWorkedMinutes = Math.max(
+    0,
+    Math.floor(diffMs / (1000 * 60)) - resolveBreakMinutes(breakMinutes)
+  );
   const effectiveContractMinutes = resolveContractDailyMinutes(contractDailyMinutes);
   const minutesBefore = Math.max(0, Math.floor(Number(workedMinutesBeforeEntry) || 0));
   const totalWorkedMinutes = minutesBefore + currentEntryWorkedMinutes;

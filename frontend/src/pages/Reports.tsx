@@ -63,8 +63,12 @@ const Reports = () => {
   const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
   const token = session?.access_token
   const [entries, setEntries] = useState<TimeEntry[]>([])
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 7)
+    return d.toISOString().split('T')[0]
+  })
+  const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0])
   const [teamId, setTeamId] = useState('')
   const [message, setMessage] = useState('')
   const [isExporting, setIsExporting] = useState(false)

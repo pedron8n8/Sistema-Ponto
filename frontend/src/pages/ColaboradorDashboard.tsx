@@ -21,6 +21,9 @@ type CurrentEntryResponse = {
   entry: {
     id: string
     clockIn: string
+    breakMinutes?: number
+    breakStartedAt?: string | null
+    isOnBreak?: boolean
     dailyProgress?: {
       contractDailyMinutes: number
       workedMinutesBeforeEntry: number
@@ -125,6 +128,7 @@ const ColaboradorDashboard = () => {
   const [entries, setEntries] = useState<TimeEntry[]>([])
   const [currentEntry, setCurrentEntry] = useState<CurrentEntryResponse['entry'] | null>(null)
   const [elapsedMs, setElapsedMs] = useState<number | null>(null)
+  const [currentBreakMs, setCurrentBreakMs] = useState<number | null>(null)
   const [notes, setNotes] = useState('')
   const [pin, setPin] = useState('')
   const [scannedQrToken, setScannedQrToken] = useState('')
@@ -133,6 +137,7 @@ const ColaboradorDashboard = () => {
   const [qrScanLoading, setQrScanLoading] = useState(false)
   const [qrScanError, setQrScanError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [breakLoading, setBreakLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [isOnline, setIsOnline] = useState(() => navigator.onLine)
@@ -163,6 +168,21 @@ const ColaboradorDashboard = () => {
   const dailyTargetNotifiedRef = useRef(false)
 
   const token = session?.access_token
+
+  const resolveBreakMs = (entry: CurrentEntryResponse['entry'] | null, nowMs: number) => {
+    if (!entry?.clockIn) return 0
+    const storedBreakMinutes = Math.max(0, Math.floor(Number(entry.breakMinutes || 0)))
+    const breakStartedAt = entry.breakStartedAt ? new Date(entry.breakStartedAt).getTime() : null
+    const ongoingBreakMs = breakStartedAt ? Math.max(0, nowMs - breakStartedAt) : 0
+    return storedBreakMinutes * 60 * 1000 + ongoingBreakMs
+  }
+
+  const resolveElapsedMs = (entry: CurrentEntryResponse['entry'] | null, nowMs: number) => {
+    if (!entry?.clockIn) return null
+    const startedAt = new Date(entry.clockIn).getTime()
+    const elapsed = Math.max(0, nowMs - startedAt - resolveBreakMs(entry, nowMs))
+    return elapsed
+  }
 
   const activeEntry = useMemo(() => entries.find((entry) => !entry.clockOut) ?? null, [entries])
   const mapCenter: [number, number] = useMemo(() => {
@@ -324,12 +344,8 @@ const ColaboradorDashboard = () => {
       dailyTargetNotifiedRef.current = false
     }
 
-    if (response.entry?.clockIn) {
-      const startedAt = new Date(response.entry.clockIn).getTime()
-      setElapsedMs(Date.now() - startedAt)
-    } else {
-      setElapsedMs(null)
-    }
+    setElapsedMs(resolveElapsedMs(response.entry, Date.now()))
+    setCurrentBreakMs(resolveBreakMs(response.entry, Date.now()))
   }
 
   const loadGeofence = async () => {
@@ -826,12 +842,13 @@ const ColaboradorDashboard = () => {
 
   useEffect(() => {
     if (!currentEntry?.clockIn) return
-    const startedAt = new Date(currentEntry.clockIn).getTime()
     const interval = window.setInterval(() => {
-      setElapsedMs(Date.now() - startedAt)
+      const nowMs = Date.now()
+      setElapsedMs(resolveElapsedMs(currentEntry, nowMs))
+      setCurrentBreakMs(resolveBreakMs(currentEntry, nowMs))
     }, 1000)
     return () => window.clearInterval(interval)
-  }, [currentEntry?.clockIn])
+  }, [currentEntry?.clockIn, currentEntry?.breakMinutes, currentEntry?.breakStartedAt])
 
   const formatElapsed = (value: number | null) => {
     if (value === null) return '--:--:--'
@@ -1110,6 +1127,59 @@ const ColaboradorDashboard = () => {
     }
   }
 
+  const handleStartBreak = async () => {
+    if (!token || !activeEntry) return
+    if (!isOnline) {
+      setError(t('Break requires an online connection.', 'A pausa requer conexão com a internet.'))
+      return
+    }
+
+    setBreakLoading(true)
+    setError('')
+    setSuccess('')
+
+    try {
+      await apiFetch('/time/break', {
+        token,
+        method: 'POST',
+      })
+      await loadCurrentEntry()
+      await loadEntries()
+      setSuccess(t('Break started.', 'Pausa iniciada.'))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Failed to start break.', 'Erro ao iniciar pausa.'))
+    } finally {
+      setBreakLoading(false)
+    }
+  }
+
+  const handleResumeBreak = async () => {
+    if (!token || !activeEntry) return
+    if (!isOnline) {
+      setError(t('Resume requires an online connection.', 'Retomar requer conexão com a internet.'))
+      return
+    }
+
+    setBreakLoading(true)
+    setError('')
+    setSuccess('')
+
+    try {
+      await apiFetch('/time/resume', {
+        token,
+        method: 'POST',
+      })
+      await loadCurrentEntry()
+      await loadEntries()
+      setSuccess(t('Break finished. Back to work.', 'Pausa encerrada.'))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Failed to resume work.', 'Erro ao retomar.'))
+    } finally {
+      setBreakLoading(false)
+    }
+  }
+
+  const isOnBreak = Boolean(currentEntry?.breakStartedAt)
   const liveCurrentEntryMinutes = currentEntry?.clockIn
     ? Math.max(0, Math.floor((elapsedMs || 0) / 60000))
     : 0
@@ -1199,7 +1269,7 @@ const ColaboradorDashboard = () => {
           {error ? <p className="mt-3 text-xs text-rose-600">{error}</p> : null}
           {success ? <p className="mt-3 text-xs text-emerald-600">{success}</p> : null}
 
-          <div className="mt-5 grid gap-2 sm:grid-cols-2">
+          <div className="mt-5 grid gap-2 sm:grid-cols-3">
             <button
               onClick={handleClockIn}
               disabled={loading || Boolean(activeEntry)}
@@ -1214,12 +1284,31 @@ const ColaboradorDashboard = () => {
             >
               {t('Clock out', 'Registrar saida')}
             </button>
+            {activeEntry ? (
+              <button
+                onClick={isOnBreak ? handleResumeBreak : handleStartBreak}
+                disabled={loading || breakLoading}
+                className={`rounded-full px-5 py-2.5 text-sm font-semibold text-white transition disabled:opacity-50 ${
+                  isOnBreak ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-500 hover:bg-amber-600'
+                }`}
+              >
+                {breakLoading
+                  ? t('Processing...', 'Processando...')
+                  : isOnBreak
+                    ? t('Resume', 'Retomar')
+                    : t('Break', 'Pausa')}
+              </button>
+            ) : null}
           </div>
 
           <div className="mt-6 rounded-2xl border border-slate-100 bg-white px-4 py-4">
             <h3 className="text-base font-semibold text-slate-900">{t('Current status', 'Status atual')}</h3>
             <p className="mt-1 text-sm text-slate-600">
-              {activeEntry ? t('Workday in progress', 'Jornada em andamento') : t('No open workday', 'Nenhuma jornada aberta')}
+              {activeEntry
+                ? isOnBreak
+                  ? t('On break', 'Em pausa')
+                  : t('Workday in progress', 'Jornada em andamento')
+                : t('No open workday', 'Nenhuma jornada aberta')}
             </p>
 
             <div className="mt-3 flex items-center gap-2 text-xs">
@@ -1295,6 +1384,20 @@ const ColaboradorDashboard = () => {
                   />
                 </div>
               </div>
+              {(currentBreakMs || 0) > 0 && (
+                <div>
+                  <div className="mb-1 flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-amber-600 font-medium">
+                    <span>{t('Break time', 'Tempo de pausa')}</span>
+                    <span>{formatMinutesLabel(Math.max(0, Math.floor((currentBreakMs || 0) / 60000)))}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+                    <div
+                      className="h-full rounded-full bg-amber-400 transition-all"
+                      style={{ width: `${Math.min(100, Math.max((Math.max(0, Math.floor((currentBreakMs || 0) / 60000)) / Math.max(statusChartMax, 60)) * 100, 6))}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3">
@@ -1305,6 +1408,16 @@ const ColaboradorDashboard = () => {
                   ? `${t('Started', 'Inicio')}: ${formatTimeWithTimeZone(currentEntry.clockIn, viewTimeZone)}`
                   : t('No workday in progress', 'Sem jornada em andamento')}
               </p>
+              {activeEntry && isOnBreak ? (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-amber-600 font-semibold">{t('Break time', 'Tempo de pausa')}</p>
+                  <p className="mt-1 text-xl font-semibold text-amber-700">{formatElapsed(currentBreakMs)}</p>
+                </div>
+              ) : activeEntry && currentEntry?.breakMinutes ? (
+                <p className="mt-1 text-xs text-slate-500">
+                  {t('Breaks:', 'Pausas:')} {formatMinutesLabel(Math.max(0, Math.floor(currentEntry?.breakMinutes || 0)))}
+                </p>
+              ) : null}
             </div>
             <p className="mt-3 text-xs text-slate-500">
               {t('Last record', 'Ultimo registro')}: {entries[0]?.clockIn ? formatDateTimeWithTimeZone(entries[0].clockIn, viewTimeZone) : '--'}

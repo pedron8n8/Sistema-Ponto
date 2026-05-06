@@ -26,6 +26,18 @@ router.post('/clock-in', timeController.clockIn);
 router.post('/clock-out', timeController.clockOut);
 
 /**
+ * POST /api/v1/time/break
+ * Inicia pausa no ponto aberto
+ */
+router.post('/break', timeController.startBreak);
+
+/**
+ * POST /api/v1/time/resume
+ * Encerra pausa no ponto aberto
+ */
+router.post('/resume', timeController.resumeBreak);
+
+/**
  * GET /api/v1/time/current
  * Retorna o registro de ponto aberto (se existir)
  */

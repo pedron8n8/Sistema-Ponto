@@ -5,7 +5,7 @@
 /**
  * Calcula a duração entre duas datas em formato legível
  */
-const calculateDuration = (clockIn, clockOut) => {
+const calculateDuration = (clockIn, clockOut, breakMinutes = 0) => {
   if (!clockIn || !clockOut) return null;
 
   const start = new Date(clockIn);
@@ -15,14 +15,17 @@ const calculateDuration = (clockIn, clockOut) => {
   
   if (diffMs < 0) return null;
 
-  const hours = Math.floor(diffMs / (1000 * 60 * 60));
-  const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-  const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+  const safeBreakMinutes = Math.max(0, Math.floor(Number(breakMinutes) || 0));
+  const adjustedMs = Math.max(0, diffMs - safeBreakMinutes * 60 * 1000);
+
+  const hours = Math.floor(adjustedMs / (1000 * 60 * 60));
+  const minutes = Math.floor((adjustedMs % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor((adjustedMs % (1000 * 60)) / 1000);
 
   return {
-    totalMs: diffMs,
-    totalMinutes: Math.floor(diffMs / (1000 * 60)),
-    totalHours: (diffMs / (1000 * 60 * 60)).toFixed(2),
+    totalMs: adjustedMs,
+    totalMinutes: Math.floor(adjustedMs / (1000 * 60)),
+    totalHours: (adjustedMs / (1000 * 60 * 60)).toFixed(2),
     formatted: `${hours}h ${minutes}m ${seconds}s`,
     hours,
     minutes,

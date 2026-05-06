@@ -204,7 +204,7 @@ const presenceStatusClass: Record<PresenceStatus, string> = {
 }
 
 const SupervisorDashboard = () => {
-  const { session } = useAuth()
+  const { session, profile } = useAuth()
   const { t: i18nT, i18n } = useTranslation()
   const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
   const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
@@ -216,6 +216,7 @@ const SupervisorDashboard = () => {
   }
   const { viewTimeZone } = useTimeZone()
   const token = session?.access_token
+  const canPostBankPayments = profile?.role === 'ADMIN'
   const [entries, setEntries] = useState<Entry[]>([])
   const [subordinates, setSubordinates] = useState<Subordinate[]>([])
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
@@ -773,6 +774,11 @@ const SupervisorDashboard = () => {
 
   const handlePayTeamMemberPendingBankHours = async (userId: string) => {
     if (!token) return
+
+    if (!canPostBankPayments) {
+      setError(t('Only admins can post banked-hours payments.', 'Apenas admins podem dar baixa no banco de horas.'))
+      return
+    }
 
     setError('')
     setNotice('')
@@ -1395,12 +1401,18 @@ const SupervisorDashboard = () => {
                 </div>
                 <button
                   onClick={() => handlePayTeamMemberPendingBankHours(row.member.id)}
-                  disabled={Boolean(teamBankPayLoadingByUser[row.member.id]) || row.bankHours.pendingMinutes <= 0}
+                  disabled={
+                    !canPostBankPayments ||
+                    Boolean(teamBankPayLoadingByUser[row.member.id]) ||
+                    row.bankHours.pendingMinutes <= 0
+                  }
                   className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
                 >
-                  {teamBankPayLoadingByUser[row.member.id]
-                    ? t('Processing...', 'Processando...')
-                    : t('Post pending amount', 'Dar baixa pendente')}
+                  {!canPostBankPayments
+                    ? t('Admins only', 'Apenas admin')
+                    : teamBankPayLoadingByUser[row.member.id]
+                      ? t('Processing...', 'Processando...')
+                      : t('Post pending amount', 'Dar baixa pendente')}
                 </button>
               </div>
               <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-4">

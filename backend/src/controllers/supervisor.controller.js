@@ -25,6 +25,33 @@ const TEAM_MEMBER_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];
 
 const isElevatedRole = (role) => ['SUPERADMIN', 'ADMIN'].includes(role);
 
+const getActorTeamOwnerId = (actor) => {
+  if (!actor) return null;
+  if (actor.role === 'ADMIN' || actor.role === 'SUPERADMIN') return actor.id;
+  if (actor.role === 'HR') return actor.organizationAdminId;
+  return null;
+};
+
+const buildManagedTeamWhere = (actor) => {
+  const ownerId = getActorTeamOwnerId(actor);
+  if (ownerId) {
+    return { role: { in: TEAM_MEMBER_ROLES }, organizationAdminId: ownerId, isActive: true };
+  }
+
+  return { supervisorId: actor.id, isActive: true };
+};
+
+const canManageTeamUser = ({ actor, targetUser }) => {
+  if (!actor || !targetUser) return false;
+
+  const ownerId = getActorTeamOwnerId(actor);
+  if (ownerId) {
+    return targetUser.organizationAdminId === ownerId;
+  }
+
+  return targetUser.supervisorId === actor.id;
+};
+
 const buildSupervisorScopeWhere = ({ supervisorId, isAdmin }) =>
   isAdmin
     ? { role: { in: TEAM_MEMBER_ROLES }, isActive: true, organizationAdminId: supervisorId }
@@ -697,8 +724,6 @@ const sendSseEvent = (res, eventName, payload) => {
  */
 const getTeamPendingEntries = async (req, res) => {
   try {
-    const supervisorId = req.user.id;
-    const isAdmin = isElevatedRole(req.user.role);
     const { status = 'PENDING', page = 1, limit = 20, userId, startDate, endDate } = req.query;
 
     const pageNum = parseInt(page);
@@ -708,12 +733,7 @@ const getTeamPendingEntries = async (req, res) => {
     // Se for ADMIN, pode visualizar todos os usuários não-admin
     // Se for SUPERVISOR, visualiza apenas os subordinados
     const subordinates = await prisma.user.findMany({
-      where: {
-        ...(isAdmin
-          ? { role: { in: TEAM_MEMBER_ROLES }, organizationAdminId: supervisorId }
-          : { supervisorId: supervisorId }),
-        isActive: true,
-      },
+      where: buildManagedTeamWhere(req.user),
       select: {
         id: true,
         name: true,
@@ -748,6 +768,10 @@ const getTeamPendingEntries = async (req, res) => {
       ...(status !== 'ALL' && { status }),
     };
 
+    if (status === 'PENDING') {
+      where.clockOut = { not: null };
+    }
+
     // Filtro por data
     if (startDate || endDate) {
       where.clockIn = {};
@@ -762,7 +786,7 @@ const getTeamPendingEntries = async (req, res) => {
     }
 
     // Verifica se o userId solicitado é subordinado deste supervisor (ADMIN pode ver todos)
-    if (!isAdmin && userId && !subordinateIds.includes(userId)) {
+    if (userId && !subordinateIds.includes(userId)) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode visualizar registros de seus subordinados',
@@ -770,7 +794,7 @@ const getTeamPendingEntries = async (req, res) => {
     }
 
     // Busca os registros
-    const [entries, total] = await Promise.all([
+    const [entries, total, openEntries] = await Promise.all([
       prisma.timeEntry.findMany({
         where,
         include: {
@@ -801,6 +825,23 @@ const getTeamPendingEntries = async (req, res) => {
         take: limitNum,
       }),
       prisma.timeEntry.count({ where }),
+      prisma.timeEntry.findMany({
+        where: {
+          userId: { in: subordinateIds },
+          clockOut: null,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+            },
+          },
+        },
+        orderBy: { clockIn: 'desc' },
+      }),
     ]);
 
     // Calcula duração para cada entrada
@@ -822,7 +863,7 @@ const getTeamPendingEntries = async (req, res) => {
     // Estatísticas por status
     const stats = await prisma.timeEntry.groupBy({
       by: ['status'],
-      where: { userId: { in: subordinateIds } },
+      where: { userId: { in: subordinateIds }, clockOut: { not: null } },
       _count: true,
     });
 
@@ -837,8 +878,12 @@ const getTeamPendingEntries = async (req, res) => {
 
     res.json({
       entries: entriesWithDuration,
+      openEntries,
       subordinates,
-      stats: statsFormatted,
+      stats: {
+        ...statsFormatted,
+        OPEN: openEntries.length,
+      },
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -891,7 +936,7 @@ const approveEntry = async (req, res) => {
     }
 
     // Verifica se o registro é de um subordinado do supervisor
-    if (!isAdmin && entry.user.supervisorId !== supervisorId) {
+    if (!canManageTeamUser({ actor: req.user, targetUser: entry.user })) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode aprovar registros de seus subordinados',
@@ -1006,7 +1051,7 @@ const rejectEntry = async (req, res) => {
     }
 
     // Verifica se o registro é de um subordinado
-    if (!isAdmin && entry.user.supervisorId !== supervisorId) {
+    if (!canManageTeamUser({ actor: req.user, targetUser: entry.user })) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode rejeitar registros de seus subordinados',
@@ -1113,7 +1158,7 @@ const requestEdit = async (req, res) => {
     }
 
     // Verifica se é subordinado
-    if (!isAdmin && entry.user.supervisorId !== supervisorId) {
+    if (!canManageTeamUser({ actor: req.user, targetUser: entry.user })) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode solicitar edição de registros de seus subordinados',
@@ -1189,6 +1234,7 @@ const getEntryDetails = async (req, res) => {
             email: true,
             role: true,
             supervisorId: true,
+            organizationAdminId: true,
           },
         },
         logs: {
@@ -1214,7 +1260,7 @@ const getEntryDetails = async (req, res) => {
     }
 
     // Verifica se é subordinado do supervisor
-    if (!isAdmin && entry.user.supervisorId !== supervisorId) {
+    if (!canManageTeamUser({ actor: req.user, targetUser: entry.user })) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode visualizar registros de seus subordinados',
@@ -1252,16 +1298,8 @@ const getEntryDetails = async (req, res) => {
  */
 const getTeamMembers = async (req, res) => {
   try {
-    const supervisorId = req.user.id;
-    const isAdmin = isElevatedRole(req.user.role);
-
     const subordinates = await prisma.user.findMany({
-      where: {
-        ...(isAdmin
-          ? { role: { in: TEAM_MEMBER_ROLES }, organizationAdminId: supervisorId }
-          : { supervisorId: supervisorId }),
-        isActive: true,
-      },
+      where: buildManagedTeamWhere(req.user),
       select: {
         id: true,
         name: true,
@@ -1285,7 +1323,7 @@ const getTeamMembers = async (req, res) => {
       subordinates.map(async (sub) => {
         const stats = await prisma.timeEntry.groupBy({
           by: ['status'],
-          where: { userId: sub.id },
+          where: { userId: sub.id, clockOut: { not: null } },
           _count: true,
         });
 
@@ -1322,11 +1360,12 @@ const getTeamMembers = async (req, res) => {
  */
 const getTeamPresenceSnapshot = async (req, res) => {
   try {
+    const teamOwnerId = getActorTeamOwnerId(req.user);
     const snapshot = await buildTeamPresenceSnapshot({
-      supervisorId: req.user.id,
+      supervisorId: teamOwnerId || req.user.id,
       supervisorEmail: req.user.email,
       supervisorName: req.user.name,
-      isAdmin: isElevatedRole(req.user.role),
+      isAdmin: Boolean(teamOwnerId),
       filters: req.query,
     });
 
@@ -1358,11 +1397,12 @@ const streamTeamPresence = async (req, res) => {
     if (closed) return;
 
     try {
+      const teamOwnerId = getActorTeamOwnerId(req.user);
       const snapshot = await buildTeamPresenceSnapshot({
-        supervisorId: req.user.id,
+        supervisorId: teamOwnerId || req.user.id,
         supervisorEmail: req.user.email,
         supervisorName: req.user.name,
-        isAdmin: isElevatedRole(req.user.role),
+        isAdmin: Boolean(teamOwnerId),
         filters: req.query,
       });
       sendSseEvent(res, 'presence', snapshot);
@@ -1400,9 +1440,10 @@ const streamTeamPresence = async (req, res) => {
  */
 const getTeamHoursKpis = async (req, res) => {
   try {
+    const teamOwnerId = getActorTeamOwnerId(req.user);
     const payload = await buildHoursKpisPayload({
-      supervisorId: req.user.id,
-      isAdmin: isElevatedRole(req.user.role),
+      supervisorId: teamOwnerId || req.user.id,
+      isAdmin: Boolean(teamOwnerId),
       query: req.query,
     });
 
@@ -1424,7 +1465,6 @@ const getTeamHoursKpis = async (req, res) => {
 const adjustTeamMemberBankHours = async (req, res) => {
   try {
     const supervisorId = req.user.id;
-    const isAdmin = isElevatedRole(req.user.role);
     const { userId } = req.params;
     const { minutesDelta, reason, resetToZero } = req.body;
 
@@ -1453,6 +1493,7 @@ const adjustTeamMemberBankHours = async (req, res) => {
         email: true,
         role: true,
         supervisorId: true,
+        organizationAdminId: true,
       },
     });
 
@@ -1463,7 +1504,7 @@ const adjustTeamMemberBankHours = async (req, res) => {
       });
     }
 
-    if (!isAdmin && member.supervisorId !== supervisorId) {
+    if (!canManageTeamUser({ actor: req.user, targetUser: member })) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode ajustar banco de horas de seus subordinados',
@@ -1509,8 +1550,6 @@ const adjustTeamMemberBankHours = async (req, res) => {
  */
 const updateTeamMemberWorkSettings = async (req, res) => {
   try {
-    const supervisorId = req.user.id;
-    const isAdmin = isElevatedRole(req.user.role);
     const { userId } = req.params;
     const { contractDailyMinutes, workdayStartTime, workdayEndTime, timeZone } = req.body;
 
@@ -1522,6 +1561,7 @@ const updateTeamMemberWorkSettings = async (req, res) => {
         email: true,
         role: true,
         supervisorId: true,
+        organizationAdminId: true,
       },
     });
 
@@ -1532,7 +1572,7 @@ const updateTeamMemberWorkSettings = async (req, res) => {
       });
     }
 
-    if (!isAdmin && member.supervisorId !== supervisorId) {
+    if (!canManageTeamUser({ actor: req.user, targetUser: member })) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode ajustar jornada de seus subordinados',
@@ -1627,13 +1667,8 @@ const updateTeamMemberWorkSettings = async (req, res) => {
  */
 const getTeamBankHoursOverview = async (req, res) => {
   try {
-    const supervisorId = req.user.id;
-    const isAdmin = isElevatedRole(req.user.role);
-
     const team = await prisma.user.findMany({
-      where: isAdmin
-        ? { role: { in: TEAM_MEMBER_ROLES }, organizationAdminId: supervisorId, isActive: true }
-        : { supervisorId: supervisorId, isActive: true },
+      where: buildManagedTeamWhere(req.user),
       select: {
         id: true,
         name: true,
@@ -1714,7 +1749,6 @@ const getTeamBankHoursOverview = async (req, res) => {
 const payTeamMemberBankHours = async (req, res) => {
   try {
     const supervisorId = req.user.id;
-    const isAdmin = isElevatedRole(req.user.role);
     const { userId } = req.params;
     const { entryIds, payAllPending = true, paymentNote } = req.body;
 
@@ -1726,6 +1760,7 @@ const payTeamMemberBankHours = async (req, res) => {
         email: true,
         role: true,
         supervisorId: true,
+        organizationAdminId: true,
       },
     });
 
@@ -1736,7 +1771,7 @@ const payTeamMemberBankHours = async (req, res) => {
       });
     }
 
-    if (!isAdmin && member.supervisorId !== supervisorId) {
+    if (!canManageTeamUser({ actor: req.user, targetUser: member })) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode dar baixa no banco de horas de seus subordinados',

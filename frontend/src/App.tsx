@@ -36,6 +36,7 @@ import { TimezoneProvider } from './context/TimezoneContext'
 import { LanguageProvider } from './context/LanguageContext'
 import { useTranslation } from 'react-i18next'
 import LanguageSwitcher from './components/LanguageSwitcher'
+import { Toaster } from 'sonner'
 
 const MissingEnvScreen = () => {
   const { t: i18nT, i18n } = useTranslation()
@@ -343,6 +344,7 @@ const App = () => {
       ) : (
         <MissingEnvScreen />
       )}
+      <Toaster position="top-right" richColors />
     </LanguageProvider>
   )
 }

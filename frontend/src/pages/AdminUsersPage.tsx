@@ -120,6 +120,7 @@ const AdminUsersPage = () => {
   const [editSaving, setEditSaving] = useState(false)
   const [pinSaving, setPinSaving] = useState(false)
   const [pinResetting, setPinResetting] = useState(false)
+  const [pinSuccessMsg, setPinSuccessMsg] = useState('')
 
   const canManageUsers = profile?.role === 'ADMIN'
   const isSuperAdmin = profile?.role === 'SUPERADMIN'
@@ -459,6 +460,7 @@ const AdminUsersPage = () => {
     })
     setError('')
     setNotice('')
+    setPinSuccessMsg('')
   }
 
   const closeUserEditor = () => {
@@ -469,6 +471,7 @@ const AdminUsersPage = () => {
       supervisorId: '',
       pin: '',
     })
+    setPinSuccessMsg('')
   }
 
   const handleSaveUserData = async () => {
@@ -529,7 +532,7 @@ const AdminUsersPage = () => {
       })
 
       setEditDraft((prev) => ({ ...prev, pin: '' }))
-      setNotice(t('PIN updated successfully.', 'PIN atualizado com sucesso.'))
+      setPinSuccessMsg(t('PIN updated successfully.', 'PIN atualizado com sucesso.'))
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Could not update PIN.', 'Nao foi possivel atualizar o PIN.'))
     } finally {
@@ -551,7 +554,7 @@ const AdminUsersPage = () => {
       })
 
       setEditDraft((prev) => ({ ...prev, pin: '' }))
-      setNotice(t('PIN reset successfully.', 'PIN resetado com sucesso.'))
+      setPinSuccessMsg(t('PIN reset successfully.', 'PIN resetado com sucesso.'))
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Could not reset PIN.', 'Nao foi possivel resetar o PIN.'))
     } finally {
@@ -648,7 +651,7 @@ const AdminUsersPage = () => {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-lg font-semibold text-slate-900">{t('Seat summary', 'Resumo de cadeiras')}</h3>
           <div className="flex items-center gap-2">
-            {adminSeatAssignments.length > 1 ? (
+            {adminSeatAssignments.length > 0 ? (
               <select
                 value={selectedAdminId}
                 onChange={(event) => setSelectedAdminId(event.target.value)}
@@ -1132,6 +1135,10 @@ const AdminUsersPage = () => {
                         {pinResetting ? t('Resetting...', 'Resetando...') : t('Reset PIN', 'Resetar PIN')}
                       </button>
                     </div>
+
+                    {pinSuccessMsg && (
+                      <p className="mt-2 text-xs font-medium text-emerald-600">{pinSuccessMsg}</p>
+                    )}
                   </div>
                 ) : null}
               </div>

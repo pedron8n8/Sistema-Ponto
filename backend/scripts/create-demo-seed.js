@@ -20,17 +20,17 @@ const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABAS
 });
 
 const DEMO_PASSWORD = process.env.DEMO_SEED_PASSWORD || 'Omni!2026Seed#1';
-const DEMO_DOMAIN = process.env.DEMO_SEED_EMAIL_DOMAIN || 'demo.omnipunt.test';
+const DEMO_DOMAIN = process.env.DEMO_SEED_EMAIL_DOMAIN || 'omnipunt.com';
 
 const USERS = [
-  { key: 'superadmin', name: 'Demo Superadmin', role: 'SUPERADMIN', local: 'superadmin', hourlyRate: 150 },
-  { key: 'admin', name: 'Demo Admin', role: 'ADMIN', local: 'admin', hourlyRate: 120 },
-  { key: 'hr', name: 'Demo HR', role: 'HR', local: 'hr', hourlyRate: 88 },
-  { key: 'supervisor', name: 'Demo Supervisor', role: 'SUPERVISOR', local: 'supervisor', hourlyRate: 78 },
-  { key: 'member1', name: 'Ana QA', role: 'MEMBER', local: 'ana', hourlyRate: 42 },
-  { key: 'member2', name: 'Bruno QA', role: 'MEMBER', local: 'bruno', hourlyRate: 46 },
-  { key: 'member3', name: 'Carla QA', role: 'MEMBER', local: 'carla', hourlyRate: 51 },
-  { key: 'member4', name: 'Diego QA', role: 'MEMBER', local: 'diego', hourlyRate: 38 },
+  { key: 'superadmin', name: 'Pedro Superadmin', role: 'SUPERADMIN', local: 'superadmin', hourlyRate: 0 },
+  { key: 'admin', name: 'Amanda Admin', role: 'ADMIN', local: 'admin', hourlyRate: 0 },
+  { key: 'hr', name: 'Pedro HR', role: 'HR', local: 'hr', hourlyRate: 0 },
+  { key: 'supervisor', name: 'Pedro Supervisor', role: 'SUPERVISOR', local: 'supervisor', hourlyRate: 0 },
+  { key: 'member1', name: 'Iyanuoluwa Joseph Akinnusi', role: 'MEMBER', local: 'iyanuoluwa', hourlyRate: 0 },
+  { key: 'member2', name: 'Kyle Miller', role: 'MEMBER', local: 'kyle', hourlyRate: 0 },
+  { key: 'member3', name: 'Maria Erika Aguilar', role: 'MEMBER', local: 'maria', hourlyRate: 0 },
+  { key: 'member4', name: 'Amina Shah', role: 'MEMBER', local: 'amina', hourlyRate: 0 },
 ];
 
 const emailFor = (user) => `${user.local}@${DEMO_DOMAIN}`.toLowerCase();

@@ -158,6 +158,8 @@ model TimeEntry {
   location    Json?         // { lat: number, lng: number }
   device      String?
   workedMinutes Int         @default(0)
+  breakMinutes Int         @default(0)
+  breakStartedAt DateTime?
   overtimeMinutes Int       @default(0)
   overtimeMinutes50 Int     @default(0)
   overtimeMinutes100 Int    @default(0)

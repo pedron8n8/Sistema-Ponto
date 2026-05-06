@@ -304,6 +304,39 @@ const calculateFinancialSummary = ({ workedMinutes, overtimeMinutes50, overtimeM
   };
 };
 
+const resolveStoredBreakMinutes = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 0;
+  }
+  return Math.floor(parsed);
+};
+
+const resolveBreakMinutes = (entry, now = new Date()) => {
+  if (!entry) {
+    return {
+      storedMinutes: 0,
+      totalMinutes: 0,
+      isOnBreak: false,
+      startedAt: null,
+    };
+  }
+
+  const storedMinutes = resolveStoredBreakMinutes(entry.breakMinutes);
+  const startedAt = entry.breakStartedAt ? new Date(entry.breakStartedAt) : null;
+  const isOnBreak = Boolean(startedAt && Number.isFinite(startedAt.getTime()));
+  const additionalMinutes = isOnBreak
+    ? Math.max(0, Math.floor((now.getTime() - startedAt.getTime()) / 60000))
+    : 0;
+
+  return {
+    storedMinutes,
+    totalMinutes: storedMinutes + additionalMinutes,
+    isOnBreak,
+    startedAt: isOnBreak ? startedAt : null,
+  };
+};
+
 const resolveWorkedMinutes = (entry) => {
   if (!entry || !entry.clockIn || !entry.clockOut) {
     return 0;
@@ -314,7 +347,11 @@ const resolveWorkedMinutes = (entry) => {
     return Math.floor(storedWorkedMinutes);
   }
 
-  const calculatedDuration = calculateDuration(entry.clockIn, entry.clockOut);
+  const calculatedDuration = calculateDuration(
+    entry.clockIn,
+    entry.clockOut,
+    resolveStoredBreakMinutes(entry.breakMinutes)
+  );
   return Math.max(0, Math.floor(Number(calculatedDuration?.totalMinutes) || 0));
 };
 
@@ -646,6 +683,7 @@ const clockOut = async (req, res) => {
     }
 
     const clockOutTime = new Date();
+    const breakSummary = resolveBreakMinutes(openEntry, clockOutTime);
 
     const locationPayload = buildLocationPayload({
       existingLocation: openEntry.location,
@@ -683,6 +721,8 @@ const clockOut = async (req, res) => {
         clockOut: clockOutTime,
         notes: notes || openEntry.notes,
         location: locationPayload,
+        breakMinutes: breakSummary.totalMinutes,
+        breakStartedAt: null,
       },
       include: {
         user: {
@@ -697,7 +737,11 @@ const clockOut = async (req, res) => {
     });
 
     // Calcula duração
-    const duration = calculateDuration(updatedEntry.clockIn, updatedEntry.clockOut);
+    const duration = calculateDuration(
+      updatedEntry.clockIn,
+      updatedEntry.clockOut,
+      breakSummary.totalMinutes
+    );
 
     const userConfig = await prisma.user.findUnique({
       where: { id: userId },
@@ -741,6 +785,7 @@ const clockOut = async (req, res) => {
       clockOut: updatedEntry.clockOut,
       contractDailyMinutes: userConfig?.contractDailyMinutes,
       workedMinutesBeforeEntry,
+      breakMinutes: breakSummary.totalMinutes,
     });
 
     const bankHoursResult = await accrueBankHours({
@@ -789,6 +834,7 @@ const clockOut = async (req, res) => {
         userId: enrichedEntry.userId,
         clockIn: enrichedEntry.clockIn,
         clockOut: enrichedEntry.clockOut,
+        breakMinutes: breakSummary.totalMinutes,
         notes: enrichedEntry.notes,
         ipAddress: enrichedEntry.ipAddress,
         device: enrichedEntry.device,
@@ -819,6 +865,128 @@ const clockOut = async (req, res) => {
     res.status(500).json({
       error: 'Internal Server Error',
       message: 'Erro ao registrar saída',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
+/**
+ * POST /time/break
+ * Inicia pausa no ponto aberto
+ */
+const startBreak = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const openEntry = await prisma.timeEntry.findFirst({
+      where: {
+        userId,
+        clockOut: null,
+      },
+      orderBy: {
+        clockIn: 'desc',
+      },
+    });
+
+    if (!openEntry) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Não há registro de ponto aberto. Faça clock-in primeiro.',
+      });
+    }
+
+    if (openEntry.breakStartedAt) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Já existe uma pausa em andamento.',
+      });
+    }
+
+    const now = new Date();
+
+    const updatedEntry = await prisma.timeEntry.update({
+      where: { id: openEntry.id },
+      data: {
+        breakStartedAt: now,
+      },
+    });
+
+    res.json({
+      message: 'Pausa iniciada com sucesso',
+      entry: {
+        id: updatedEntry.id,
+        clockIn: updatedEntry.clockIn,
+        breakMinutes: resolveStoredBreakMinutes(updatedEntry.breakMinutes),
+        breakStartedAt: updatedEntry.breakStartedAt,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Erro ao iniciar pausa:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao iniciar pausa',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
+/**
+ * POST /time/resume
+ * Encerra pausa no ponto aberto
+ */
+const resumeBreak = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const openEntry = await prisma.timeEntry.findFirst({
+      where: {
+        userId,
+        clockOut: null,
+      },
+      orderBy: {
+        clockIn: 'desc',
+      },
+    });
+
+    if (!openEntry) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Não há registro de ponto aberto. Faça clock-in primeiro.',
+      });
+    }
+
+    if (!openEntry.breakStartedAt) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Nenhuma pausa ativa para retomar.',
+      });
+    }
+
+    const now = new Date();
+    const breakSummary = resolveBreakMinutes(openEntry, now);
+
+    const updatedEntry = await prisma.timeEntry.update({
+      where: { id: openEntry.id },
+      data: {
+        breakMinutes: breakSummary.totalMinutes,
+        breakStartedAt: null,
+      },
+    });
+
+    res.json({
+      message: 'Pausa encerrada com sucesso',
+      entry: {
+        id: updatedEntry.id,
+        clockIn: updatedEntry.clockIn,
+        breakMinutes: resolveStoredBreakMinutes(updatedEntry.breakMinutes),
+        breakStartedAt: updatedEntry.breakStartedAt,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Erro ao encerrar pausa:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao encerrar pausa',
       ...(process.env.NODE_ENV === 'development' && { details: error.message }),
     });
   }
@@ -970,7 +1138,9 @@ const getMyTimeEntries = async (req, res) => {
     // Adiciona duração calculada a cada entrada
     const entriesWithDuration = entries.map((entry) => ({
       ...entry,
-      duration: entry.clockOut ? calculateDuration(entry.clockIn, entry.clockOut) : null,
+      duration: entry.clockOut
+        ? calculateDuration(entry.clockIn, entry.clockOut, resolveStoredBreakMinutes(entry.breakMinutes))
+        : null,
     }));
 
     // Calcula estatísticas do período
@@ -1070,20 +1240,27 @@ const getCurrentEntry = async (req, res) => {
       0
     );
 
+    const now = new Date();
+    const breakSummary = resolveBreakMinutes(openEntry, now);
+
     const dailyProgress = calculateCurrentDailyProgress({
       clockIn: openEntry.clockIn,
-      now: new Date(),
+      now,
       contractDailyMinutes: userConfig?.contractDailyMinutes,
       workedMinutesBeforeEntry,
+      breakMinutes: breakSummary.totalMinutes,
     });
 
     // Calcula quanto tempo já passou desde o clock-in
-    const elapsed = calculateDuration(openEntry.clockIn, new Date());
+    const elapsed = calculateDuration(openEntry.clockIn, now, breakSummary.totalMinutes);
 
     res.json({
       hasOpenEntry: true,
       entry: {
         ...openEntry,
+        breakMinutes: breakSummary.totalMinutes,
+        breakStartedAt: breakSummary.startedAt,
+        isOnBreak: breakSummary.isOnBreak,
         elapsed,
         dailyProgress,
       },
@@ -1122,7 +1299,11 @@ const getTodayEntries = async (req, res) => {
     let totalMinutes = 0;
     entries.forEach((entry) => {
       if (entry.clockOut) {
-        const duration = calculateDuration(entry.clockIn, entry.clockOut);
+        const duration = calculateDuration(
+          entry.clockIn,
+          entry.clockOut,
+          resolveStoredBreakMinutes(entry.breakMinutes)
+        );
         totalMinutes += duration.totalMinutes;
       }
     });
@@ -1132,7 +1313,9 @@ const getTodayEntries = async (req, res) => {
     res.json({
       entries: entries.map((entry) => ({
         ...entry,
-        duration: entry.clockOut ? calculateDuration(entry.clockIn, entry.clockOut) : null,
+        duration: entry.clockOut
+          ? calculateDuration(entry.clockIn, entry.clockOut, resolveStoredBreakMinutes(entry.breakMinutes))
+          : null,
       })),
       summary: {
         totalEntries: entries.length,
@@ -1221,7 +1404,9 @@ const getTimeEntryById = async (req, res) => {
     res.json({
       entry: {
         ...entry,
-        duration: entry.clockOut ? calculateDuration(entry.clockIn, entry.clockOut) : null,
+        duration: entry.clockOut
+          ? calculateDuration(entry.clockIn, entry.clockOut, resolveStoredBreakMinutes(entry.breakMinutes))
+          : null,
       },
     });
   } catch (error) {
@@ -1314,6 +1499,8 @@ module.exports = {
   issueTerminalQr,
   clockIn,
   clockOut,
+  startBreak,
+  resumeBreak,
   getMyTimeEntries,
   getCurrentEntry,
   getGeofenceSettings,

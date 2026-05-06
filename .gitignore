@@ -6,3 +6,9 @@ backend/dist
 frontend/node_modules
 frontend/dist
 .env
+backend/.env
+frontend/.env
+backend/scripts/start-ssh-tunnel.ps1
+backend/scripts/pentest-phase2.js
+backend/scripts/create-demo-seed.js
+backend/demo-users.json

@@ -98,7 +98,7 @@ router.get('/team/bank-hours/overview', getTeamBankHoursOverview);
  * Dá baixa (paga) banco de horas pendente do membro
  * Body: { payAllPending?: boolean, entryIds?: string[], paymentNote?: string }
  */
-router.patch('/team/:userId/bank-hours/pay', roleCheck(['HR', 'ADMIN']), payTeamMemberBankHours);
+router.patch('/team/:userId/bank-hours/pay', roleCheck(['ADMIN']), payTeamMemberBankHours);
 
 /**
  * PATCH /supervisor/team/:userId/work-settings
