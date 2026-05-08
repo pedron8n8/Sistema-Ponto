@@ -4,6 +4,7 @@ const redis = require('../config/redis');
 const fs = require('fs');
 const path = require('path');
 const xlsx = require('xlsx');
+const { parseDateFilter } = require('../utils/dateFilters');
 
 // Fila de exportação de relatórios
 const QUEUE_NAME = process.env.NODE_ENV === 'development' ? 'report-export-dev' : 'report-export';
@@ -18,22 +19,6 @@ const REPORTS_DIR = path.join(__dirname, '../../exports');
 if (!fs.existsSync(REPORTS_DIR)) {
   fs.mkdirSync(REPORTS_DIR, { recursive: true });
 }
-
-const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
-
-const parseDateFilter = (value, endOfDay = false) => {
-  if (!value) return null;
-
-  if (typeof value === 'string' && DATE_ONLY_REGEX.test(value)) {
-    const [year, month, day] = value.split('-').map(Number);
-    return endOfDay
-      ? new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999))
-      : new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
-  }
-
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-};
 
 const STATUS_LABELS = {
   PENDING: 'Open',
@@ -219,7 +204,7 @@ const buildSummary = (entries) => {
 };
 
 const getReportData = async (filters) => {
-  const { userId, teamId, startDate, endDate, status, supervisorId } = filters;
+  const { userId, teamId, startDate, endDate, status, supervisorId, timeZone } = filters;
 
   const where = {};
 
@@ -246,13 +231,13 @@ const getReportData = async (filters) => {
   if (startDate || endDate) {
     where.clockIn = {};
     if (startDate) {
-      const parsedStartDate = parseDateFilter(startDate, false);
+      const parsedStartDate = parseDateFilter(startDate, false, timeZone);
       if (parsedStartDate) {
         where.clockIn.gte = parsedStartDate;
       }
     }
     if (endDate) {
-      const parsedEndDate = parseDateFilter(endDate, true);
+      const parsedEndDate = parseDateFilter(endDate, true, timeZone);
       if (parsedEndDate) {
         where.clockIn.lte = parsedEndDate;
       }

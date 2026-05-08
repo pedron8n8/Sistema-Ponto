@@ -2104,6 +2104,9 @@ const getMyCompleteProfile = async (req, res) => {
         role: true,
         isActive: true,
         phone: true,
+        slackUserId: true,
+        slackUserName: true,
+        slackTeamName: true,
         photoPath: true,
         photoUpdatedAt: true,
         contractDailyMinutes: true,
@@ -2176,12 +2179,12 @@ const getMyCompleteProfile = async (req, res) => {
  */
 const updateMyAccount = async (req, res) => {
   try {
-    const { name, email, password, phone } = req.body;
+    const { name, email, password, phone, slackUserId } = req.body;
 
-    if (name === undefined && email === undefined && password === undefined && phone === undefined) {
+    if (name === undefined && email === undefined && password === undefined && phone === undefined && slackUserId === undefined) {
       return res.status(400).json({
         error: 'Bad Request',
-        message: 'Informe ao menos um campo para atualizar: name, email, phone ou password.',
+        message: 'Informe ao menos um campo para atualizar: name, email, phone, slackUserId ou password.',
       });
     }
 
@@ -2189,6 +2192,7 @@ const updateMyAccount = async (req, res) => {
     const normalizedEmail = email !== undefined ? String(email).trim().toLowerCase() : undefined;
     const normalizedPassword = password !== undefined ? String(password) : undefined;
     const normalizedPhone = phone !== undefined ? String(phone || '').trim() : undefined;
+    const normalizedSlackUserId = slackUserId !== undefined ? String(slackUserId || '').trim() : undefined;
 
     if (normalizedName !== undefined && normalizedName.length < 2) {
       return res.status(400).json({
@@ -2268,6 +2272,7 @@ const updateMyAccount = async (req, res) => {
         ...(normalizedName !== undefined ? { name: normalizedName } : {}),
         ...(normalizedEmail !== undefined ? { email: normalizedEmail } : {}),
         ...(normalizedPhone !== undefined ? { phone: normalizedPhone || null } : {}),
+        ...(normalizedSlackUserId !== undefined ? { slackUserId: normalizedSlackUserId || null } : {}),
       },
       include: {
         supervisor: {

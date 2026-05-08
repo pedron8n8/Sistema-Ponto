@@ -5,14 +5,18 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 const supabaseGoogleCallbackUrl = supabaseUrl
   ? new URL('/auth/v1/callback', supabaseUrl).toString()
   : ''
+const supabaseSlackCallbackUrl = supabaseGoogleCallbackUrl
 
 const PROVIDER_STATE_CACHE_TTL_MS = 60 * 1000
 
 let cachedGoogleProviderEnabled: boolean | null = null
 let cachedGoogleProviderCheckedAt = 0
+let cachedSlackProviderEnabled: boolean | null = null
+let cachedSlackProviderCheckedAt = 0
 
 export const hasSupabaseEnv = Boolean(supabaseUrl && supabaseKey)
 export const googleOAuthRedirectTo = supabaseGoogleCallbackUrl
+export const slackOAuthRedirectTo = supabaseSlackCallbackUrl
 
 export const supabase = hasSupabaseEnv
   ? createClient(supabaseUrl as string, supabaseKey as string)
@@ -74,6 +78,52 @@ export const isGoogleProviderEnabled = async () => {
 
     cachedGoogleProviderEnabled = resolved
     cachedGoogleProviderCheckedAt = now
+
+    return resolved
+  } catch {
+    return true
+  }
+}
+
+export const isSlackProviderEnabled = async () => {
+  if (!hasSupabaseEnv || !supabaseUrl || !supabaseKey) {
+    return false
+  }
+
+  const now = Date.now()
+  const hasFreshCache =
+    cachedSlackProviderEnabled !== null && now - cachedSlackProviderCheckedAt < PROVIDER_STATE_CACHE_TTL_MS
+
+  if (hasFreshCache) {
+    return cachedSlackProviderEnabled
+  }
+
+  try {
+    const response = await fetch(`${supabaseUrl}/auth/v1/settings`, {
+      headers: {
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+      },
+    })
+
+    if (!response.ok) {
+      return true
+    }
+
+    const settings = (await response.json()) as {
+      external?: {
+        slack?: boolean | { enabled?: boolean }
+      }
+    }
+
+    const resolved = resolveProviderEnabled(settings?.external?.slack)
+
+    if (resolved === null) {
+      return true
+    }
+
+    cachedSlackProviderEnabled = resolved
+    cachedSlackProviderCheckedAt = now
 
     return resolved
   } catch {

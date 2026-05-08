@@ -2,6 +2,7 @@ const { reportQueue, REPORTS_DIR } = require('../workers/reportWorker');
 const fs = require('fs');
 const path = require('path');
 const { prisma } = require('../config/database');
+const { getUtcDateRangeForDateOnly, resolveTimeZone } = require('../utils/dateFilters');
 
 const SUPPORTED_EXPORT_FORMATS = ['csv', 'xlsx'];
 
@@ -65,7 +66,7 @@ const canAccessBreakdownUserWithinTenant = ({ actor, actorTenantOwnerId, targetU
 const createExportJob = async (req, res) => {
   try {
     const user = req.user;
-    const contentType = String(req.headers['content-type'] || '').toLowerCase();
+    const contentType = String(req.headers?.['content-type'] || '').toLowerCase();
     const acceptsJsonBody = !contentType || contentType.includes('application/json') || contentType.includes('+json');
     const hasObjectBody = req.body && typeof req.body === 'object' && !Array.isArray(req.body);
 
@@ -83,8 +84,9 @@ const createExportJob = async (req, res) => {
       });
     }
 
-    const { startDate, endDate, status, userId, teamId, format = 'xlsx' } = req.body;
+    const { startDate, endDate, status, userId, teamId, format = 'xlsx', timeZone } = req.body;
     const normalizedFormat = String(format || 'xlsx').toLowerCase();
+    const reportTimeZone = resolveTimeZone(timeZone || user.timeZone);
 
     if (!SUPPORTED_EXPORT_FORMATS.includes(normalizedFormat)) {
       return res.status(400).json({
@@ -163,6 +165,7 @@ const createExportJob = async (req, res) => {
           status: status || 'ALL',
           userId: user.role === 'MEMBER' ? user.id : userId || null,
           teamId: teamId || null,
+          timeZone: reportTimeZone,
         },
         requestedBy: {
           id: user.id,
@@ -197,6 +200,7 @@ const createExportJob = async (req, res) => {
         startDate,
         endDate,
         status: status || 'ALL',
+        timeZone: reportTimeZone,
       },
       checkStatusUrl: `/api/v1/reports/status/${job.id}`,
     });
@@ -395,7 +399,7 @@ const deleteReport = async (req, res) => {
 const getDailyBreakdown = async (req, res) => {
   try {
     const requester = req.user;
-    const { date, userId, teamId } = req.query;
+    const { date, userId, teamId, timeZone } = req.query;
 
     if (!date) {
       return res.status(400).json({
@@ -404,16 +408,14 @@ const getDailyBreakdown = async (req, res) => {
       });
     }
 
-    const baseDate = new Date(`${date}T00:00:00.000Z`);
-    if (Number.isNaN(baseDate.getTime())) {
+    const reportTimeZone = resolveTimeZone(timeZone || requester.timeZone);
+    const dateRange = getUtcDateRangeForDateOnly(date, reportTimeZone);
+    if (!dateRange) {
       return res.status(400).json({
         error: 'Bad Request',
         message: 'Data inválida. Use o formato YYYY-MM-DD.',
       });
     }
-
-    const endDate = new Date(baseDate);
-    endDate.setUTCDate(endDate.getUTCDate() + 1);
 
     let allowedUserIds = null;
     let actorTenantOwnerId = null;
@@ -536,8 +538,8 @@ const getDailyBreakdown = async (req, res) => {
 
     const where = {
       clockIn: {
-        gte: baseDate,
-        lt: endDate,
+        gte: dateRange.start,
+        lt: dateRange.end,
       },
     };
 
@@ -636,6 +638,7 @@ const getDailyBreakdown = async (req, res) => {
 
     res.json({
       date,
+      timeZone: reportTimeZone,
       rows,
       summary: {
         totalEmployees: rows.length,

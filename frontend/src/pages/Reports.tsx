@@ -3,7 +3,7 @@ import { API_BASE, apiFetch, translateApiMessage } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTimeZone } from '../context/TimezoneContext'
 import { useTranslation } from 'react-i18next'
-import { formatDateWithTimeZone, formatTimeWithTimeZone } from '../lib/timezone'
+import { formatDateWithTimeZone, formatTimeWithTimeZone, getDateKeyWithTimeZone } from '../lib/timezone'
 
 const API_ORIGIN = API_BASE.replace(/\/api\/v1\/?$/, '')
 
@@ -62,13 +62,19 @@ const Reports = () => {
   const locale = isPt ? 'pt-BR' : 'en-US'
   const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
   const token = session?.access_token
+  const formatDateInput = (date: Date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
   const [entries, setEntries] = useState<TimeEntry[]>([])
   const [startDate, setStartDate] = useState(() => {
     const d = new Date()
     d.setDate(d.getDate() - 7)
-    return d.toISOString().split('T')[0]
+    return formatDateInput(d)
   })
-  const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [endDate, setEndDate] = useState(() => formatDateInput(new Date()))
   const [teamId, setTeamId] = useState('')
   const [message, setMessage] = useState('')
   const [isExporting, setIsExporting] = useState(false)
@@ -76,6 +82,8 @@ const Reports = () => {
   const [dailyBreakdown, setDailyBreakdown] = useState<DailyBreakdownResponse | null>(null)
   const [dailyBreakdownLoading, setDailyBreakdownLoading] = useState(false)
   const [dailyBreakdownError, setDailyBreakdownError] = useState('')
+  const [weekLoading, setWeekLoading] = useState(false)
+  const [weekError, setWeekError] = useState('')
   const [weekStart, setWeekStart] = useState(() => {
     const now = new Date()
     const day = now.getDay()
@@ -92,8 +100,8 @@ const Reports = () => {
     end.setHours(23, 59, 59, 999)
     return end
   }, [weekStart])
-
-  const formatDateInput = (date: Date) => date.toISOString().split('T')[0]
+  const weekStartKey = formatDateInput(weekStart)
+  const weekEndKey = formatDateInput(weekEnd)
 
   const formatMinutes = (minutes: number) => {
     const hours = Math.floor(minutes / 60)
@@ -112,13 +120,22 @@ const Reports = () => {
 
   const loadWeek = async () => {
     if (!token) return
+    setWeekLoading(true)
+    setWeekError('')
     const query = new URLSearchParams({
-      startDate: formatDateInput(weekStart),
-      endDate: formatDateInput(weekEnd),
+      startDate: weekStartKey,
+      endDate: weekEndKey,
       limit: '200',
     })
-    const response = await apiFetch<{ entries: TimeEntry[] }>(`/time/me?${query.toString()}`, { token })
-    setEntries(response.entries)
+    try {
+      const response = await apiFetch<{ entries: TimeEntry[] }>(`/time/me?${query.toString()}`, { token })
+      setEntries(response.entries)
+    } catch (err) {
+      setEntries([])
+      setWeekError(err instanceof Error ? err.message : t('Failed to load reports.', 'Erro ao carregar relatorios'))
+    } finally {
+      setWeekLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -214,6 +231,7 @@ const Reports = () => {
           endDate,
           teamId: teamId || undefined,
           format: 'xlsx',
+          timeZone: viewTimeZone,
         },
       })
       setMessage(t('Export started. Generating XLSX file...', 'Exportacao iniciada. Gerando arquivo XLSX...'))
@@ -225,16 +243,16 @@ const Reports = () => {
     }
   }
 
-  const handleOpenDailyBreakdown = async (date: Date) => {
+  const handleOpenDailyBreakdown = async (dateParam: string) => {
     if (!token) return
-    const dateParam = formatDateInput(date)
     setSelectedDay(dateParam)
+    setDailyBreakdown(null)
     setDailyBreakdownLoading(true)
     setDailyBreakdownError('')
 
     try {
       const response = await apiFetch<DailyBreakdownResponse>(
-        `/reports/daily-breakdown?date=${encodeURIComponent(dateParam)}`,
+        `/reports/daily-breakdown?date=${encodeURIComponent(dateParam)}&timeZone=${encodeURIComponent(viewTimeZone)}`,
         { token }
       )
       setDailyBreakdown(response)
@@ -260,12 +278,11 @@ const Reports = () => {
     const rows = Array.from({ length: 7 }).map((_, index) => {
       const date = new Date(weekStart)
       date.setDate(date.getDate() + index)
-      return date
+      return formatDateInput(date)
     })
 
-    return rows.map((date) => {
-      const key = date.toDateString()
-      const dayEntries = entries.filter((entry) => new Date(entry.clockIn).toDateString() === key)
+    return rows.map((dateKey) => {
+      const dayEntries = entries.filter((entry) => getDateKeyWithTimeZone(entry.clockIn, viewTimeZone) === dateKey)
       const totalMinutes = dayEntries.reduce((acc, entry) => {
         if (entry.duration?.totalMinutes) return acc + entry.duration.totalMinutes
         if (entry.clockIn && entry.clockOut) {
@@ -277,12 +294,12 @@ const Reports = () => {
       const hours = Math.floor(totalMinutes / 60)
       const minutes = totalMinutes % 60
       return {
-        date,
+        dateKey,
         entries: dayEntries,
         totalLabel: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
       }
     })
-  }, [entries, weekStart])
+  }, [entries, viewTimeZone, weekStart])
 
   return (
     <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
@@ -300,8 +317,8 @@ const Reports = () => {
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm text-slate-600">
-            {t('Week from', 'Semana de')} {formatDateWithTimeZone(weekStart, viewTimeZone)} {t('to', 'a')}{' '}
-            {formatDateWithTimeZone(weekEnd, viewTimeZone)}
+            {t('Week from', 'Semana de')} {formatDateWithTimeZone(weekStartKey, viewTimeZone)} {t('to', 'a')}{' '}
+            {formatDateWithTimeZone(weekEndKey, viewTimeZone)}
           </div>
           <div className="flex gap-2">
             <button
@@ -328,19 +345,39 @@ const Reports = () => {
         </div>
 
         <div className="mt-6 grid gap-3">
-          {dayRows.map((day) => (
+          {weekLoading ? (
+            <div className="flex min-h-[260px] items-center justify-center rounded-2xl border border-slate-100 bg-white/80 p-6">
+              <div className="flex flex-col items-center gap-3 text-center">
+                <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-700" />
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">
+                    {t('Loading reports...', 'Carregando relatorios...')}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {t('Preparing the weekly timesheet.', 'Preparando o timesheet semanal.')}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+          {weekError && !weekLoading ? (
+            <div className="rounded-2xl border border-rose-100 bg-rose-50 p-4 text-sm text-rose-700">
+              {weekError}
+            </div>
+          ) : null}
+          {!weekLoading && !weekError ? dayRows.map((day) => (
             <button
-              key={day.date.toISOString()}
+              key={day.dateKey}
               type="button"
-              onClick={() => handleOpenDailyBreakdown(day.date)}
+              onClick={() => handleOpenDailyBreakdown(day.dateKey)}
               className="w-full rounded-2xl border border-slate-100 bg-white/80 p-4 text-left transition hover:border-teal-200 hover:bg-teal-50/30"
             >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold text-slate-800">
-                    {formatDateWithTimeZone(day.date, viewTimeZone, locale, { weekday: 'long' })}
+                    {formatDateWithTimeZone(day.dateKey, viewTimeZone, locale, { weekday: 'long' })}
                   </p>
-                  <p className="text-xs text-slate-500">{formatDateWithTimeZone(day.date, viewTimeZone)}</p>
+                  <p className="text-xs text-slate-500">{formatDateWithTimeZone(day.dateKey, viewTimeZone)}</p>
                 </div>
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
                   {day.totalLabel}
@@ -364,7 +401,7 @@ const Reports = () => {
                 )}
               </div>
             </button>
-          ))}
+          )) : null}
         </div>
       </div>
 
@@ -436,7 +473,14 @@ const Reports = () => {
 
             <div className="mt-5">
               {dailyBreakdownLoading ? (
-                <p className="text-sm text-slate-500">{t('Loading breakdown...', 'Carregando detalhamento...')}</p>
+                <div className="flex min-h-[260px] items-center justify-center rounded-2xl border border-slate-100 bg-slate-50 p-6">
+                  <div className="flex flex-col items-center gap-3 text-center">
+                    <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-700" />
+                    <p className="text-sm font-semibold text-slate-700">
+                      {t('Loading breakdown...', 'Carregando detalhamento...')}
+                    </p>
+                  </div>
+                </div>
               ) : null}
               {dailyBreakdownError ? <p className="text-sm text-rose-600">{dailyBreakdownError}</p> : null}
 

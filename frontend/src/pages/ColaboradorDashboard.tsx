@@ -1384,15 +1384,18 @@ const ColaboradorDashboard = () => {
                   />
                 </div>
               </div>
-              {(currentBreakMs || 0) > 0 && (
+              {activeEntry && ((currentBreakMs || 0) > 0 || isOnBreak) && (
                 <div>
-                  <div className="mb-1 flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-amber-600 font-medium">
-                    <span>{t('Break time', 'Tempo de pausa')}</span>
-                    <span>{formatMinutesLabel(Math.max(0, Math.floor((currentBreakMs || 0) / 60000)))}</span>
+                  <div className={`mb-1 flex items-center justify-between text-[11px] uppercase tracking-[0.18em] font-medium ${isOnBreak ? 'text-amber-600' : 'text-amber-500'}`}>
+                    <span className="flex items-center gap-1">
+                      {isOnBreak ? '☕ ' : ''}{t('Break time', 'Tempo de pausa')}
+                      {isOnBreak ? ` (${t('active', 'ativa')})` : ''}
+                    </span>
+                    <span>{isOnBreak ? formatElapsed(currentBreakMs) : formatMinutesLabel(Math.max(0, Math.floor((currentBreakMs || 0) / 60000)))}</span>
                   </div>
                   <div className="h-2 overflow-hidden rounded-full bg-slate-200">
                     <div
-                      className="h-full rounded-full bg-amber-400 transition-all"
+                      className={`h-full rounded-full transition-all ${isOnBreak ? 'bg-amber-400 animate-pulse' : 'bg-amber-400'}`}
                       style={{ width: `${Math.min(100, Math.max((Math.max(0, Math.floor((currentBreakMs || 0) / 60000)) / Math.max(statusChartMax, 60)) * 100, 6))}%` }}
                     />
                   </div>

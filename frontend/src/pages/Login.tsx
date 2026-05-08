@@ -44,6 +44,23 @@ const Login = () => {
     return err.message || t('auth.oauthFail')
   }
 
+  const resolveSlackSignInError = (err: unknown) => {
+    if (!(err instanceof Error)) {
+      return t('auth.oauthFail')
+    }
+
+    const normalizedErrorMessage = err.message.toLowerCase()
+    if (
+      normalizedErrorMessage.includes('slack_provider_disabled') ||
+      normalizedErrorMessage.includes('unsupported provider') ||
+      normalizedErrorMessage.includes('provider is not enabled')
+    ) {
+      return t('auth.slackProviderDisabled', 'Slack provider disabled')
+    }
+
+    return err.message || t('auth.oauthFail')
+  }
+
   const handleEmailSignIn = async (event: React.FormEvent) => {
     event.preventDefault()
     setError('')
@@ -70,6 +87,7 @@ const Login = () => {
       setGoogleLoading(false)
     }
   }
+
 
   const handleCreateAccount = () => {
     navigate('/signup')
@@ -122,14 +140,16 @@ const Login = () => {
           <h2 className="text-2xl font-semibold text-slate-900">{t('auth.title')}</h2>
           <p className="mt-2 text-sm text-slate-600">{t('auth.subtitle')}</p>
 
-          <button
-            type="button"
-            onClick={handleGoogleSignIn}
-            disabled={googleLoading || emailLoading}
-            className="mt-6 w-full rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {googleLoading ? t('auth.googleLoading') : t('auth.googleButton')}
-          </button>
+          <div className="mt-6 grid gap-3">
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              disabled={googleLoading || emailLoading}
+              className="w-full rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {googleLoading ? t('auth.googleLoading') : t('auth.googleButton')}
+            </button>
+          </div>
 
           <label className="mt-6 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{t('auth.emailLabel')}</label>
           <input

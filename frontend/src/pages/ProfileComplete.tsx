@@ -1,4 +1,5 @@
 import { useEffect, useState, type ChangeEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { apiFetch, apiFetchFormData, resolveApiAssetUrl } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import UserAvatar from '../components/UserAvatar'
@@ -24,6 +25,9 @@ type CompleteProfile = {
   workdayStartTime?: string | null
   workdayEndTime?: string | null
   timeZone?: string
+  slackUserId?: string | null
+  slackUserName?: string | null
+  slackTeamName?: string | null
   createdAt?: string
 }
 
@@ -54,6 +58,7 @@ const ProfileComplete = () => {
   const [accountForm, setAccountForm] = useState({
     name: '',
     email: '',
+    slackUserId: '',
     password: '',
     confirmPassword: '',
   })
@@ -75,6 +80,7 @@ const ProfileComplete = () => {
         ...previous,
         name: response.user.name || '',
         email: response.user.email || '',
+        slackUserId: response.user.slackUserId || '',
       }))
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Could not load profile.', 'Erro ao carregar perfil'))
@@ -86,6 +92,29 @@ const ProfileComplete = () => {
   useEffect(() => {
     loadProfile().catch(() => undefined)
   }, [token])
+
+  // Handle Slack OAuth callback query params
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    const slackResult = searchParams.get('slack')
+    if (!slackResult) return
+
+    if (slackResult === 'success') {
+      setNotice(t('Slack linked successfully!', 'Slack vinculado com sucesso!'))
+      loadProfile().catch(() => undefined)
+    } else if (slackResult === 'error') {
+      const reason = searchParams.get('reason') || 'unknown'
+      setError(t(
+        `Could not link Slack (${reason}). Please try again.`,
+        `Nao foi possivel vincular o Slack (${reason}). Tente novamente.`
+      ))
+    }
+
+    // Clean the query params from the URL
+    searchParams.delete('slack')
+    searchParams.delete('reason')
+    setSearchParams(searchParams, { replace: true })
+  }, [])
 
   const handleUploadPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -144,7 +173,7 @@ const ProfileComplete = () => {
     }
   }
 
-  const handleAccountInput = (field: 'name' | 'email' | 'password' | 'confirmPassword', value: string) => {
+  const handleAccountInput = (field: 'name' | 'email' | 'slackUserId' | 'password' | 'confirmPassword', value: string) => {
     setAccountForm((previous) => ({
       ...previous,
       [field]: value,
@@ -159,6 +188,7 @@ const ProfileComplete = () => {
 
     const nextName = accountForm.name.trim()
     const nextEmail = accountForm.email.trim().toLowerCase()
+    const nextSlackUserId = accountForm.slackUserId.trim()
     const nextPassword = accountForm.password
     const confirmPassword = accountForm.confirmPassword
 
@@ -182,10 +212,11 @@ const ProfileComplete = () => {
       return
     }
 
-    const payload: { name?: string; email?: string; password?: string } = {}
+    const payload: { name?: string; email?: string; password?: string; slackUserId?: string } = {}
 
     if (nextName !== profile.name) payload.name = nextName
     if (nextEmail !== profile.email) payload.email = nextEmail
+    if (nextSlackUserId !== (profile.slackUserId || '')) payload.slackUserId = nextSlackUserId
     if (nextPassword.length > 0) payload.password = nextPassword
 
     if (Object.keys(payload).length === 0) {
@@ -290,6 +321,7 @@ const ProfileComplete = () => {
                         ...previous,
                         name: profile.name,
                         email: profile.email,
+                        slackUserId: profile.slackUserId || '',
                         password: '',
                         confirmPassword: '',
                       }))
@@ -352,6 +384,61 @@ const ProfileComplete = () => {
                 {profile?.workdayEndTime || t('Not informed', 'Nao informado')}
               </p>
             </div>
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3 sm:col-span-2">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('Slack Integration', 'Integracao Slack')}</p>
+              <div className="mt-2">
+                {profile?.slackUserId ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <svg className="h-5 w-5 text-[#4A154B]" fill="currentColor" viewBox="0 0 24 24"><path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.958a2.528 2.528 0 0 1 2.523 2.52 2.528 2.528 0 0 1-2.523 2.522A2.528 2.528 0 0 1 12.642 21.48v-2.522h2.523zM15.165 17.687a2.528 2.528 0 0 1-2.523-2.523 2.526 2.526 0 0 1 2.523-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.522h-6.313z"/></svg>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{profile.slackUserName || profile.slackUserId}</p>
+                        {profile.slackTeamName ? (
+                          <p className="text-[11px] text-slate-500">{profile.slackTeamName}</p>
+                        ) : null}
+                      </div>
+                    </div>
+                    <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
+                      {t('Connected', 'Conectado')}
+                    </span>
+                    <span className="text-[11px] text-slate-400">ID: {profile.slackUserId}</span>
+                    <button
+                      onClick={async () => {
+                        if (!token) return
+                        try {
+                          await apiFetch('/users/me/account', {
+                            token,
+                            method: 'PATCH',
+                            body: { slackUserId: '' },
+                          })
+                          await loadProfile()
+                          await refreshProfile()
+                          setNotice(t('Slack unlinked successfully.', 'Slack desvinculado com sucesso.'))
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : t('Could not unlink Slack.', 'Erro ao desvincular Slack.'))
+                        }
+                      }}
+                      className="ml-auto rounded-full border border-rose-200 bg-white px-3 py-1 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50"
+                    >
+                      {t('Unlink', 'Desvincular')}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                      {t('Not connected', 'Nao conectado')}
+                    </span>
+                    <a
+                      href={`${import.meta.env.VITE_API_URL?.replace('/api/v1', '') || 'http://localhost:3000'}/api/v1/integrations/slack/connect?token=${token}`}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-500"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.958a2.528 2.528 0 0 1 2.523 2.52 2.528 2.528 0 0 1-2.523 2.522A2.528 2.528 0 0 1 12.642 21.48v-2.522h2.523zM15.165 17.687a2.528 2.528 0 0 1-2.523-2.523 2.526 2.526 0 0 1 2.523-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.522h-6.313z"/></svg>
+                      {t('Link with Slack', 'Vincular com Slack')}
+                    </a>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           {isEditingAccount ? (
@@ -378,6 +465,22 @@ const ProfileComplete = () => {
                     onChange={(event) => handleAccountInput('email', event.target.value)}
                     className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
                   />
+                </label>
+
+                <label className="grid gap-1 text-xs text-slate-600 sm:col-span-2">
+                  {t('Slack Member ID', 'ID do Membro no Slack')}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={accountForm.slackUserId}
+                      onChange={(event) => handleAccountInput('slackUserId', event.target.value)}
+                      placeholder={t('Optional (e.g. U01234567)', 'Opcional (ex: U01234567)')}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    {t('To get your ID in Slack: click on your profile picture > Profile > More (...) > Copy member ID.', 'No Slack: clique na sua foto de perfil > Perfil > clique em Mais (...) > Copiar ID de membro.')}
+                  </p>
                 </label>
 
                 <label className="grid gap-1 text-xs text-slate-600">

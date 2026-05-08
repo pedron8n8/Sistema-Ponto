@@ -5,7 +5,9 @@ import {
   supabase,
   hasSupabaseEnv,
   isGoogleProviderEnabled,
+  isSlackProviderEnabled,
   googleOAuthRedirectTo,
+  slackOAuthRedirectTo,
 } from '../lib/supabase'
 import { apiFetch, resolveApiAssetUrl } from '../lib/api'
 
@@ -46,6 +48,7 @@ type AuthState = {
   signIn: (email: string, password: string) => Promise<void>
   signUp: (payload: SignUpPayload) => Promise<void>
   signInWithGoogle: () => Promise<void>
+  signInWithSlack: () => Promise<void>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
 }
@@ -260,6 +263,40 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     window.location.assign(data.url)
   }
 
+  const signInWithSlack = async () => {
+    if (!supabase) {
+      throw new Error(
+        localizeMessage(
+          'Supabase is not configured in the frontend.',
+          'Supabase nao configurado no frontend'
+        )
+      )
+    }
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'slack',
+      options: {
+        redirectTo: slackOAuthRedirectTo,
+        skipBrowserRedirect: true,
+      },
+    })
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    if (!data?.url) {
+      throw new Error(
+        localizeMessage(
+          'Could not start Slack sign-in flow.',
+          'Nao foi possivel iniciar o login com Slack'
+        )
+      )
+    }
+
+    window.location.assign(data.url)
+  }
+
   const signOut = async () => {
     if (!supabase) {
       setSession(null)
@@ -292,6 +329,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       signIn,
       signUp,
       signInWithGoogle,
+      signInWithSlack,
       signOut,
       refreshProfile,
     }),

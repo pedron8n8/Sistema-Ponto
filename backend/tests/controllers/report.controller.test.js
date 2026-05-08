@@ -10,7 +10,10 @@ const mockReportQueue = {
   getCompleted: jest.fn(),
 };
 
-jest.mock('../../src/config/database', () => mockPrisma);
+jest.mock('../../src/config/database', () => ({
+  ...mockPrisma,
+  prisma: mockPrisma,
+}));
 jest.mock('../../src/config/supabase', () => ({
   supabaseAdmin: mockSupabaseAdmin,
 }));
@@ -326,6 +329,38 @@ describe('Report Controller', () => {
       await reportController.deleteReport(req, res);
 
       expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  describe('getDailyBreakdown', () => {
+    it('deve consultar o dia no fuso horario informado', async () => {
+      req.user = { id: 'admin-123', role: 'ADMIN', timeZone: 'UTC' };
+      req.query = {
+        date: '2026-05-08',
+        timeZone: 'America/Sao_Paulo',
+      };
+
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'admin-123' }]);
+      mockPrisma.timeEntry.findMany.mockResolvedValue([]);
+
+      await reportController.getDailyBreakdown(req, res);
+
+      expect(mockPrisma.timeEntry.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            clockIn: {
+              gte: new Date('2026-05-08T03:00:00.000Z'),
+              lt: new Date('2026-05-09T03:00:00.000Z'),
+            },
+          }),
+        })
+      );
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          date: '2026-05-08',
+          timeZone: 'America/Sao_Paulo',
+        })
+      );
     });
   });
 });

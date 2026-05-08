@@ -7,6 +7,7 @@ const reportRoutes = require('./report.routes');
 const adminRoutes = require('./admin.routes');
 const vacationRoutes = require('./vacation.routes');
 const publicRoutes = require('./public.routes');
+const integrationsRoutes = require('./integrations.routes');
 
 const router = express.Router();
 
@@ -15,6 +16,9 @@ router.use('/auth', authRoutes);
 
 // API pública com token assinado (integrações externas)
 router.use('/public', publicRoutes);
+
+// Integracoes externas (Slack, etc.)
+router.use('/integrations', integrationsRoutes);
 
 // Rotas de usuários
 router.use('/users', userRoutes);

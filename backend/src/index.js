@@ -66,8 +66,8 @@ app.use((req, res, next) => {
 });
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
 app.use(rateLimitMiddleware);
+app.use('/api/v1/integrations/slack', express.raw({ type: 'application/x-www-form-urlencoded' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(idempotencyMiddleware);

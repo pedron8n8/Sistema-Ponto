@@ -7,6 +7,7 @@ export const TIME_ZONE_OPTIONS = [
 ] as const
 
 export const DEFAULT_VIEW_TIME_ZONE = 'America/New_York'
+const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/
 
 export const isValidTimeZone = (timeZone: string) => {
   try {
@@ -23,8 +24,15 @@ export const formatDateWithTimeZone = (
   locale = 'pt-BR',
   options?: Intl.DateTimeFormatOptions
 ) => {
-  const date = value instanceof Date ? value : new Date(value)
-  return new Intl.DateTimeFormat(locale, { timeZone, ...(options || {}) }).format(date)
+  const isDateOnly = typeof value === 'string' && DATE_ONLY_REGEX.test(value)
+  const date = value instanceof Date
+    ? value
+    : new Date(isDateOnly ? `${value}T00:00:00.000Z` : value)
+
+  return new Intl.DateTimeFormat(locale, {
+    timeZone: isDateOnly ? 'UTC' : timeZone,
+    ...(options || {}),
+  }).format(date)
 }
 
 export const formatTimeWithTimeZone = (
@@ -40,6 +48,18 @@ export const formatTimeWithTimeZone = (
     minute: '2-digit',
     ...(options || {}),
   }).format(date)
+}
+
+export const getDateKeyWithTimeZone = (value: string | Date, timeZone: string) => {
+  const date = value instanceof Date ? value : new Date(value)
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day}`
 }
 
 export const formatDateTimeWithTimeZone = (
