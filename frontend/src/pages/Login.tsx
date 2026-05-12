@@ -44,22 +44,22 @@ const Login = () => {
     return err.message || t('auth.oauthFail')
   }
 
-  const resolveSlackSignInError = (err: unknown) => {
-    if (!(err instanceof Error)) {
-      return t('auth.oauthFail')
-    }
+  // const resolveSlackSignInError = (err: unknown) => {
+  //   if (!(err instanceof Error)) {
+  //     return t('auth.oauthFail')
+  //   }
 
-    const normalizedErrorMessage = err.message.toLowerCase()
-    if (
-      normalizedErrorMessage.includes('slack_provider_disabled') ||
-      normalizedErrorMessage.includes('unsupported provider') ||
-      normalizedErrorMessage.includes('provider is not enabled')
-    ) {
-      return t('auth.slackProviderDisabled', 'Slack provider disabled')
-    }
+  //   const normalizedErrorMessage = err.message.toLowerCase()
+  //   if (
+  //     normalizedErrorMessage.includes('slack_provider_disabled') ||
+  //     normalizedErrorMessage.includes('unsupported provider') ||
+  //     normalizedErrorMessage.includes('provider is not enabled')
+  //   ) {
+  //     return t('auth.slackProviderDisabled', 'Slack provider disabled')
+  //   }
 
-    return err.message || t('auth.oauthFail')
-  }
+  //   return err.message || t('auth.oauthFail')
+  // }
 
   const handleEmailSignIn = async (event: React.FormEvent) => {
     event.preventDefault()

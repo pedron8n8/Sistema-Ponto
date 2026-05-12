@@ -5,7 +5,6 @@ import {
   supabase,
   hasSupabaseEnv,
   isGoogleProviderEnabled,
-  isSlackProviderEnabled,
   googleOAuthRedirectTo,
   slackOAuthRedirectTo,
 } from '../lib/supabase'
