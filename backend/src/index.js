@@ -113,9 +113,32 @@ app.use((err, req, res, next) => {
     });
   }
 
-  res.status(err.status || 500).json({
-    error: err.status ? 'Request Error' : 'Internal Server Error',
-    message: err.status ? err.message : 'Erro interno do servidor',
+  const knownStatus = Number(err?.statusCode || err?.status || 0);
+  let status = Number.isFinite(knownStatus) && knownStatus > 0 ? knownStatus : 500;
+  let message = err?.message;
+
+  if (err?.name === 'PublicApiError' && err?.status) {
+    status = Number(err.status) || status;
+  }
+
+  if (err?.code === 'P2002') {
+    status = 409;
+    message = 'Registro ja existe com os dados informados.';
+  }
+
+  if (err?.code === 'P2025') {
+    status = 404;
+    message = 'Registro nao encontrado.';
+  }
+
+  if (status < 500 && (!message || typeof message !== 'string')) {
+    message = 'Erro na requisicao.';
+  }
+
+  res.status(status).json({
+    error: status < 500 ? 'Request Error' : 'Internal Server Error',
+    message: status < 500 ? message : 'Erro interno do servidor',
+    ...(status < 500 && err?.code ? { code: err.code } : {}),
   });
 });
 

@@ -15,6 +15,98 @@ const isPortugueseLanguage = () => {
 
 const localizeMessage = (en: string, pt: string) => (isPortugueseLanguage() ? pt : en)
 
+const isRecordPayload = (value: unknown): value is Record<string, unknown> => {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+const resolveApiPayloadMessage = (rawMessage: unknown) => {
+  const payload = isRecordPayload(rawMessage) ? rawMessage : null
+  const payloadMessage = payload?.message
+  const message =
+    typeof rawMessage === 'string' || typeof rawMessage === 'number'
+      ? String(rawMessage)
+      : typeof payloadMessage === 'string'
+        ? payloadMessage
+        : ''
+
+  return {
+    payload,
+    message: message.trim(),
+  }
+}
+
+const resolveAuthFactorMessage = (payload: Record<string, unknown> | null) => {
+  if (!payload) return null
+
+  const pinAuth = isRecordPayload(payload.pinAuth) ? payload.pinAuth : null
+  const faceAuth = isRecordPayload(payload.faceAuth) ? payload.faceAuth : null
+  if (!pinAuth && !faceAuth) return null
+
+  const pinReason = typeof pinAuth?.reason === 'string' ? pinAuth.reason : null
+  const faceReason = typeof faceAuth?.reason === 'string' ? faceAuth.reason : null
+  const hasPinRequired = pinAuth?.required === true
+  const hasFaceRequired = faceAuth?.required === true
+
+  if (pinReason === 'PIN_LOCKED') {
+    return localizeMessage(
+      'PIN temporarily locked due to too many incorrect attempts.',
+      'PIN temporariamente bloqueado por excesso de tentativas incorretas.'
+    )
+  }
+
+  if (pinReason === 'PIN_NOT_PROVIDED' && faceReason === 'FACE_NOT_PROVIDED') {
+    return localizeMessage(
+      'Enter your PIN or use face recognition to record your time.',
+      'Informe seu PIN ou valide seu rosto para registrar o ponto.'
+    )
+  }
+
+  if (pinReason === 'PIN_NOT_MATCHED' && faceReason === 'FACE_NOT_PROVIDED') {
+    return localizeMessage(
+      'PIN incorrect. Try again or use face recognition.',
+      'PIN incorreto. Tente novamente ou use reconhecimento facial.'
+    )
+  }
+
+  if (pinReason === 'PIN_NOT_PROVIDED' && faceReason === 'FACE_NOT_MATCHED') {
+    return localizeMessage(
+      'Face recognition failed. Try again or enter your PIN.',
+      'Reconhecimento facial nao validado. Tente novamente ou informe seu PIN.'
+    )
+  }
+
+  if (pinReason === 'PIN_NOT_MATCHED' && faceReason === 'FACE_NOT_MATCHED') {
+    return localizeMessage(
+      'PIN and face recognition did not match. Try again.',
+      'PIN e reconhecimento facial nao conferem. Tente novamente.'
+    )
+  }
+
+  if (pinReason === 'PIN_NOT_PROVIDED' && !hasFaceRequired) {
+    return localizeMessage('Enter your PIN to record your time.', 'Informe seu PIN para registrar o ponto.')
+  }
+
+  if (faceReason === 'FACE_NOT_PROVIDED' && !hasPinRequired) {
+    return localizeMessage(
+      'Use face recognition to record your time.',
+      'Realize o reconhecimento facial para registrar o ponto.'
+    )
+  }
+
+  if (pinReason === 'PIN_NOT_MATCHED' && !hasFaceRequired) {
+    return localizeMessage('PIN incorrect. Try again.', 'PIN incorreto. Tente novamente.')
+  }
+
+  if (faceReason === 'FACE_NOT_MATCHED' && !hasPinRequired) {
+    return localizeMessage(
+      'Face recognition failed. Try again.',
+      'Reconhecimento facial nao conferiu. Tente novamente.'
+    )
+  }
+
+  return null
+}
+
 const PT_TO_EN_ERROR_RULES: Array<{ pattern: RegExp; replacement: string }> = [
   {
     pattern: /token de autentica(?:c|ç)[aã]o n[aã]o fornecido/i,
@@ -203,7 +295,12 @@ const probablySuccessMessage = (message: string) => {
 }
 
 export const translateApiMessage = (rawMessage: unknown) => {
-  const message = String(rawMessage || '').trim()
+  const { payload, message } = resolveApiPayloadMessage(rawMessage)
+  const authMessage = resolveAuthFactorMessage(payload)
+
+  if (authMessage) {
+    return authMessage
+  }
 
   if (!message) {
     return localizeMessage('Request failed.', 'Erro na requisicao')
@@ -378,12 +475,12 @@ export const apiFetch = async <T>(path: string, options: RequestOptions = {}): P
 
   if (!res.ok) {
     const payload = await readJsonResponse(res).catch(() => ({}))
-    const errorMessage = translateApiMessage(payload?.message || localizeMessage('Request failed.', 'Erro na requisicao'))
+    const errorMessage = translateApiMessage(payload || localizeMessage('Request failed.', 'Erro na requisicao'))
     toast.error(errorMessage)
     throw new Error(errorMessage)
   }
 
-  return readJsonResponse(res) as Promise<T>
+  return (await readJsonResponse(res)) as T
 }
 
 export const apiFetchFormData = async <T>(
@@ -422,7 +519,7 @@ export const apiFetchFormData = async <T>(
 
   if (!res.ok) {
     const payload = await readJsonResponse(res).catch(() => ({}))
-    const errorMessage = translateApiMessage(payload?.message || localizeMessage('Request failed.', 'Erro na requisicao'))
+    const errorMessage = translateApiMessage(payload || localizeMessage('Request failed.', 'Erro na requisicao'))
     toast.error(errorMessage)
     throw new Error(errorMessage)
   }

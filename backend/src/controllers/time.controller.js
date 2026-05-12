@@ -90,6 +90,51 @@ const buildDefaultPinAuth = () => ({
   lockedUntil: null,
 });
 
+const resolveClockAuthFailureMessage = ({ pinAuth, faceAuth, actionLabel }) => {
+  const pinReason = pinAuth?.reason || null;
+  const faceReason = faceAuth?.reason || null;
+  const pinRequired = Boolean(pinAuth?.required);
+  const faceRequired = Boolean(faceAuth?.required);
+
+  if (pinReason === 'PIN_LOCKED') {
+    return 'PIN temporariamente bloqueado por excesso de tentativas incorretas.';
+  }
+
+  if (pinReason === 'PIN_NOT_PROVIDED' && faceReason === 'FACE_NOT_PROVIDED') {
+    return 'Informe seu PIN ou valide seu rosto para registrar o ponto.';
+  }
+
+  if (pinReason === 'PIN_NOT_MATCHED' && faceReason === 'FACE_NOT_PROVIDED') {
+    return 'PIN incorreto. Tente novamente ou use reconhecimento facial.';
+  }
+
+  if (pinReason === 'PIN_NOT_PROVIDED' && faceReason === 'FACE_NOT_MATCHED') {
+    return 'Reconhecimento facial nao validado. Tente novamente ou informe seu PIN.';
+  }
+
+  if (pinReason === 'PIN_NOT_MATCHED' && faceReason === 'FACE_NOT_MATCHED') {
+    return 'PIN e reconhecimento facial nao conferem. Tente novamente.';
+  }
+
+  if (pinReason === 'PIN_NOT_PROVIDED' && !faceRequired) {
+    return 'Informe seu PIN para registrar o ponto.';
+  }
+
+  if (faceReason === 'FACE_NOT_PROVIDED' && !pinRequired) {
+    return 'Realize o reconhecimento facial para registrar o ponto.';
+  }
+
+  if (pinReason === 'PIN_NOT_MATCHED' && !faceRequired) {
+    return 'PIN incorreto. Tente novamente.';
+  }
+
+  if (faceReason === 'FACE_NOT_MATCHED' && !pinRequired) {
+    return 'Reconhecimento facial nao conferiu. Tente novamente.';
+  }
+
+  return `Nao foi possivel validar PIN ou facial para ${actionLabel}.`;
+};
+
 const validateClockAuthFactors = async ({ userId, faceDescriptor, livenessData, pin, actionLabel }) => {
   let faceAuth = buildDefaultFaceAuth();
   let pinAuth = buildDefaultPinAuth();
@@ -258,7 +303,11 @@ const validateClockAuthFactors = async ({ userId, faceDescriptor, livenessData, 
       statusCode: 401,
       payload: {
         error: 'Unauthorized',
-        message: `Nao foi possivel validar PIN ou facial para ${actionLabel}.`,
+        message: resolveClockAuthFailureMessage({
+          pinAuth,
+          faceAuth,
+          actionLabel,
+        }),
         pinAuth,
         faceAuth,
       },

@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import ShellLayout from './components/ShellLayout'
+import LoadingScreen from './components/LoadingScreen'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import LandingPage from './pages/LandingPage'
@@ -73,6 +75,17 @@ const MissingEnvScreen = () => {
 }
 
 const App = () => {
+  const [showInitialLoading, setShowInitialLoading] = useState(true)
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShowInitialLoading(false), 350)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  if (showInitialLoading) {
+    return <LoadingScreen />
+  }
+
   return (
     <LanguageProvider>
       {hasSupabaseEnv ? (

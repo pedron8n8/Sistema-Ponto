@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { usePlan } from '../hooks/usePlan'
 import type { PlanCode } from '../hooks/usePlan'
 import { useTranslation } from 'react-i18next'
+import LoadingScreen from './LoadingScreen'
 
 type Props = {
   children: React.ReactNode
@@ -19,11 +20,7 @@ const ProtectedRoute = ({ children, allowedRoles, allowedPlans, allowInactivePla
   const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">
-        {t('Loading...', 'Carregando...')}
-      </div>
-    )
+    return <LoadingScreen label={t('Loading session', 'Carregando sessao')} />
   }
 
   if (!session) {
@@ -31,11 +28,7 @@ const ProtectedRoute = ({ children, allowedRoles, allowedPlans, allowInactivePla
   }
 
   if (!profile && !profileError) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">
-        {t('Loading profile...', 'Carregando perfil...')}
-      </div>
-    )
+    return <LoadingScreen label={t('Loading profile', 'Carregando perfil')} />
   }
 
   if (!profile && profileError) {
