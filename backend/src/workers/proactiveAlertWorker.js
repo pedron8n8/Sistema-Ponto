@@ -10,10 +10,15 @@ const { sendSlackDM } = require('../utils/slackNotifier');
 const SCAN_JOB_NAME = 'scan-end-of-shift-overtime';
 const DISPATCH_JOB_NAME = 'dispatch-end-of-shift-overtime';
 const DISPATCH_SHIFT_END_JOB_NAME = 'dispatch-shift-end-reminder';
+const SCAN_CLOCK_IN_JOB_NAME = 'scan-clock-in-reminders';
+const DISPATCH_CLOCK_IN_JOB_NAME = 'dispatch-clock-in-reminder';
 const SCAN_REPEAT_JOB_ID = 'scan-end-of-shift-overtime-repeat';
+const SCAN_CLOCK_IN_REPEAT_JOB_ID = 'scan-clock-in-reminders-repeat';
 
 const SHIFT_END_PRE_MINUTES = 15;
 const SHIFT_END_DEDUPE_TTL_SECONDS = 60 * 60 * 18;
+const CLOCK_IN_DEDUPE_TTL_SECONDS = 60 * 60 * 18;
+const DEFAULT_BASE_TIMEZONE = process.env.PROACTIVE_CLOCK_IN_DEFAULT_TZ || 'America/New_York';
 
 const toPositiveNumber = (value, fallback, minimum = 1) => {
   const parsed = Number(value);
@@ -50,6 +55,25 @@ const EXPLICIT_ALERT_CHANNELS = String(process.env.PROACTIVE_ALERT_CHANNELS || '
   .split(',')
   .map((channel) => channel.trim().toUpperCase())
   .filter((channel) => ['EMAIL', 'PUSH', 'IN_APP'].includes(channel));
+
+const CLOCK_IN_SCAN_INTERVAL_MS = toPositiveNumber(
+  process.env.PROACTIVE_CLOCK_IN_SCAN_INTERVAL_MS,
+  60000,
+  30000
+);
+const CLOCK_IN_PRE_MINUTES = toPositiveNumber(
+  process.env.PROACTIVE_CLOCK_IN_PRE_MINUTES,
+  15,
+  1
+);
+const CLOCK_IN_LATE_MINUTES = toPositiveNumber(
+  process.env.PROACTIVE_CLOCK_IN_LATE_MINUTES,
+  30,
+  1
+);
+const CLOCK_IN_SKIP_WEEKENDS = String(process.env.PROACTIVE_CLOCK_IN_SKIP_WEEKENDS || 'true')
+  .trim()
+  .toLowerCase() !== 'false';
 
 const proactiveAlertQueue = new Queue('proactive-overtime-alerts', {
   connection: redis,
@@ -614,6 +638,206 @@ const buildShiftEndSupervisorMessage = ({ phase, memberName, expectedEndAt, time
   return `:bell: *${memberName}* has reached the scheduled end of shift (${formattedEnd}) and is still clocked in. Reminder sent to clock out.`;
 };
 
+const getWeekdayForTimeZone = (timeZone) => {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timeZone || DEFAULT_BASE_TIMEZONE,
+      weekday: 'short',
+    }).formatToParts(new Date());
+    return parts.find((p) => p.type === 'weekday')?.value || '';
+  } catch (_error) {
+    return '';
+  }
+};
+
+const getLocalDayBoundsUtc = (timeZone) => {
+  const tz = timeZone || DEFAULT_BASE_TIMEZONE;
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  const parts = Object.fromEntries(
+    formatter.formatToParts(now).map((p) => [p.type, p.value])
+  );
+
+  const localYear = Number(parts.year);
+  const localMonth = Number(parts.month);
+  const localDay = Number(parts.day);
+  const localHour = Number(parts.hour === '24' ? '0' : parts.hour);
+  const localMinute = Number(parts.minute);
+  const localSecond = Number(parts.second);
+
+  const asIfUtcLocal = Date.UTC(localYear, localMonth - 1, localDay, localHour, localMinute, localSecond);
+  const offsetMs = asIfUtcLocal - now.getTime();
+
+  const startUtc = new Date(Date.UTC(localYear, localMonth - 1, localDay) - offsetMs);
+  const endUtc = new Date(startUtc.getTime() + 24 * 60 * 60 * 1000 - 1);
+  return { startUtc, endUtc };
+};
+
+const processClockInScanJob = async () => {
+  const candidates = await prisma.user.findMany({
+    where: {
+      isActive: true,
+      slackUserId: { not: null },
+      workdayStartTime: { not: null },
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      slackUserId: true,
+      timeZone: true,
+      workdayStartTime: true,
+    },
+  });
+
+  if (candidates.length === 0) {
+    return { scanned: 0, enqueued: 0, skipped: 0 };
+  }
+
+  let enqueued = 0;
+  let skipped = 0;
+
+  for (const member of candidates) {
+    const outcome = await evaluateClockInReminder({ member });
+    if (outcome === 'enqueued') enqueued += 1;
+    else skipped += 1;
+  }
+
+  return { scanned: candidates.length, enqueued, skipped };
+};
+
+const evaluateClockInReminder = async ({ member }) => {
+  const timeZone = member.timeZone || DEFAULT_BASE_TIMEZONE;
+
+  if (CLOCK_IN_SKIP_WEEKENDS) {
+    const weekday = getWeekdayForTimeZone(timeZone);
+    if (weekday === 'Sat' || weekday === 'Sun') {
+      return 'skipped';
+    }
+  }
+
+  const shiftStartMinutes = parseTimeToMinutes(member.workdayStartTime);
+  if (shiftStartMinutes === null) {
+    return 'skipped';
+  }
+
+  const nowMinutes = getNowMinutesForTimeZone(timeZone);
+  let minutesFromStart = nowMinutes - shiftStartMinutes;
+  if (minutesFromStart < -720) minutesFromStart += 1440;
+  if (minutesFromStart > 720) minutesFromStart -= 1440;
+
+  let phase = null;
+  if (minutesFromStart >= -CLOCK_IN_PRE_MINUTES && minutesFromStart < 0) {
+    phase = 'PRE_START';
+  } else if (minutesFromStart >= 0 && minutesFromStart <= CLOCK_IN_LATE_MINUTES) {
+    phase = 'LATE';
+  } else {
+    return 'skipped';
+  }
+
+  const { startUtc, endUtc } = getLocalDayBoundsUtc(timeZone);
+  const existingEntry = await prisma.timeEntry.findFirst({
+    where: {
+      userId: member.id,
+      clockIn: { gte: startUtc, lte: endUtc },
+    },
+    select: { id: true },
+  });
+
+  if (existingEntry) {
+    return 'skipped';
+  }
+
+  const dateKey = getDateKeyForTimeZone(timeZone);
+  const dedupeKey = `clock-in:${dateKey}:${member.id}:${phase}`;
+  const shouldDispatch = await redis.set(dedupeKey, '1', 'EX', CLOCK_IN_DEDUPE_TTL_SECONDS, 'NX');
+  if (!shouldDispatch) {
+    return 'skipped';
+  }
+
+  const payload = {
+    type: 'CLOCK_IN_REMINDER',
+    phase,
+    minutesFromStart,
+    workdayStartTime: member.workdayStartTime,
+    timeZone,
+    member: {
+      id: member.id,
+      name: member.name,
+      email: member.email,
+      slackUserId: member.slackUserId,
+    },
+    triggeredAt: new Date().toISOString(),
+  };
+
+  try {
+    await proactiveAlertQueue.add(
+      DISPATCH_CLOCK_IN_JOB_NAME,
+      { dedupeKey, payload },
+      {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: { age: 24 * 3600, count: 1000 },
+        removeOnFail: { age: 7 * 24 * 3600 },
+      }
+    );
+    return 'enqueued';
+  } catch (queueError) {
+    await redis.del(dedupeKey);
+    throw queueError;
+  }
+};
+
+const buildClockInMessage = ({ phase, workdayStartTime, minutesFromStart }) => {
+  if (phase === 'PRE_START') {
+    const minutesLeft = Math.max(1, -minutesFromStart);
+    return `:alarm_clock: *Heads up!* Your shift starts in ~${minutesLeft} min (at ${workdayStartTime}).\nDon't forget to clock in. You can use \`/omni start <PIN>\` from Slack.`;
+  }
+  const minutesLate = Math.max(1, minutesFromStart);
+  return `:rotating_light: *You haven't clocked in yet.* Your shift was scheduled to start at ${workdayStartTime} (you're ~${minutesLate} min late).\nPlease clock in now. You can use \`/omni start <PIN>\` from Slack.`;
+};
+
+const processClockInDispatchJob = async (job) => {
+  const { payload, dedupeKey } = job.data || {};
+
+  if (!payload?.member?.slackUserId) {
+    return { delivered: false, reason: 'MISSING_MEMBER_SLACK_ID' };
+  }
+
+  const text = buildClockInMessage({
+    phase: payload.phase,
+    workdayStartTime: payload.workdayStartTime,
+    minutesFromStart: payload.minutesFromStart,
+  });
+
+  try {
+    const result = await sendSlackDM({
+      slackUserId: payload.member.slackUserId,
+      text,
+    });
+
+    if (!result.delivered) {
+      throw new Error(`Failed to deliver Slack DM for clock-in reminder: ${result.reason || 'UNKNOWN'}`);
+    }
+
+    return { delivered: true, sentAt: new Date().toISOString(), result };
+  } catch (error) {
+    if (dedupeKey) {
+      await redis.del(dedupeKey);
+    }
+    throw error;
+  }
+};
+
 const processShiftEndDispatchJob = async (job) => {
   const { payload, dedupeKey } = job.data || {};
 
@@ -686,12 +910,28 @@ const createProactiveAlertWorker = async () => {
     }
   );
 
+  await proactiveAlertQueue.upsertJobScheduler(
+    SCAN_CLOCK_IN_REPEAT_JOB_ID,
+    {
+      every: CLOCK_IN_SCAN_INTERVAL_MS,
+    },
+    {
+      name: SCAN_CLOCK_IN_JOB_NAME,
+      opts: {
+        removeOnComplete: true,
+        removeOnFail: true,
+      },
+    }
+  );
+
   const worker = new Worker(
     'proactive-overtime-alerts',
     async (job) => {
       if (job.name === SCAN_JOB_NAME) return processScanJob();
       if (job.name === DISPATCH_JOB_NAME) return processDispatchJob(job);
       if (job.name === DISPATCH_SHIFT_END_JOB_NAME) return processShiftEndDispatchJob(job);
+      if (job.name === SCAN_CLOCK_IN_JOB_NAME) return processClockInScanJob();
+      if (job.name === DISPATCH_CLOCK_IN_JOB_NAME) return processClockInDispatchJob(job);
       return null;
     },
     {
@@ -702,9 +942,14 @@ const createProactiveAlertWorker = async () => {
 
     worker.on('completed', (job, result) => {
       if (job.name === SCAN_JOB_NAME) {
-        // ✅ Só loga se fez algo
         if (result?.enqueued > 0) {
           console.log(`🔔 Proactive scan: ${result.enqueued} alertas enfileirados`);
+        }
+        return;
+      }
+      if (job.name === SCAN_CLOCK_IN_JOB_NAME) {
+        if (result?.enqueued > 0) {
+          console.log(`⏰ Clock-in scan: ${result.enqueued} reminders enqueued`);
         }
         return;
       }

@@ -105,6 +105,6 @@ router.patch('/team/:userId/bank-hours/pay', roleCheck(['ADMIN']), payTeamMember
  * Ajusta jornada de um membro da equipe
  * Body: { contractDailyMinutes?: number, workdayStartTime?: "08:00", workdayEndTime?: "17:00" }
  */
-router.patch('/team/:userId/work-settings', roleCheck(['HR', 'ADMIN']), updateTeamMemberWorkSettings);
+router.patch('/team/:userId/work-settings', roleCheck(['SUPERVISOR', 'HR', 'ADMIN']), updateTeamMemberWorkSettings);
 
 module.exports = router;
