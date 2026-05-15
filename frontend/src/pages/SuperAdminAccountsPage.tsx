@@ -229,6 +229,11 @@ const SuperAdminAccountsPage = () => {
   const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccountUser[]>([])
   const [linkedAccountsLoading, setLinkedAccountsLoading] = useState(false)
   const [linkedAccountsError, setLinkedAccountsError] = useState('')
+  const [selectedAdminForDelete, setSelectedAdminForDelete] = useState<SuperAdminAccountItem | null>(null)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleteLoading, setDeleteLoading] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+  const [deleteNotice, setDeleteNotice] = useState('')
 
   const loadOverview = async () => {
     if (!token) return
@@ -597,6 +602,66 @@ const SuperAdminAccountsPage = () => {
     setLinkedAccountsLoading(false)
   }
 
+  const openDeleteAccountModal = (account: SuperAdminAccountItem) => {
+    setSelectedAdminForDelete(account)
+    setDeleteConfirmText('')
+    setDeleteError('')
+    setDeleteNotice('')
+    setDeleteLoading(false)
+  }
+
+  const closeDeleteAccountModal = () => {
+    if (deleteLoading) return
+    setSelectedAdminForDelete(null)
+    setDeleteConfirmText('')
+    setDeleteError('')
+  }
+
+  const confirmDeleteAccount = async () => {
+    if (!token || !selectedAdminForDelete) return
+
+    const expectedEmail = String(selectedAdminForDelete.admin.email || '').trim().toLowerCase()
+    const typedEmail = String(deleteConfirmText || '').trim().toLowerCase()
+
+    if (!expectedEmail || expectedEmail !== typedEmail) {
+      setDeleteError(
+        t(
+          'Type the admin email exactly to confirm deletion.',
+          'Digite o email do admin exatamente para confirmar a exclusao.'
+        )
+      )
+      return
+    }
+
+    setDeleteLoading(true)
+    setDeleteError('')
+    setDeleteNotice('')
+
+    try {
+      await apiFetch(`/users/${selectedAdminForDelete.admin.id}`, {
+        token,
+        method: 'DELETE',
+      })
+      setDeleteNotice(
+        t(
+          `Account ${expectedEmail} deleted.`,
+          `Conta ${expectedEmail} excluida.`
+        )
+      )
+      setSelectedAdminForDelete(null)
+      setDeleteConfirmText('')
+      await loadOverview()
+    } catch (err) {
+      setDeleteError(
+        err instanceof Error
+          ? err.message
+          : t('Could not delete account.', 'Erro ao excluir a conta.')
+      )
+    } finally {
+      setDeleteLoading(false)
+    }
+  }
+
   return (
     <section className="grid gap-6">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
@@ -742,13 +807,22 @@ const SuperAdminAccountsPage = () => {
                   {t('Account created on', 'Conta criada em')}{' '}
                   {formatDateTime(account.admin.createdAt, locale)}
                 </p>
-                <button
-                  type="button"
-                  onClick={() => openLinkedAccountsModal(account)}
-                  className="mt-2 rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-cyan-800"
-                >
-                  {t('View linked accounts', 'Ver contas vinculadas')}
-                </button>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openLinkedAccountsModal(account)}
+                    className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-cyan-800"
+                  >
+                    {t('View linked accounts', 'Ver contas vinculadas')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openDeleteAccountModal(account)}
+                    className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-rose-700 hover:bg-rose-100"
+                  >
+                    {t('Delete account', 'Excluir conta')}
+                  </button>
+                </div>
               </div>
 
               <span
@@ -968,6 +1042,79 @@ const SuperAdminAccountsPage = () => {
           </article>
         ))}
       </div>
+
+      {deleteNotice ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          {deleteNotice}
+        </div>
+      ) : null}
+
+      {selectedAdminForDelete ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4">
+          <div className="w-full max-w-md overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-2xl">
+            <div className="border-b border-slate-100 p-5">
+              <p className="text-xs uppercase tracking-[0.2em] text-rose-700">
+                {t('Destructive action', 'Acao destrutiva')}
+              </p>
+              <h3 className="mt-1 text-lg font-semibold text-slate-900">
+                {t('Delete ADMIN account', 'Excluir conta de ADMIN')}
+              </h3>
+              <p className="mt-2 text-sm text-slate-600">
+                {t(
+                  'This will permanently remove the admin from Supabase and the database. Any users in their organization may be left without an admin owner.',
+                  'Isto vai remover o admin permanentemente do Supabase e do banco. Usuarios da organizacao podem ficar sem admin responsavel.'
+                )}
+              </p>
+              <p className="mt-3 text-sm text-slate-700">
+                <span className="font-semibold">{selectedAdminForDelete.admin.name || t('No name', 'Sem nome')}</span>
+                <br />
+                <span className="text-slate-500">{selectedAdminForDelete.admin.email}</span>
+              </p>
+              <p className="mt-3 text-xs text-slate-500">
+                {t('Linked users (excluding admin):', 'Usuarios vinculados (sem o admin):')}{' '}
+                <strong className="text-slate-700">{selectedAdminForDelete.users.managedUsers}</strong>
+              </p>
+            </div>
+
+            <div className="p-5">
+              <label className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-600">
+                {t('Type the email to confirm:', 'Digite o email para confirmar:')}
+              </label>
+              <input
+                value={deleteConfirmText}
+                onChange={(event) => setDeleteConfirmText(event.target.value)}
+                placeholder={selectedAdminForDelete.admin.email}
+                autoFocus
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                disabled={deleteLoading}
+              />
+
+              {deleteError ? (
+                <p className="mt-3 text-xs text-rose-700">{deleteError}</p>
+              ) : null}
+
+              <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeDeleteAccountModal}
+                  disabled={deleteLoading}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.15em] text-slate-700 disabled:opacity-60"
+                >
+                  {t('Cancel', 'Cancelar')}
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmDeleteAccount}
+                  disabled={deleteLoading}
+                  className="rounded-full bg-rose-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.15em] text-white hover:bg-rose-800 disabled:opacity-60"
+                >
+                  {deleteLoading ? t('Deleting...', 'Excluindo...') : t('Delete permanently', 'Excluir definitivamente')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {selectedAdminForModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4">

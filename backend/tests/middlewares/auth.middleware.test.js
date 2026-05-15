@@ -4,7 +4,7 @@ const mockPrisma = require('../mocks/prisma.mock');
 const { mockSupabase } = require('../mocks/supabase.mock');
 
 // Mock dos módulos antes de importar o middleware
-jest.mock('../../src/config/database', () => mockPrisma);
+jest.mock('../../src/config/database', () => ({ prisma: mockPrisma }));
 jest.mock('../../src/config/supabase', () => ({ supabase: mockSupabase }));
 jest.mock('../../src/utils/teamInviteToken', () => ({
   verifyTeamInviteToken: jest.fn(),

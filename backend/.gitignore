@@ -61,4 +61,14 @@ get-token.js
 /scripts/get-token.js
 /scripts/pentest-phase*
 
+# Dev-only admin scripts e diagnosticos (nao deploy)
+/scripts/inspect-supabase-user.js
+/scripts/fix-user-password.js
+/scripts/reset-user-via-invite.js
+/scripts/e2e-invite-signup.js
+/scripts/create-admin-invite-users.js
+/scripts/*
+# Testes nao vao pra VPS
+/tests/
+
 
