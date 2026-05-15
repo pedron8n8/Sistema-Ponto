@@ -35,6 +35,10 @@
       "title": "Terms of Service | OmniPunt",
       "description": "Review acceptable use, account responsibilities, cancellation, refund policy, and liability limitations for OmniPunt."
     },
+    "consent": {
+      "title": "Data Consent Policy | OmniPunt",
+      "description": "Full inventory of personal data processed by OmniPunt, legal bases, retention periods, IP anonymization, and cookie management."
+    },
     "login": {
       "title": "Login | OmniPunt",
       "description": "Sign in with Google or email and password to access your attendance workspace."
@@ -53,6 +57,7 @@
   "footer": {
     "privacy": "Privacy Policy",
     "terms": "Terms of Service",
+    "consent": "Data Consent",
     "pricing": "Pricing",
     "contact": "Contact",
     "contactValue": "support@omnipunt.com",
@@ -264,5 +269,206 @@
     "section7Body": "We may update these Terms periodically. Continued use after an effective update constitutes acceptance of the revised Terms.",
     "section8Title": "8. Contact",
     "section8Body": "For legal or contractual questions, contact {{email}}."
+  },
+  "cookies": {
+    "eyebrow": "Your privacy",
+    "title": "Cookies and similar technologies",
+    "intro": "We use cookies and local storage to keep the platform working, measure usage in aggregate form, and improve communication. You can accept, reject, or fine-tune your preferences at any time.",
+    "readPolicy": "Read the full consent policy",
+    "acceptAll": "Accept all",
+    "rejectAll": "Reject optional",
+    "preferences": "Preferences",
+    "hidePreferences": "Hide preferences",
+    "savePreferences": "Save preferences",
+    "alwaysOn": "Always on",
+    "cat": {
+      "necessary": {
+        "name": "Strictly necessary",
+        "desc": "Required for authentication, session continuity, language, and platform security. Cannot be disabled."
+      },
+      "analytics": {
+        "name": "Analytics & performance",
+        "desc": "Help us understand, in aggregate form, how the platform is used so we can fix issues and prioritize improvements. Loaded only with your consent."
+      },
+      "marketing": {
+        "name": "Marketing & communication",
+        "desc": "Allow us to measure campaigns, personalize messages, and contact channels. Loaded only with your consent."
+      }
+    }
+  },
+  "consent": {
+    "eyebrow": "Data Consent Policy",
+    "title": "Data Consent and Processing Policy",
+    "updated": "Last updated: May 15, 2026",
+    "intro": "This document describes, in plain language, what personal data OmniPunt processes while operating the attendance platform, for what purposes, how long it is retained, with whom it may be shared, and how you can exercise the rights granted by GDPR (EU Regulation 2016/679) and LGPD (Brazilian Law 13.709/2018).",
+    "controllerTitle": "Controller and Data Protection Officer (DPO)",
+    "controllerBody": "The data controller is the customer organization that provides OmniPunt to its workforce. OmniPunt acts as a data processor under GDPR and operador under LGPD. To reach our DPO, contact {{email}}.",
+    "legalBasisTitle": "Applicable legal bases",
+    "legalBasisBody": "We process data based on: performance of contract (delivering the attendance service), legal and regulatory obligations (workforce time tracking and audit), legitimate interest (security, fraud prevention, and product improvement, always balanced against your rights), and consent (facial biometrics and optional analytics/marketing cookies).",
+    "inventoryTitle": "Inventory of processed data",
+    "inventoryIntro": "The table below lists every category of personal data currently stored by OmniPunt, along with purpose, legal basis, and retention period.",
+    "table": {
+      "category": "Category",
+      "fields": "Fields collected",
+      "purpose": "Purpose",
+      "legalBasis": "Legal basis",
+      "retention": "Retention"
+    },
+    "inventory": {
+      "account": {
+        "category": "Account data",
+        "fields": "ID, name, email, phone, role, status (active/inactive), linked supervisor, organization, creation date",
+        "purpose": "User identification, access control, approval hierarchy, and operational communication.",
+        "legalBasis": "Performance of contract",
+        "retention": "Throughout the contract term + 5 years after termination, in line with labor regulations."
+      },
+      "authentication": {
+        "category": "Authentication & security",
+        "fields": "PIN hash and salt (never stored in plain text), PIN updated-at, failed attempts, temporary lockout, Supabase Auth session data",
+        "purpose": "Authenticate users securely and prevent credential misuse.",
+        "legalBasis": "Performance of contract and legitimate interest (security)",
+        "retention": "While the account is active. Failed attempts are reset on success or once the lockout window expires."
+      },
+      "biometric": {
+        "category": "Facial biometrics (optional)",
+        "fields": "Mathematical vector (embedding) generated by face-api.js, comparison threshold, last template update",
+        "purpose": "Validate the physical presence of the worker at the time of the clock event. We do NOT store photo or video of the face as an attendance record, only the mathematical vector.",
+        "legalBasis": "Explicit consent from the data subject (sensitive personal data)",
+        "retention": "While the user keeps the biometric enrollment active. Can be deleted at any time without affecting prior records."
+      },
+      "photo": {
+        "category": "Profile photo (optional)",
+        "fields": "Photo file path, last update date",
+        "purpose": "Visual identification in lists, approvals, and reports.",
+        "legalBasis": "Consent",
+        "retention": "While the account is active or until the data subject requests deletion."
+      },
+      "timeEntries": {
+        "category": "Time entries",
+        "fields": "Clock-in/out timestamps, notes, status (pending/approved/rejected), worked minutes, breaks, overtime (50%/100%), accrued bank hours",
+        "purpose": "Official workday tracking, overtime calculation, payroll integration, and audit.",
+        "legalBasis": "Legal obligation (labor regulations) and performance of contract",
+        "retention": "5 years after the end of the employment relationship, per applicable labor regulations."
+      },
+      "geolocation": {
+        "category": "Clock-in geolocation (optional)",
+        "fields": "Latitude, longitude, and timestamp of the clock event",
+        "purpose": "Validate that the clock event occurred within the radius defined by the account administrator (GPS mode).",
+        "legalBasis": "Performance of contract (when required by the customer) and consent",
+        "retention": "Tied to the matching time entry (5 years). Can be disabled by the account administrator."
+      },
+      "ipDevice": {
+        "category": "IP and device (technical metadata)",
+        "fields": "Source IP address, device type, operating system, browser, user-agent",
+        "purpose": "Audit trail, fraud prevention, and security incident investigation.",
+        "legalBasis": "Legitimate interest (security and audit)",
+        "retention": "Full IP: 90 days. After that window, the last octet (IPv4) or last 80 bits (IPv6) are masked, and only the anonymized form is kept for the remaining retention period."
+      },
+      "approvalLogs": {
+        "category": "Approval and audit logs",
+        "fields": "Reviewer, comments, action taken, timestamp",
+        "purpose": "Auditable trail of supervisor and admin decisions.",
+        "legalBasis": "Legal obligation and legitimate interest",
+        "retention": "Same period as the associated time entry (5 years)."
+      },
+      "bankHours": {
+        "category": "Bank of hours",
+        "fields": "Entry type, minutes, payment status, paid-at, expiration date, description, author",
+        "purpose": "Balance management, payment, and compensation.",
+        "legalBasis": "Performance of contract and legal obligation",
+        "retention": "5 years after the entry or after the balance is paid out/expired."
+      },
+      "vacation": {
+        "category": "Vacation requests",
+        "fields": "Requested period, reason, status, supervisor and HR reviewers, review dates, status change logs",
+        "purpose": "Vacation approval workflow and historical record for payroll.",
+        "legalBasis": "Performance of contract and legal obligation",
+        "retention": "5 years after the end of the vacation period."
+      },
+      "slack": {
+        "category": "Slack integration (optional)",
+        "fields": "Slack user ID, display name, workspace name",
+        "purpose": "Deliver operational notifications (clock alerts, approvals, vacation) to the channel configured by the customer.",
+        "legalBasis": "Performance of contract (configured by the administrator)",
+        "retention": "While the integration is active. Removed when Slack is disconnected."
+      },
+      "billing": {
+        "category": "Billing and invoicing (administrators only)",
+        "fields": "Stripe session ID, invoice/subscription ID, payment status, currency, amount, customer email, billing dates",
+        "purpose": "Process subscriptions, issue invoices, and meet tax requirements.",
+        "legalBasis": "Performance of contract and legal obligation (tax)",
+        "retention": "5 years after the last payment, per applicable tax regulations."
+      },
+      "preferences": {
+        "category": "Browser preferences and telemetry",
+        "fields": "Selected language, timezone, cookie consent decision",
+        "purpose": "Personalize the experience and honor your privacy choices.",
+        "legalBasis": "Legitimate interest / Consent (optional categories)",
+        "retention": "Up to 12 months or until you clear your browser storage."
+      }
+    },
+    "ipTitle": "IP anonymization",
+    "ipBody": "OmniPunt follows data minimization for IP addresses. Different layers apply different policies:",
+    "ipBullet1": "Analytics cookies: when you allow the analytics category, the IP sent to the measurement service is anonymized at source (anonymize_ip parameter), discarding the last octet before any processing.",
+    "ipBullet2": "Operational attendance records: the full IP is retained for up to 90 days for audit and incident investigation. After that, the last octet (IPv4) or last 80 bits (IPv6) are masked and only the anonymized form is kept for the remaining retention period.",
+    "ipBullet3": "Server and security logs: used only for abuse detection, with reduced retention and masking applied on exports.",
+    "biometricTitle": "Sensitive data: facial biometrics",
+    "biometricBody": "Facial biometrics are treated as sensitive personal data. They are only collected after explicit consent. We store only the mathematical vector (embedding) generated by face-api.js, not the image or video. The vector cannot be used to reconstruct the original face and is used exclusively to compare a clock event against the enrolled template. You can withdraw consent at any time, which deletes the biometric template without affecting prior attendance records.",
+    "retentionTitle": "Retention summary",
+    "retentionBody": "Retention follows labor (CLT Art. 7º, XXIX in Brazil; equivalent rules elsewhere), tax, and contractual regulations. In summary: time entries and payroll = 5 years; bank of hours = 5 years after payout; vacation = 5 years after the period ends; billing = 5 years; full IP = 90 days (anonymized afterwards); biometrics = while enrollment is active; photo and preferences = until the data subject requests deletion. After expiry, data is anonymized or deleted following an auditable internal procedure.",
+    "processorsTitle": "Processors and sub-processors",
+    "processorsBody": "To deliver the service, we share strictly necessary data with the following processors:",
+    "processor": {
+      "supabase": "Supabase (authentication, PostgreSQL database, and storage) - account and operational data.",
+      "stripe": "Stripe (payment processing) - admin billing data; OmniPunt does not store card data.",
+      "slack": "Slack (operational notifications) - only if the integration is enabled by the administrator.",
+      "googleFonts": "Google Fonts (fonts via CDN) - public interface typography.",
+      "analytics": "Analytics service (Google Analytics 4 or equivalent) - only if you accept the analytics cookie category."
+    },
+    "cookiesTitle": "Cookies and local storage",
+    "cookiesBody": "We use cookies and localStorage grouped into three categories. Only the necessary category is loaded before your consent. If you do not accept an optional category, no script from that category is loaded or executed.",
+    "cookieTable": {
+      "category": "Category",
+      "purpose": "Purpose",
+      "examples": "Examples",
+      "retention": "Retention"
+    },
+    "cookies": {
+      "necessary": {
+        "name": "Strictly necessary",
+        "purpose": "Maintain session, language, timezone, and platform security.",
+        "examples": "sb-access-token, sb-refresh-token, i18nextLng, omnipunt.consent.v1",
+        "retention": "Session up to 12 months."
+      },
+      "analytics": {
+        "name": "Analytics",
+        "purpose": "Aggregate usage, failures, and platform performance (loaded only after consent).",
+        "examples": "_ga, _ga_*, _gid (Google Analytics 4 with anonymized IP)",
+        "retention": "Up to 14 months."
+      },
+      "marketing": {
+        "name": "Marketing",
+        "purpose": "Measure campaigns and acquisition channels (loaded only after consent).",
+        "examples": "Pixel and partner cookies, loaded on demand",
+        "retention": "Up to 12 months."
+      }
+    },
+    "managePreferencesTitle": "Manage my preferences",
+    "managePreferencesBody": "You can review and change your choices at any time below. Changes apply immediately: scripts from disabled categories are removed from the page.",
+    "decidedAt": "Last decision recorded at {{date}}.",
+    "notDecidedYet": "You have not recorded a decision yet.",
+    "resetButton": "Clear decision and reopen popup",
+    "rightsTitle": "Your rights (LGPD/GDPR)",
+    "rightsBody": "You can exercise the rights below by contacting your account administrator or directly through {{email}}:",
+    "rights": {
+      "access": "Confirm that processing occurs and access your data.",
+      "correction": "Correct incomplete, inaccurate, or outdated data.",
+      "deletion": "Request deletion of data processed based on consent, subject to legal retention.",
+      "portability": "Receive your data in a structured, interoperable format.",
+      "objection": "Object to processing based on legitimate interest.",
+      "withdraw": "Withdraw consent (biometrics and optional cookies) at any time, without affecting prior lawful processing."
+    },
+    "contactTitle": "How to reach us",
+    "contactBody": "Privacy, security, or rights-related requests should be sent to {{email}}. We respond within 15 business days and, when applicable, route the request to the customer account administrator that acts as the data controller."
   }
 }

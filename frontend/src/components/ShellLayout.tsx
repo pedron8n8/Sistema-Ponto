@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import LanguageSwitcher from './LanguageSwitcher'
 import BrandWordmark from './BrandWordmark'
 import UserAvatar from './UserAvatar'
+import DualClock from './DualClock'
 
 const iconClassName = 'h-5 w-5 shrink-0'
 
@@ -312,7 +313,8 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
         <div className="w-full transition-all duration-300 md:pl-[5.3rem] md:peer-hover/sidebar:pl-[16.8rem] md:peer-focus/sidebar:pl-[16.8rem]">
           <div className="px-5 pt-6 sm:px-8">
             <div className="mx-auto w-full max-w-7xl">
-              <div className="fixed right-4 top-4 z-50 hidden md:flex xl:right-6 xl:top-5">
+              <div className="fixed right-4 top-4 z-50 hidden items-center gap-3 md:flex xl:right-6 xl:top-5">
+                <DualClock variant="mini" className="rounded-full border border-white/80 bg-white/85 px-3 py-1 shadow-[0_10px_24px_-24px_rgba(15,23,42,0.85)]" />
                 <div className="group/profile relative">
                   <button
                     type="button"

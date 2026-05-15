@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { Circle, CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet'
 import * as faceapi from 'face-api.js'
 import { formatDateTimeWithTimeZone, formatTimeWithTimeZone } from '../lib/timezone'
+import DualClock from '../components/DualClock'
 
 type TimeEntry = {
   id: string
@@ -1196,6 +1197,8 @@ const ColaboradorDashboard = () => {
   const statusChartMax = Math.max(contractDailyMinutes, liveTotalWorkedMinutes, 1)
 
   return (
+    <div className="space-y-6">
+      <DualClock variant="card" />
     <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
         <p className="text-xs uppercase tracking-[0.35em] text-teal-700">{t('Member', 'Colaborador')}</p>
@@ -1633,6 +1636,7 @@ const ColaboradorDashboard = () => {
 
       </aside>
     </section>
+    </div>
   )
 }
 

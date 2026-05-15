@@ -85,6 +85,9 @@ const PublicLayout = ({ children }: PublicLayoutProps) => {
             <Link to="/terms" className="transition hover:text-slate-900">
               {t('footer.terms')}
             </Link>
+            <Link to="/consent" className="transition hover:text-slate-900">
+              {t('footer.consent')}
+            </Link>
             <Link to="/pricing" className="transition hover:text-slate-900">
               {t('footer.pricing')}
             </Link>

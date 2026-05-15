@@ -5,10 +5,15 @@ const {
   sendOvertimeThresholdNotification,
   getEnabledOvertimeChannels,
 } = require('../utils/notifications');
+const { sendSlackDM } = require('../utils/slackNotifier');
 
 const SCAN_JOB_NAME = 'scan-end-of-shift-overtime';
 const DISPATCH_JOB_NAME = 'dispatch-end-of-shift-overtime';
+const DISPATCH_SHIFT_END_JOB_NAME = 'dispatch-shift-end-reminder';
 const SCAN_REPEAT_JOB_ID = 'scan-end-of-shift-overtime-repeat';
+
+const SHIFT_END_PRE_MINUTES = 15;
+const SHIFT_END_DEDUPE_TTL_SECONDS = 60 * 60 * 18;
 
 const toPositiveNumber = (value, fallback, minimum = 1) => {
   const parsed = Number(value);
@@ -258,6 +263,7 @@ const processScanJob = async () => {
       contractDailyMinutes: true,
       bankHoursLimitMinutes: true,
       workdayEndTime: true,
+      slackUserId: true,
       adminPlanStatus: true,
       adminPlan: {
         select: {
@@ -269,6 +275,7 @@ const processScanJob = async () => {
           id: true,
           name: true,
           email: true,
+          slackUserId: true,
         },
       },
       organizationAdmin: {
@@ -276,6 +283,7 @@ const processScanJob = async () => {
           id: true,
           name: true,
           email: true,
+          slackUserId: true,
           adminPlanStatus: true,
           adminPlan: {
             select: {
@@ -328,95 +336,27 @@ const processScanJob = async () => {
       continue;
     }
 
-    const plan = resolveEffectivePlan(member);
+    let entryEnqueued = false;
 
-    if (!(plan.code === 'PRO' && plan.status === 'ACTIVE')) {
-      skipped += 1;
-      continue;
-    }
-
-    if (!shouldAlertNearShiftEnd(member)) {
-      skipped += 1;
-      continue;
-    }
-
-    const manager = resolveAlertManager(member);
-    const elapsedMinutes = Math.max(0, Math.floor((now - new Date(openEntry.clockIn)) / 60000));
-    const totalWorkedMinutesToday = (workedMinutesByUser[member.id] || 0) + elapsedMinutes;
-    const contractDailyMinutes = Number(member.contractDailyMinutes || 480);
-    const overtimeMinutesSoFar = Math.max(0, totalWorkedMinutesToday - contractDailyMinutes);
-    const overtimeLimitMinutes = resolveOvertimeAlertLimitMinutes(member);
-    const thresholdMinutes = Math.ceil((overtimeLimitMinutes * OVERTIME_ALERT_THRESHOLD_PERCENT) / 100);
-
-    if (thresholdMinutes <= 0 || overtimeMinutesSoFar < thresholdMinutes) {
-      skipped += 1;
-      continue;
-    }
-
-    const dateKey = getDateKeyForTimeZone(member.timeZone);
-    const dedupeKey = buildDispatchKey({
-      dateKey,
-      managerId: manager.id,
-      memberId: member.id,
-      thresholdPercent: OVERTIME_ALERT_THRESHOLD_PERCENT,
+    const overtimeOutcome = await evaluateOvertimeThreshold({
+      openEntry,
+      member,
+      now,
+      workedMinutesByUser,
     });
-
-    const shouldDispatch = await redis.set(dedupeKey, '1', 'EX', 60 * 60 * 36, 'NX');
-    if (!shouldDispatch) {
-      skipped += 1;
-      continue;
-    }
-
-    const channels = resolveDispatchChannels({ managerEmail: manager.email });
-    if (channels.length === 0) {
-      skipped += 1;
-      await redis.del(dedupeKey);
-      continue;
-    }
-
-    const alertPayload = {
-      type: 'OVERTIME_LIMIT_THRESHOLD',
-      thresholdPercent: OVERTIME_ALERT_THRESHOLD_PERCENT,
-      thresholdMinutes,
-      overtimeMinutes: overtimeMinutesSoFar,
-      overtimeLimitMinutes,
-      dateKey,
-      member: {
-        id: member.id,
-        name: member.name,
-        email: member.email,
-      },
-      manager,
-      channels,
-      triggeredAt: new Date().toISOString(),
-    };
-
-    try {
-      await proactiveAlertQueue.add(
-        DISPATCH_JOB_NAME,
-        {
-          dedupeKey,
-          alertPayload,
-        },
-        {
-          attempts: 5,
-          backoff: {
-            type: 'exponential',
-            delay: 15000,
-          },
-          removeOnComplete: {
-            age: 24 * 3600,
-            count: 1000,
-          },
-          removeOnFail: {
-            age: 7 * 24 * 3600,
-          },
-        }
-      );
+    if (overtimeOutcome === 'enqueued') {
       enqueued += 1;
-    } catch (queueError) {
-      await redis.del(dedupeKey);
-      throw queueError;
+      entryEnqueued = true;
+    }
+
+    const shiftEndOutcome = await evaluateShiftEndReminder({ openEntry, member, now });
+    if (shiftEndOutcome === 'enqueued') {
+      enqueued += 1;
+      entryEnqueued = true;
+    }
+
+    if (!entryEnqueued) {
+      skipped += 1;
     }
   }
 
@@ -425,6 +365,191 @@ const processScanJob = async () => {
     enqueued,
     skipped,
   };
+};
+
+const evaluateOvertimeThreshold = async ({ openEntry, member, now, workedMinutesByUser }) => {
+  const plan = resolveEffectivePlan(member);
+  if (!(plan.code === 'PRO' && plan.status === 'ACTIVE')) {
+    return 'skipped';
+  }
+
+  if (!shouldAlertNearShiftEnd(member)) {
+    return 'skipped';
+  }
+
+  const manager = resolveAlertManager(member);
+  const elapsedMinutes = Math.max(0, Math.floor((now - new Date(openEntry.clockIn)) / 60000));
+  const totalWorkedMinutesToday = (workedMinutesByUser[member.id] || 0) + elapsedMinutes;
+  const contractDailyMinutes = Number(member.contractDailyMinutes || 480);
+  const overtimeMinutesSoFar = Math.max(0, totalWorkedMinutesToday - contractDailyMinutes);
+  const overtimeLimitMinutes = resolveOvertimeAlertLimitMinutes(member);
+  const thresholdMinutes = Math.ceil((overtimeLimitMinutes * OVERTIME_ALERT_THRESHOLD_PERCENT) / 100);
+
+  if (thresholdMinutes <= 0 || overtimeMinutesSoFar < thresholdMinutes) {
+    return 'skipped';
+  }
+
+  const dateKey = getDateKeyForTimeZone(member.timeZone);
+  const dedupeKey = buildDispatchKey({
+    dateKey,
+    managerId: manager.id,
+    memberId: member.id,
+    thresholdPercent: OVERTIME_ALERT_THRESHOLD_PERCENT,
+  });
+
+  const shouldDispatch = await redis.set(dedupeKey, '1', 'EX', 60 * 60 * 36, 'NX');
+  if (!shouldDispatch) {
+    return 'skipped';
+  }
+
+  const channels = resolveDispatchChannels({ managerEmail: manager.email });
+  if (channels.length === 0) {
+    await redis.del(dedupeKey);
+    return 'skipped';
+  }
+
+  const alertPayload = {
+    type: 'OVERTIME_LIMIT_THRESHOLD',
+    thresholdPercent: OVERTIME_ALERT_THRESHOLD_PERCENT,
+    thresholdMinutes,
+    overtimeMinutes: overtimeMinutesSoFar,
+    overtimeLimitMinutes,
+    dateKey,
+    member: {
+      id: member.id,
+      name: member.name,
+      email: member.email,
+    },
+    manager,
+    channels,
+    triggeredAt: new Date().toISOString(),
+  };
+
+  try {
+    await proactiveAlertQueue.add(
+      DISPATCH_JOB_NAME,
+      {
+        dedupeKey,
+        alertPayload,
+      },
+      {
+        attempts: 5,
+        backoff: {
+          type: 'exponential',
+          delay: 15000,
+        },
+        removeOnComplete: {
+          age: 24 * 3600,
+          count: 1000,
+        },
+        removeOnFail: {
+          age: 7 * 24 * 3600,
+        },
+      }
+    );
+    return 'enqueued';
+  } catch (queueError) {
+    await redis.del(dedupeKey);
+    throw queueError;
+  }
+};
+
+const resolveShiftEndSupervisor = (member) => {
+  if (member.supervisor?.slackUserId) {
+    return {
+      id: member.supervisor.id,
+      name: member.supervisor.name,
+      slackUserId: member.supervisor.slackUserId,
+    };
+  }
+  if (member.organizationAdmin?.slackUserId) {
+    return {
+      id: member.organizationAdmin.id,
+      name: member.organizationAdmin.name,
+      slackUserId: member.organizationAdmin.slackUserId,
+    };
+  }
+  return null;
+};
+
+const evaluateShiftEndReminder = async ({ openEntry, member, now }) => {
+  if (!member.slackUserId) {
+    return 'skipped';
+  }
+
+  const contractDailyMinutes = Number(member.contractDailyMinutes || 480);
+  if (!Number.isFinite(contractDailyMinutes) || contractDailyMinutes <= 0) {
+    return 'skipped';
+  }
+
+  const clockInDate = new Date(openEntry.clockIn);
+  const elapsedMinutes = Math.max(0, Math.floor((now - clockInDate) / 60000));
+  const remainingMinutes = contractDailyMinutes - elapsedMinutes;
+
+  let phase = null;
+  if (remainingMinutes <= 0 && remainingMinutes >= -2) {
+    phase = 'END';
+  } else if (remainingMinutes > 0 && remainingMinutes <= SHIFT_END_PRE_MINUTES) {
+    phase = 'PRE_END';
+  } else {
+    return 'skipped';
+  }
+
+  const supervisor = resolveShiftEndSupervisor(member);
+
+  const dedupeKey = `shift-end:${openEntry.id}:${phase}`;
+  const shouldDispatch = await redis.set(dedupeKey, '1', 'EX', SHIFT_END_DEDUPE_TTL_SECONDS, 'NX');
+  if (!shouldDispatch) {
+    return 'skipped';
+  }
+
+  const expectedEndAt = new Date(clockInDate.getTime() + contractDailyMinutes * 60000).toISOString();
+
+  const payload = {
+    type: 'SHIFT_END_REMINDER',
+    phase,
+    timeEntryId: openEntry.id,
+    contractDailyMinutes,
+    remainingMinutes,
+    expectedEndAt,
+    timeZone: member.timeZone || 'America/New_York',
+    member: {
+      id: member.id,
+      name: member.name,
+      email: member.email,
+      slackUserId: member.slackUserId,
+    },
+    supervisor,
+    triggeredAt: new Date().toISOString(),
+  };
+
+  try {
+    await proactiveAlertQueue.add(
+      DISPATCH_SHIFT_END_JOB_NAME,
+      {
+        dedupeKey,
+        payload,
+      },
+      {
+        attempts: 3,
+        backoff: {
+          type: 'exponential',
+          delay: 10000,
+        },
+        removeOnComplete: {
+          age: 24 * 3600,
+          count: 1000,
+        },
+        removeOnFail: {
+          age: 7 * 24 * 3600,
+        },
+      }
+    );
+    return 'enqueued';
+  } catch (queueError) {
+    await redis.del(dedupeKey);
+    throw queueError;
+  }
 };
 
 const processDispatchJob = async (job) => {
@@ -454,6 +579,97 @@ const processDispatchJob = async (job) => {
   }
 };
 
+const formatShiftEndTime = (isoString, timeZone) => {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: timeZone || 'America/New_York',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(new Date(isoString));
+  } catch (_error) {
+    return new Date(isoString).toISOString().slice(11, 16);
+  }
+};
+
+const buildShiftEndUserMessage = ({ phase, expectedEndAt, timeZone, remainingMinutes }) => {
+  const formattedEnd = formatShiftEndTime(expectedEndAt, timeZone);
+
+  if (phase === 'PRE_END') {
+    const minutesLeft = Math.max(1, remainingMinutes);
+    return `:warning: *Heads up!* Your shift ends in ~${minutesLeft} min (around ${formattedEnd}).\nWrap up your tasks and clock out on time to avoid overtime.\nUse \`/omni finish <PIN>\` to clock out from Slack.`;
+  }
+
+  return `:bell: *Time to clock out!* Your scheduled end time is ${formattedEnd}.\nDon't forget to end your workday to avoid unwanted overtime.\nUse \`/omni finish <PIN>\` to clock out from Slack.`;
+};
+
+const buildShiftEndSupervisorMessage = ({ phase, memberName, expectedEndAt, timeZone, remainingMinutes }) => {
+  const formattedEnd = formatShiftEndTime(expectedEndAt, timeZone);
+
+  if (phase === 'PRE_END') {
+    const minutesLeft = Math.max(1, remainingMinutes);
+    return `:hourglass_flowing_sand: *${memberName}* is ${minutesLeft} min away from end of shift (${formattedEnd}). Heads-up sent to help avoid overtime.`;
+  }
+
+  return `:bell: *${memberName}* has reached the scheduled end of shift (${formattedEnd}) and is still clocked in. Reminder sent to clock out.`;
+};
+
+const processShiftEndDispatchJob = async (job) => {
+  const { payload, dedupeKey } = job.data || {};
+
+  if (!payload?.member?.slackUserId) {
+    return { delivered: false, reason: 'MISSING_MEMBER_SLACK_ID' };
+  }
+
+  const userText = buildShiftEndUserMessage({
+    phase: payload.phase,
+    expectedEndAt: payload.expectedEndAt,
+    timeZone: payload.timeZone,
+    remainingMinutes: payload.remainingMinutes,
+  });
+
+  const results = [];
+  try {
+    const userResult = await sendSlackDM({
+      slackUserId: payload.member.slackUserId,
+      text: userText,
+    });
+    results.push({ target: 'member', ...userResult });
+
+    if (payload.supervisor?.slackUserId) {
+      const supervisorText = buildShiftEndSupervisorMessage({
+        phase: payload.phase,
+        memberName: payload.member.name || 'Team member',
+        expectedEndAt: payload.expectedEndAt,
+        timeZone: payload.timeZone,
+        remainingMinutes: payload.remainingMinutes,
+      });
+
+      const supervisorResult = await sendSlackDM({
+        slackUserId: payload.supervisor.slackUserId,
+        text: supervisorText,
+      });
+      results.push({ target: 'supervisor', ...supervisorResult });
+    }
+
+    const memberDelivered = results.find((r) => r.target === 'member')?.delivered;
+    if (!memberDelivered) {
+      throw new Error(`Falha ao enviar DM Slack ao membro: ${results.find((r) => r.target === 'member')?.reason || 'UNKNOWN'}`);
+    }
+
+    return {
+      delivered: true,
+      sentAt: new Date().toISOString(),
+      results,
+    };
+  } catch (error) {
+    if (dedupeKey) {
+      await redis.del(dedupeKey);
+    }
+    throw error;
+  }
+};
+
 const createProactiveAlertWorker = async () => {
   // ✅ Remove jobs repetidos órfãos de reinicializações anteriores
   await proactiveAlertQueue.upsertJobScheduler(
@@ -475,6 +691,7 @@ const createProactiveAlertWorker = async () => {
     async (job) => {
       if (job.name === SCAN_JOB_NAME) return processScanJob();
       if (job.name === DISPATCH_JOB_NAME) return processDispatchJob(job);
+      if (job.name === DISPATCH_SHIFT_END_JOB_NAME) return processShiftEndDispatchJob(job);
       return null;
     },
     {

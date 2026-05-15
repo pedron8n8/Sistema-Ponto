@@ -10,6 +10,9 @@ import LandingPage from './pages/LandingPage'
 import PricingPage from './pages/PricingPage'
 import PrivacyPage from './pages/PrivacyPage'
 import TermsPage from './pages/TermsPage'
+import ConsentPolicyPage from './pages/ConsentPolicyPage'
+import CookieConsentBanner from './components/CookieConsentBanner'
+import { initAnalyticsGate } from './lib/analytics'
 import PlanSelectionPage from './pages/PlanSelectionPage'
 import Overview from './pages/Overview'
 import ColaboradorDashboard from './pages/ColaboradorDashboard'
@@ -82,6 +85,10 @@ const App = () => {
     return () => window.clearTimeout(timer)
   }, [])
 
+  useEffect(() => {
+    initAnalyticsGate()
+  }, [])
+
   if (showInitialLoading) {
     return <LoadingScreen />
   }
@@ -97,6 +104,7 @@ const App = () => {
                 <Route path="/pricing" element={<PricingPage />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/terms" element={<TermsPage />} />
+                <Route path="/consent" element={<ConsentPolicyPage />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/signup" element={<Signup />} />
                 <Route
@@ -351,6 +359,7 @@ const App = () => {
                 />
                 <Route path="*" element={<NotFound />} />
               </Routes>
+              <CookieConsentBanner />
             </BrowserRouter>
           </TimezoneProvider>
         </AuthProvider>

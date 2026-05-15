@@ -35,6 +35,10 @@
       "title": "Termos de Uso | OmniPunt",
       "description": "Veja uso aceitavel, responsabilidades de conta, cancelamento, politica de reembolso e limitacao de responsabilidade."
     },
+    "consent": {
+      "title": "Politica de Consentimento de Dados | OmniPunt",
+      "description": "Inventario completo de dados tratados pelo OmniPunt, bases legais, prazos de retencao, anonimizacao de IP e gerenciamento de cookies."
+    },
     "login": {
       "title": "Login | OmniPunt",
       "description": "Entre com Google ou email e senha para acessar seu workspace de controle de ponto."
@@ -53,6 +57,7 @@
   "footer": {
     "privacy": "Politica de Privacidade",
     "terms": "Termos de Uso",
+    "consent": "Consentimento de Dados",
     "pricing": "Precos",
     "contact": "Contato",
     "contactValue": "support@omnipunt.com",
@@ -264,5 +269,206 @@
     "section7Body": "Podemos atualizar estes Termos periodicamente. O uso continuado apos a vigencia da atualizacao representa aceite dos termos revisados.",
     "section8Title": "8. Contato",
     "section8Body": "Para duvidas juridicas ou contratuais, entre em contato por {{email}}."
+  },
+  "cookies": {
+    "eyebrow": "Sua privacidade",
+    "title": "Cookies e tecnologias similares",
+    "intro": "Usamos cookies e armazenamento local para manter a plataforma funcional, medir uso de forma agregada e melhorar a comunicacao. Voce pode aceitar, recusar ou ajustar suas preferencias a qualquer momento.",
+    "readPolicy": "Leia a politica de consentimento completa",
+    "acceptAll": "Aceitar tudo",
+    "rejectAll": "Recusar opcionais",
+    "preferences": "Preferencias",
+    "hidePreferences": "Ocultar preferencias",
+    "savePreferences": "Salvar preferencias",
+    "alwaysOn": "Sempre ativo",
+    "cat": {
+      "necessary": {
+        "name": "Necessarios",
+        "desc": "Indispensaveis para autenticacao, manter a sessao, idioma e seguranca da plataforma. Nao podem ser desativados."
+      },
+      "analytics": {
+        "name": "Analitica e desempenho",
+        "desc": "Ajudam a entender, de forma agregada, como a plataforma e usada para corrigir falhas e priorizar melhorias. So sao carregados se voce permitir."
+      },
+      "marketing": {
+        "name": "Marketing e comunicacao",
+        "desc": "Permitem medir campanhas, personalizar mensagens e canais de contato. So sao carregados se voce permitir."
+      }
+    }
+  },
+  "consent": {
+    "eyebrow": "Politica de Consentimento de Dados",
+    "title": "Politica de Consentimento e Tratamento de Dados",
+    "updated": "Ultima atualizacao: 15 de maio de 2026",
+    "intro": "Este documento descreve, de forma clara, quais dados pessoais o OmniPunt coleta durante a operacao da plataforma de controle de ponto, para qual finalidade, por quanto tempo sao mantidos, com quem podem ser compartilhados e como voce pode exercer seus direitos previstos na LGPD (Lei 13.709/2018) e no GDPR (Regulamento (UE) 2016/679).",
+    "controllerTitle": "Controlador e Encarregado (DPO)",
+    "controllerBody": "O controlador dos dados e o cliente (organizacao contratante) que disponibiliza o OmniPunt para seus colaboradores. O OmniPunt atua como operador de dados nos termos da LGPD e como processor nos termos do GDPR. Para falar com o nosso encarregado de protecao de dados, escreva para {{email}}.",
+    "legalBasisTitle": "Bases legais aplicaveis",
+    "legalBasisBody": "Tratamos dados com base em: execucao de contrato (prestacao do servico de ponto), obrigacao legal e regulatoria (registro e auditoria de jornada), legitimo interesse (seguranca, prevencao a fraudes e melhoria do produto, sempre balanceado com seus direitos) e consentimento (biometria facial e cookies opcionais de analitica e marketing).",
+    "inventoryTitle": "Inventario de dados tratados",
+    "inventoryIntro": "A tabela abaixo lista todas as categorias de dados pessoais armazenadas atualmente pelo OmniPunt, com finalidade, base legal e prazo de retencao previsto.",
+    "table": {
+      "category": "Categoria",
+      "fields": "Campos coletados",
+      "purpose": "Finalidade",
+      "legalBasis": "Base legal",
+      "retention": "Retencao"
+    },
+    "inventory": {
+      "account": {
+        "category": "Dados de conta",
+        "fields": "ID, nome, email, telefone, funcao (role), status (ativo/inativo), supervisor vinculado, organizacao, data de criacao",
+        "purpose": "Identificacao do usuario, controle de acesso, hierarquia de aprovacoes e comunicacao operacional.",
+        "legalBasis": "Execucao de contrato",
+        "retention": "Durante a vigencia do contrato + 5 anos apos o desligamento, conforme legislacao trabalhista."
+      },
+      "authentication": {
+        "category": "Autenticacao e seguranca",
+        "fields": "PIN com hash e salt (nunca armazenado em texto puro), data de atualizacao do PIN, tentativas falhas, bloqueio temporario, dados de sessao Supabase Auth",
+        "purpose": "Autenticar o usuario com seguranca e prevenir uso abusivo de credenciais.",
+        "legalBasis": "Execucao de contrato e legitimo interesse (seguranca)",
+        "retention": "Enquanto a conta estiver ativa. Tentativas falhas sao zeradas apos sucesso ou apos o prazo de bloqueio."
+      },
+      "biometric": {
+        "category": "Biometria facial (opcional)",
+        "fields": "Vetor matematico (embedding) gerado pelo face-api.js, limiar de comparacao, data da ultima atualizacao do template",
+        "purpose": "Validar a presenca fisica do colaborador no momento da marcacao de ponto. NAO armazenamos foto ou video do rosto como registro do ponto, apenas o vetor matematico.",
+        "legalBasis": "Consentimento explicito do titular (dado pessoal sensivel)",
+        "retention": "Enquanto o colaborador mantiver o cadastro biometrico ativo. Pode ser excluido a qualquer momento, sem impacto no historico anterior."
+      },
+      "photo": {
+        "category": "Foto de perfil (opcional)",
+        "fields": "Caminho do arquivo da foto, data da ultima atualizacao",
+        "purpose": "Identificacao visual em listas, aprovacoes e relatorios.",
+        "legalBasis": "Consentimento",
+        "retention": "Enquanto a conta estiver ativa ou ate exclusao solicitada pelo titular."
+      },
+      "timeEntries": {
+        "category": "Registros de ponto",
+        "fields": "Horario de entrada e saida, observacoes, status (pendente/aprovado/rejeitado), minutos trabalhados, intervalos, horas extras (50%/100%), banco de horas acumulado",
+        "purpose": "Controle oficial da jornada de trabalho, calculo de horas extras, integracao com folha e auditoria.",
+        "legalBasis": "Obrigacao legal (legislacao trabalhista) e execucao de contrato",
+        "retention": "5 anos apos o termino da relacao de trabalho, conforme legislacao trabalhista brasileira (CLT). Planos com retencao estendida podem manter ate 5 anos completos."
+      },
+      "geolocation": {
+        "category": "Geolocalizacao da marcacao (opcional)",
+        "fields": "Latitude, longitude e timestamp do momento da marcacao",
+        "purpose": "Validar que a marcacao ocorreu dentro do raio permitido pelo administrador da conta (modo GPS).",
+        "legalBasis": "Execucao de contrato (quando o cliente exige) e consentimento",
+        "retention": "Vinculada ao registro de ponto correspondente (5 anos). Pode ser desativada pelo administrador da conta."
+      },
+      "ipDevice": {
+        "category": "IP e dispositivo (metadados tecnicos)",
+        "fields": "Endereco IP de origem, tipo de dispositivo, sistema operacional, navegador, user-agent",
+        "purpose": "Trilha de auditoria, prevencao a fraudes e investigacao de incidentes de seguranca.",
+        "legalBasis": "Legitimo interesse (seguranca e auditoria)",
+        "retention": "IP completo: 90 dias. Apos esse periodo o ultimo octeto (IPv4) ou os ultimos 80 bits (IPv6) sao mascarados, mantendo-se apenas a forma anonimizada vinculada ao registro pelo tempo restante de retencao."
+      },
+      "approvalLogs": {
+        "category": "Logs de aprovacao e auditoria",
+        "fields": "Quem aprovou/rejeitou, comentarios, acao executada, data e hora",
+        "purpose": "Garantir trilha auditavel das decisoes de supervisores e administradores.",
+        "legalBasis": "Obrigacao legal e legitimo interesse",
+        "retention": "Mesmo prazo do registro de ponto associado (5 anos)."
+      },
+      "bankHours": {
+        "category": "Banco de horas",
+        "fields": "Tipo de lancamento, minutos, status de pagamento, data de pagamento, data de expiracao, descricao, autor do lancamento",
+        "purpose": "Gestao de saldo de horas, pagamento e compensacao.",
+        "legalBasis": "Execucao de contrato e obrigacao legal",
+        "retention": "5 anos apos o lancamento ou apos a quitacao/expiracao do saldo."
+      },
+      "vacation": {
+        "category": "Solicitacoes de ferias",
+        "fields": "Periodo solicitado, motivo, status, supervisor e RH revisores, datas de revisao, logs de mudanca de status",
+        "purpose": "Fluxo de aprovacao de ferias e historico para folha de pagamento.",
+        "legalBasis": "Execucao de contrato e obrigacao legal",
+        "retention": "5 anos apos o termino do periodo de ferias."
+      },
+      "slack": {
+        "category": "Integracao com Slack (opcional)",
+        "fields": "ID do usuario no Slack, nome de exibicao, nome do workspace",
+        "purpose": "Envio de notificacoes operacionais (alertas de marcacao, aprovacoes, ferias) para o canal configurado pelo cliente.",
+        "legalBasis": "Execucao de contrato (configurado pelo administrador)",
+        "retention": "Enquanto a integracao estiver ativa. Removida ao desconectar o Slack."
+      },
+      "billing": {
+        "category": "Cobranca e faturamento (somente administradores)",
+        "fields": "ID de sessao Stripe, ID de invoice/subscription, status de pagamento, moeda, valor, email do cliente, datas de cobranca",
+        "purpose": "Processar assinaturas, emitir faturas e atender requisitos fiscais.",
+        "legalBasis": "Execucao de contrato e obrigacao legal (fiscal)",
+        "retention": "5 anos apos o ultimo pagamento, conforme legislacao fiscal aplicavel."
+      },
+      "preferences": {
+        "category": "Preferencias e telemetria do navegador",
+        "fields": "Idioma escolhido, fuso horario, decisao de consentimento de cookies",
+        "purpose": "Personalizar a experiencia e respeitar suas escolhas de privacidade.",
+        "legalBasis": "Legitimo interesse / Consentimento (categorias opcionais)",
+        "retention": "Ate 12 meses ou ate voce limpar o armazenamento do navegador."
+      }
+    },
+    "ipTitle": "Anonimizacao de IP",
+    "ipBody": "O OmniPunt segue o principio da minimizacao para enderecos IP. Diferentes camadas tem politicas distintas:",
+    "ipBullet1": "Cookies de analitica: quando voce autoriza a categoria de analitica, o IP transmitido para o servico de medicao e anonimizado na origem (parametro anonymize_ip), descartando o ultimo octeto antes de qualquer processamento.",
+    "ipBullet2": "Registros operacionais de ponto: o IP completo e mantido por ate 90 dias para auditoria e investigacao de incidentes. Apos esse prazo, mascaramos o ultimo octeto (IPv4) ou os ultimos 80 bits (IPv6) e mantemos apenas a forma anonimizada pelo tempo de retencao restante.",
+    "ipBullet3": "Logs de servidor e seguranca: usados apenas para deteccao de abuso, com retencao reduzida e mascaramento aplicado nas exportacoes.",
+    "biometricTitle": "Dado sensivel: biometria facial",
+    "biometricBody": "A biometria facial e tratada como dado pessoal sensivel. So e coletada apos consentimento explicito do colaborador. Armazenamos apenas o vetor matematico (embedding) gerado pelo face-api.js, nao a imagem ou video. O vetor nao permite reconstruir o rosto original e e usado exclusivamente para comparar a marcacao com o template cadastrado. Voce pode revogar o consentimento a qualquer momento, o que apaga o template biometrico sem afetar os registros de ponto anteriores.",
+    "retentionTitle": "Resumo dos prazos de retencao",
+    "retentionBody": "Os prazos seguem a legislacao trabalhista (CLT - Art. 7º, XXIX), fiscal e contratual. De forma geral: registros de ponto e folha = 5 anos; banco de horas = 5 anos apos quitacao; ferias = 5 anos apos termino; faturamento = 5 anos; IP completo = 90 dias (depois anonimizado); biometria = enquanto o cadastro estiver ativo; foto e preferencias = ate exclusao pelo titular. Apos o vencimento, os dados sao anonimizados ou excluidos conforme procedimento interno auditavel.",
+    "processorsTitle": "Operadores e subcontratados",
+    "processorsBody": "Para entregar o servico, compartilhamos dados estritamente necessarios com os seguintes operadores:",
+    "processor": {
+      "supabase": "Supabase (autenticacao, banco PostgreSQL e armazenamento) - dados de conta e operacionais.",
+      "stripe": "Stripe (processamento de pagamentos) - dados de cobranca de administradores; o OmniPunt nao armazena dados de cartao.",
+      "slack": "Slack (notificacoes operacionais) - apenas se a integracao for ativada pelo administrador.",
+      "googleFonts": "Google Fonts (fontes via CDN) - tipografia da interface publica.",
+      "analytics": "Servico de analitica (Google Analytics 4 ou equivalente) - apenas se voce aceitar a categoria de analitica nos cookies."
+    },
+    "cookiesTitle": "Cookies e armazenamento local",
+    "cookiesBody": "Usamos cookies e localStorage divididos em tres categorias. Apenas a categoria necessarios e carregada antes do seu consentimento. Se voce nao aceitar uma categoria opcional, nenhum script daquela categoria sera carregado nem executado.",
+    "cookieTable": {
+      "category": "Categoria",
+      "purpose": "Finalidade",
+      "examples": "Exemplos",
+      "retention": "Retencao"
+    },
+    "cookies": {
+      "necessary": {
+        "name": "Necessarios",
+        "purpose": "Manter sessao, idioma, fuso e seguranca da plataforma.",
+        "examples": "sb-access-token, sb-refresh-token, i18nextLng, omnipunt.consent.v1",
+        "retention": "Sessao ate 12 meses."
+      },
+      "analytics": {
+        "name": "Analitica",
+        "purpose": "Medir uso agregado, falhas e desempenho da plataforma (so carrega com consentimento).",
+        "examples": "_ga, _ga_*, _gid (Google Analytics 4 com IP anonimizado)",
+        "retention": "Ate 14 meses."
+      },
+      "marketing": {
+        "name": "Marketing",
+        "purpose": "Medir campanhas e canais de aquisicao (so carrega com consentimento).",
+        "examples": "Cookies de pixels e parceiros, ativados sob demanda",
+        "retention": "Ate 12 meses."
+      }
+    },
+    "managePreferencesTitle": "Gerenciar minhas preferencias",
+    "managePreferencesBody": "Voce pode revisar e alterar suas escolhas a qualquer momento abaixo. As mudancas sao aplicadas imediatamente: scripts de categorias desativadas sao removidos da pagina.",
+    "decidedAt": "Ultima decisao registrada em {{date}}.",
+    "notDecidedYet": "Voce ainda nao registrou uma decisao.",
+    "resetButton": "Limpar decisao e reabrir popup",
+    "rightsTitle": "Seus direitos (LGPD/GDPR)",
+    "rightsBody": "Voce pode exercer os direitos abaixo entrando em contato com o administrador da sua conta cliente ou diretamente pelo email {{email}}:",
+    "rights": {
+      "access": "Confirmar a existencia de tratamento e acessar seus dados.",
+      "correction": "Corrigir dados incompletos, inexatos ou desatualizados.",
+      "deletion": "Solicitar exclusao de dados tratados com seu consentimento, respeitando retencoes legais.",
+      "portability": "Receber seus dados em formato estruturado e interoperavel.",
+      "objection": "Opor-se a tratamento baseado em legitimo interesse.",
+      "withdraw": "Revogar o consentimento (biometria e cookies opcionais) a qualquer momento, sem afetar a licitude do tratamento anterior."
+    },
+    "contactTitle": "Como falar com a gente",
+    "contactBody": "Solicitacoes relacionadas a privacidade, seguranca ou exercicio de direitos devem ser enviadas para {{email}}. Respondemos em ate 15 dias uteis e, se aplicavel, encaminhamos para o administrador da conta cliente que e o controlador dos dados."
   }
 }
