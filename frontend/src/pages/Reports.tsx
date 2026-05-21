@@ -55,7 +55,7 @@ type DailyBreakdownResponse = {
 }
 
 const Reports = () => {
-  const { session } = useAuth()
+  const { session, profile } = useAuth()
   const { viewTimeZone } = useTimeZone()
   const { t: i18nT, i18n } = useTranslation()
   const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
@@ -75,7 +75,8 @@ const Reports = () => {
     return formatDateInput(d)
   })
   const [endDate, setEndDate] = useState(() => formatDateInput(new Date()))
-  const [teamId, setTeamId] = useState('')
+  const canExportTeam = profile?.role === 'SUPERVISOR' || profile?.role === 'HR' || profile?.role === 'ADMIN' || profile?.role === 'SUPERADMIN'
+  const [includeTeam, setIncludeTeam] = useState(canExportTeam)
   const [message, setMessage] = useState('')
   const [isExporting, setIsExporting] = useState(false)
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
@@ -229,7 +230,7 @@ const Reports = () => {
         body: {
           startDate,
           endDate,
-          teamId: teamId || undefined,
+          teamId: canExportTeam && includeTeam && profile?.id ? profile.id : undefined,
           format: 'xlsx',
           timeZone: viewTimeZone,
         },
@@ -430,17 +431,30 @@ const Reports = () => {
               className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
             />
           </div>
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              {t('Team (optional ID)', 'Equipe (ID opcional)')}
-            </label>
-            <input
-              value={teamId}
-              onChange={(event) => setTeamId(event.target.value)}
-              placeholder={t('Team ID', 'ID da equipe')}
-              className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-            />
-          </div>
+          {canExportTeam ? (
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                {t('Scope', 'Escopo')}
+              </label>
+              <label className="mt-2 flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={includeTeam}
+                  onChange={(event) => setIncludeTeam(event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                />
+                <span>
+                  {t('Include entire team', 'Incluir toda a equipe')}
+                </span>
+              </label>
+              <p className="mt-1 text-[11px] text-slate-500">
+                {t(
+                  'When enabled, the spreadsheet covers every subordinate. Otherwise it only includes your own entries.',
+                  'Quando ativo, a planilha cobre todos os subordinados. Caso contrario, inclui apenas suas proprias marcacoes.'
+                )}
+              </p>
+            </div>
+          ) : null}
           <button
             onClick={handleExport}
             disabled={isExporting}

@@ -952,17 +952,33 @@ const approveEntry = async (req, res) => {
 
     // Verifica se o registro está pendente
     if (entry.status !== 'PENDING') {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: `Registro não pode ser aprovado. Status atual: ${entry.status}`,
+      console.warn(
+        `[approveEntry] Entry ${id} skipped (status=${entry.status}) by ${req.user.email}`
+      );
+      return res.status(409).json({
+        error: 'Conflict',
+        code: 'ENTRY_NOT_PENDING',
+        message: `Registro já está com status ${entry.status}. Atualize a lista para ver o estado atual.`,
+        entry: {
+          id: entry.id,
+          status: entry.status,
+        },
       });
     }
 
     // Verifica se tem clock-out (registro completo)
     if (!entry.clockOut) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Não é possível aprovar um registro sem clock-out',
+      console.warn(
+        `[approveEntry] Entry ${id} skipped (no clockOut) by ${req.user.email}`
+      );
+      return res.status(422).json({
+        error: 'Unprocessable Entity',
+        code: 'ENTRY_OPEN',
+        message: 'Não é possível aprovar um registro ainda em andamento (sem clock-out).',
+        entry: {
+          id: entry.id,
+          status: entry.status,
+        },
       });
     }
 
@@ -1067,9 +1083,17 @@ const rejectEntry = async (req, res) => {
 
     // Verifica se o registro está pendente
     if (entry.status !== 'PENDING') {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: `Registro não pode ser rejeitado. Status atual: ${entry.status}`,
+      console.warn(
+        `[rejectEntry] Entry ${id} skipped (status=${entry.status}) by ${req.user.email}`
+      );
+      return res.status(409).json({
+        error: 'Conflict',
+        code: 'ENTRY_NOT_PENDING',
+        message: `Registro já está com status ${entry.status}. Atualize a lista para ver o estado atual.`,
+        entry: {
+          id: entry.id,
+          status: entry.status,
+        },
       });
     }
 
