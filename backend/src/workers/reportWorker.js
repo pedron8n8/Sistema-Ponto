@@ -218,7 +218,7 @@ const getReportData = async (filters) => {
       where: { supervisorId },
       select: { id: true },
     });
-    where.userId = { in: subordinates.map((s) => s.id) };
+    where.userId = { in: [supervisorId, ...subordinates.map((s) => s.id)] };
     console.log('[reportWorker] branch=supervisorId, ids:', where.userId.in);
   } else if (teamId) {
     const teamMembers = await prisma.user.findMany({
