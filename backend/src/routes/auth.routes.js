@@ -61,6 +61,36 @@ router.get('/invite/preview', async (req, res) => {
 });
 
 /**
+ * GET /api/v1/auth/check-email?email=...
+ * Verifica se um email ja esta cadastrado no banco local.
+ * Publico (sem auth) para uso no formulario de signup.
+ */
+router.get('/check-email', async (req, res) => {
+  try {
+    const rawEmail = String(req.query.email || '').trim().toLowerCase();
+
+    if (!rawEmail || !rawEmail.includes('@')) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Email invalido.',
+      });
+    }
+
+    const existing = await prisma.user.findUnique({
+      where: { email: rawEmail },
+      select: { id: true },
+    });
+
+    return res.json({ available: !existing });
+  } catch (error) {
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao verificar disponibilidade do email.',
+    });
+  }
+});
+
+/**
  * GET /api/v1/auth/me
  * Retorna informações do usuário autenticado
  */

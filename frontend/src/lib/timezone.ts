@@ -1,4 +1,5 @@
 export const TIME_ZONE_OPTIONS = [
+  { value: 'America/Chicago', label: 'CST/CDT (Chicago)' },
   { value: 'America/New_York', label: 'EST/EDT (New York)' },
   { value: 'America/Sao_Paulo', label: 'BRT (Sao Paulo)' },
   { value: 'Europe/Lisbon', label: 'Portugal (Lisbon)' },
@@ -6,7 +7,7 @@ export const TIME_ZONE_OPTIONS = [
   { value: 'UTC', label: 'UTC' },
 ] as const
 
-export const DEFAULT_VIEW_TIME_ZONE = 'America/New_York'
+export const DEFAULT_VIEW_TIME_ZONE = 'America/Chicago'
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/
 
 export const isValidTimeZone = (timeZone: string) => {

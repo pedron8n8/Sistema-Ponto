@@ -94,7 +94,7 @@ const provisionInvitedTeamMemberIfMissing = async ({ supabaseUser, inviteToken }
   });
 
   if (existingByEmail && existingByEmail.id !== supabaseUser.id) {
-    throw new Error('Email ja vinculado a outro usuario no banco local');
+    throw new Error('Esse email ja esta cadastrado. Faca login com a conta existente ou peca ao SUPERADMIN para excluir a conta antiga.');
   }
 
   const ownerAdmin = await prisma.user.findUnique({
@@ -178,7 +178,7 @@ const provisionBuyerAdminIfMissing = async (supabaseUser) => {
   });
 
   if (existingByEmail && existingByEmail.id !== supabaseUser.id) {
-    throw new Error('Email ja vinculado a outro usuario no banco local');
+    throw new Error('Esse email ja esta cadastrado. Faca login com a conta existente ou peca ao SUPERADMIN para excluir a conta antiga.');
   }
 
   await prisma.user.upsert({

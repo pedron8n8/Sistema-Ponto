@@ -1619,7 +1619,7 @@ const updateTeamMemberWorkSettings = async (req, res) => {
       if (normalizedTimeZone === null) {
         return res.status(400).json({
           error: 'Bad Request',
-          message: 'timeZone inválido. Use um timezone IANA válido (ex.: America/New_York).',
+          message: 'timeZone inválido. Use um timezone IANA válido (ex.: America/Chicago).',
         });
       }
       updateData.timeZone = normalizedTimeZone;

@@ -3106,9 +3106,66 @@ const deleteUser = async (req, res) => {
     // Deleta do Supabase
     await supabaseAdmin.auth.admin.deleteUser(id);
 
-    // Deleta do banco local
-    await prisma.user.delete({
-      where: { id },
+    // Limpa registros relacionados antes do delete final.
+    // Prisma nao tem onDelete: Cascade nos relations, entao removemos manualmente os filhos
+    // obrigatorios (TimeEntry, BankHoursEntry, ApprovalLog como reviewer, VacationRequest como
+    // requester) e nulamos os opcionais (subordinates, vacation reviewer FKs, vacation log actor).
+    await prisma.$transaction(async (tx) => {
+      await tx.user.updateMany({
+        where: { supervisorId: id },
+        data: { supervisorId: null },
+      });
+      await tx.user.updateMany({
+        where: { organizationAdminId: id },
+        data: { organizationAdminId: null },
+      });
+      await tx.vacationRequest.updateMany({
+        where: { supervisorId: id },
+        data: { supervisorId: null },
+      });
+      await tx.vacationRequest.updateMany({
+        where: { hrReviewerId: id },
+        data: { hrReviewerId: null },
+      });
+      await tx.vacationApprovalLog.updateMany({
+        where: { actorId: id },
+        data: { actorId: null },
+      });
+      await tx.approvalLog.deleteMany({ where: { reviewerId: id } });
+
+      const vacationRequests = await tx.vacationRequest.findMany({
+        where: { userId: id },
+        select: { id: true },
+      });
+      const vacationRequestIds = vacationRequests.map((entry) => entry.id);
+      if (vacationRequestIds.length) {
+        await tx.vacationApprovalLog.deleteMany({
+          where: { vacationRequestId: { in: vacationRequestIds } },
+        });
+        await tx.vacationRequest.deleteMany({
+          where: { id: { in: vacationRequestIds } },
+        });
+      }
+
+      const timeEntries = await tx.timeEntry.findMany({
+        where: { userId: id },
+        select: { id: true },
+      });
+      const timeEntryIds = timeEntries.map((entry) => entry.id);
+      await tx.bankHoursEntry.deleteMany({ where: { userId: id } });
+      if (timeEntryIds.length) {
+        await tx.bankHoursEntry.deleteMany({
+          where: { timeEntryId: { in: timeEntryIds } },
+        });
+        await tx.approvalLog.deleteMany({
+          where: { timeEntryId: { in: timeEntryIds } },
+        });
+        await tx.timeEntry.deleteMany({
+          where: { id: { in: timeEntryIds } },
+        });
+      }
+
+      await tx.user.delete({ where: { id } });
     });
 
     if (TEAM_MEMBER_ROLES.includes(user.role) && user.organizationAdminId) {

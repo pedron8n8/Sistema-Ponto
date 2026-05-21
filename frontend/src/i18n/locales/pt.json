@@ -16,7 +16,9 @@
     "mostPopular": "Mais popular",
     "allRights": "Todos os direitos reservados.",
     "openApp": "Abrir app",
-    "here": "aqui"
+    "here": "aqui",
+    "showPassword": "Mostrar senha",
+    "hidePassword": "Ocultar senha"
   },
   "seo": {
     "landing": {
@@ -86,7 +88,12 @@
     "signinFail": "Falha ao entrar com email/senha.",
     "signupFail": "Falha ao criar conta.",
     "linksTitle": "Quer entender antes?",
-    "linksSubtitle": "Explore recursos e precos antes da autenticacao."
+    "linksSubtitle": "Explore recursos e precos antes da autenticacao.",
+    "forgotPassword": "Esqueceu a senha?",
+    "forgotSending": "Enviando link...",
+    "forgotSent": "Enviamos um link de redefinicao para o seu email. Verifique a caixa de entrada.",
+    "forgotEmailRequired": "Informe seu email para receber o link de redefinicao.",
+    "forgotFail": "Nao foi possivel enviar o link de redefinicao."
   },
   "signup": {
     "pageTag": "Criar conta",
@@ -119,6 +126,9 @@
     "phonePlaceholder": "+55 11 90000-0000",
     "passwordLabel": "Senha *",
     "passwordPlaceholder": "No minimo 6 caracteres",
+    "confirmPasswordLabel": "Confirmar senha *",
+    "confirmPasswordPlaceholder": "Repita a senha",
+    "passwordMismatch": "As senhas nao coincidem.",
     "submitButton": "Criar conta",
     "submitLoading": "Criando conta...",
     "backToLogin": "Voltar para login",

@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 
-const EST_TIME_ZONE = 'America/New_York'
+const CST_TIME_ZONE = 'America/Chicago'
 
 const getBrowserTimeZone = (): string => {
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
-    return tz || EST_TIME_ZONE
+    return tz || CST_TIME_ZONE
   } catch {
-    return EST_TIME_ZONE
+    return CST_TIME_ZONE
   }
 }
 
@@ -55,9 +55,9 @@ const DualClock = ({ variant = 'mini', className = '', showSeconds = false }: Du
   }, [])
 
   const localTime = formatTime(now, localTimeZone, showSeconds)
-  const estTime = formatTime(now, EST_TIME_ZONE, showSeconds)
+  const cstTime = formatTime(now, CST_TIME_ZONE, showSeconds)
   const localLabel = getZoneShortLabel(now, localTimeZone)
-  const isAlreadyEst = localTimeZone === EST_TIME_ZONE
+  const isAlreadyCst = localTimeZone === CST_TIME_ZONE
 
   if (variant === 'card') {
     return (
@@ -71,10 +71,10 @@ const DualClock = ({ variant = 'mini', className = '', showSeconds = false }: Du
           <span className="text-3xl font-semibold tabular-nums text-slate-900">{localTime}</span>
           <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{localLabel}</span>
         </div>
-        {!isAlreadyEst ? (
+        {!isAlreadyCst ? (
           <div className="mt-2 flex items-baseline gap-2 text-slate-600">
-            <span className="text-base tabular-nums">{estTime}</span>
-            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">EST (NY)</span>
+            <span className="text-base tabular-nums">{cstTime}</span>
+            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">CST (Chicago)</span>
           </div>
         ) : (
           <p className="mt-1 text-[10px] font-medium uppercase tracking-wide text-slate-400">System default</p>
@@ -86,16 +86,16 @@ const DualClock = ({ variant = 'mini', className = '', showSeconds = false }: Du
   return (
     <div
       className={`flex flex-col items-end leading-tight text-slate-700 ${className}`}
-      title={`Local time (${localTimeZone}) + EST reference`}
+      title={`Local time (${localTimeZone}) + CST reference`}
     >
       <span className="text-xs font-semibold tabular-nums">
         {localTime}
         <span className="ml-1 text-[10px] font-medium uppercase text-slate-500">{localLabel}</span>
       </span>
-      {!isAlreadyEst ? (
+      {!isAlreadyCst ? (
         <span className="text-[10px] tabular-nums text-slate-500">
-          {estTime}
-          <span className="ml-1 uppercase">EST</span>
+          {cstTime}
+          <span className="ml-1 uppercase">CST</span>
         </span>
       ) : null}
     </div>

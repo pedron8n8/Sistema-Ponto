@@ -99,7 +99,7 @@ const SupervisorHoursPage = () => {
           contractDailyHours: formatMinutesToHours(member.contractDailyMinutes),
           workdayStartTime: member.workdayStartTime || '',
           workdayEndTime: member.workdayEndTime || '',
-          timeZone: member.timeZone || 'America/New_York',
+          timeZone: member.timeZone || 'America/Chicago',
         }
       }
       return next
@@ -334,7 +334,7 @@ const SupervisorHoursPage = () => {
                             contractDailyHours: '',
                             workdayStartTime: '',
                             workdayEndTime: '',
-                            timeZone: 'America/New_York',
+                            timeZone: 'America/Chicago',
                           }),
                           contractDailyHours: event.target.value,
                         },
@@ -355,7 +355,7 @@ const SupervisorHoursPage = () => {
                             contractDailyHours: '',
                             workdayStartTime: '',
                             workdayEndTime: '',
-                            timeZone: 'America/New_York',
+                            timeZone: 'America/Chicago',
                           }),
                           workdayStartTime: event.target.value,
                         },
@@ -375,7 +375,7 @@ const SupervisorHoursPage = () => {
                             contractDailyHours: '',
                             workdayStartTime: '',
                             workdayEndTime: '',
-                            timeZone: 'America/New_York',
+                            timeZone: 'America/Chicago',
                           }),
                           workdayEndTime: event.target.value,
                         },
@@ -385,7 +385,7 @@ const SupervisorHoursPage = () => {
                   />
 
                   <select
-                    value={teamWorkSettingsByUser[member.id]?.timeZone || 'America/New_York'}
+                    value={teamWorkSettingsByUser[member.id]?.timeZone || 'America/Chicago'}
                     onChange={(event) =>
                       setTeamWorkSettingsByUser((prev) => ({
                         ...prev,
@@ -394,7 +394,7 @@ const SupervisorHoursPage = () => {
                             contractDailyHours: '',
                             workdayStartTime: '',
                             workdayEndTime: '',
-                            timeZone: 'America/New_York',
+                            timeZone: 'America/Chicago',
                           }),
                           timeZone: event.target.value,
                         },

@@ -50,6 +50,7 @@ type AuthState = {
   signInWithSlack: () => Promise<void>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
+  resetPassword: (email: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined)
@@ -217,9 +218,46 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       throw new Error(error.message)
     }
 
+    // Supabase anti-enumeration: signUp para email ja existente devolve user sem identities, sem erro.
+    // Sem este check, o frontend mostra "sucesso", nao envia email, e o login falha porque
+    // a senha real e a da primeira tentativa de cadastro.
+    const identities = data.user?.identities
+    if (data.user && Array.isArray(identities) && identities.length === 0) {
+      throw new Error(
+        localizeMessage(
+          'This email is already registered. Sign in with the existing account or reset your password.',
+          'Esse email ja esta cadastrado. Faca login com a conta existente ou use "Esqueceu a senha?" para redefinir.'
+        )
+      )
+    }
+
     if (data.session) {
       setSession(data.session)
       await fetchProfile(data.session)
+    }
+  }
+
+  const resetPassword = async (email: string) => {
+    if (!supabase) {
+      throw new Error(
+        localizeMessage(
+          'Supabase is not configured in the frontend.',
+          'Supabase nao configurado no frontend'
+        )
+      )
+    }
+
+    const normalizedEmail = String(email || '').trim().toLowerCase()
+    if (!normalizedEmail.includes('@')) {
+      throw new Error(localizeMessage('Invalid email address.', 'Email invalido'))
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      redirectTo: `${window.location.origin}/login`,
+    })
+
+    if (error) {
+      throw new Error(error.message)
     }
   }
 
@@ -331,6 +369,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       signInWithSlack,
       signOut,
       refreshProfile,
+      resetPassword,
     }),
     [session, profile, loading, profileError]
   )

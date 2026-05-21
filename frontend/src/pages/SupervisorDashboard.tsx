@@ -404,7 +404,7 @@ const SupervisorDashboard = () => {
           contractDailyHours: formatMinutesToHours(member.contractDailyMinutes),
           workdayStartTime: member.workdayStartTime || '',
           workdayEndTime: member.workdayEndTime || '',
-          timeZone: member.timeZone || 'America/New_York',
+          timeZone: member.timeZone || 'America/Chicago',
         }
       }
       return next
@@ -1274,7 +1274,7 @@ const SupervisorDashboard = () => {
                             contractDailyHours: '',
                             workdayStartTime: '',
                             workdayEndTime: '',
-                            timeZone: 'America/New_York',
+                            timeZone: 'America/Chicago',
                           }),
                           contractDailyHours: event.target.value,
                         },
@@ -1294,7 +1294,7 @@ const SupervisorDashboard = () => {
                             contractDailyHours: '',
                             workdayStartTime: '',
                             workdayEndTime: '',
-                            timeZone: 'America/New_York',
+                            timeZone: 'America/Chicago',
                           }),
                           workdayStartTime: event.target.value,
                         },
@@ -1313,7 +1313,7 @@ const SupervisorDashboard = () => {
                             contractDailyHours: '',
                             workdayStartTime: '',
                             workdayEndTime: '',
-                            timeZone: 'America/New_York',
+                            timeZone: 'America/Chicago',
                           }),
                           workdayEndTime: event.target.value,
                         },
@@ -1322,7 +1322,7 @@ const SupervisorDashboard = () => {
                     className="w-full rounded-full border border-slate-200 bg-white px-3 py-1 text-xs"
                   />
                   <select
-                    value={teamWorkSettingsByUser[member.id]?.timeZone || 'America/New_York'}
+                    value={teamWorkSettingsByUser[member.id]?.timeZone || 'America/Chicago'}
                     onChange={(event) =>
                       setTeamWorkSettingsByUser((prev) => ({
                         ...prev,
@@ -1331,7 +1331,7 @@ const SupervisorDashboard = () => {
                             contractDailyHours: '',
                             workdayStartTime: '',
                             workdayEndTime: '',
-                            timeZone: 'America/New_York',
+                            timeZone: 'America/Chicago',
                           }),
                           timeZone: event.target.value,
                         },

@@ -16,7 +16,9 @@
     "mostPopular": "Most Popular",
     "allRights": "All rights reserved.",
     "openApp": "Open app",
-    "here": "here"
+    "here": "here",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password"
   },
   "seo": {
     "landing": {
@@ -86,7 +88,12 @@
     "signinFail": "Failed to sign in with email/password.",
     "signupFail": "Failed to create account.",
     "linksTitle": "Need context first?",
-    "linksSubtitle": "Explore product capabilities and pricing before authentication."
+    "linksSubtitle": "Explore product capabilities and pricing before authentication.",
+    "forgotPassword": "Forgot your password?",
+    "forgotSending": "Sending link...",
+    "forgotSent": "We sent a password reset link to your email. Check your inbox.",
+    "forgotEmailRequired": "Enter your email to receive a reset link.",
+    "forgotFail": "Unable to send password reset link."
   },
   "signup": {
     "pageTag": "Create account",
@@ -119,6 +126,9 @@
     "phonePlaceholder": "+55 11 90000-0000",
     "passwordLabel": "Password *",
     "passwordPlaceholder": "At least 6 characters",
+    "confirmPasswordLabel": "Confirm password *",
+    "confirmPasswordPlaceholder": "Repeat the password",
+    "passwordMismatch": "Passwords do not match.",
     "submitButton": "Create account",
     "submitLoading": "Creating account...",
     "backToLogin": "Back to login",

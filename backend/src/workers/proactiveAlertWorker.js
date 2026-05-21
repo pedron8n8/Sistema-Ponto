@@ -15,16 +15,26 @@ const DISPATCH_CLOCK_IN_JOB_NAME = 'dispatch-clock-in-reminder';
 const SCAN_REPEAT_JOB_ID = 'scan-end-of-shift-overtime-repeat';
 const SCAN_CLOCK_IN_REPEAT_JOB_ID = 'scan-clock-in-reminders-repeat';
 
-const SHIFT_END_PRE_MINUTES = 15;
 const SHIFT_END_DEDUPE_TTL_SECONDS = 60 * 60 * 18;
 const CLOCK_IN_DEDUPE_TTL_SECONDS = 60 * 60 * 18;
-const DEFAULT_BASE_TIMEZONE = process.env.PROACTIVE_CLOCK_IN_DEFAULT_TZ || 'America/New_York';
+const DEFAULT_BASE_TIMEZONE = process.env.PROACTIVE_CLOCK_IN_DEFAULT_TZ || 'America/Chicago';
 
 const toPositiveNumber = (value, fallback, minimum = 1) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(minimum, parsed);
 };
+
+const SHIFT_END_PRE_MINUTES = toPositiveNumber(
+  process.env.PROACTIVE_SHIFT_END_PRE_MINUTES,
+  15,
+  1
+);
+const SHIFT_END_OVERSHOOT_GRACE_MINUTES = toPositiveNumber(
+  process.env.PROACTIVE_SHIFT_END_OVERSHOOT_GRACE_MINUTES,
+  2,
+  1
+);
 
 const PROACTIVE_SCAN_INTERVAL_MS = toPositiveNumber(
   process.env.PROACTIVE_ALERT_SCAN_INTERVAL_MS,
@@ -251,6 +261,8 @@ const processScanJob = async () => {
       id: true,
       userId: true,
       clockIn: true,
+      breakMinutes: true,
+      breakStartedAt: true,
     },
   });
 
@@ -508,10 +520,19 @@ const evaluateShiftEndReminder = async ({ openEntry, member, now }) => {
 
   const clockInDate = new Date(openEntry.clockIn);
   const elapsedMinutes = Math.max(0, Math.floor((now - clockInDate) / 60000));
-  const remainingMinutes = contractDailyMinutes - elapsedMinutes;
+
+  const storedBreakMinutes = Math.max(0, Math.floor(Number(openEntry.breakMinutes) || 0));
+  const breakStartedAt = openEntry.breakStartedAt ? new Date(openEntry.breakStartedAt) : null;
+  const ongoingBreakMinutes = breakStartedAt && Number.isFinite(breakStartedAt.getTime())
+    ? Math.max(0, Math.floor((now - breakStartedAt) / 60000))
+    : 0;
+  const totalBreakMinutes = storedBreakMinutes + ongoingBreakMinutes;
+
+  const workedMinutes = Math.max(0, elapsedMinutes - totalBreakMinutes);
+  const remainingMinutes = contractDailyMinutes - workedMinutes;
 
   let phase = null;
-  if (remainingMinutes <= 0 && remainingMinutes >= -2) {
+  if (remainingMinutes <= 0 && remainingMinutes >= -SHIFT_END_OVERSHOOT_GRACE_MINUTES) {
     phase = 'END';
   } else if (remainingMinutes > 0 && remainingMinutes <= SHIFT_END_PRE_MINUTES) {
     phase = 'PRE_END';
@@ -527,7 +548,9 @@ const evaluateShiftEndReminder = async ({ openEntry, member, now }) => {
     return 'skipped';
   }
 
-  const expectedEndAt = new Date(clockInDate.getTime() + contractDailyMinutes * 60000).toISOString();
+  const expectedEndAt = new Date(
+    clockInDate.getTime() + (contractDailyMinutes + totalBreakMinutes) * 60000
+  ).toISOString();
 
   const payload = {
     type: 'SHIFT_END_REMINDER',
@@ -536,7 +559,7 @@ const evaluateShiftEndReminder = async ({ openEntry, member, now }) => {
     contractDailyMinutes,
     remainingMinutes,
     expectedEndAt,
-    timeZone: member.timeZone || 'America/New_York',
+    timeZone: member.timeZone || 'America/Chicago',
     member: {
       id: member.id,
       name: member.name,
@@ -606,7 +629,7 @@ const processDispatchJob = async (job) => {
 const formatShiftEndTime = (isoString, timeZone) => {
   try {
     return new Intl.DateTimeFormat('en-US', {
-      timeZone: timeZone || 'America/New_York',
+      timeZone: timeZone || 'America/Chicago',
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
@@ -966,4 +989,7 @@ const createProactiveAlertWorker = async () => {
 module.exports = {
   proactiveAlertQueue,
   createProactiveAlertWorker,
+  processScanJob,
+  processShiftEndDispatchJob,
+  evaluateShiftEndReminder,
 };

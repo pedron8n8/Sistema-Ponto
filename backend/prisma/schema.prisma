@@ -71,7 +71,7 @@ model User {
   workdayStartTime String?
   workdayEndTime   String?
   hourlyRate       Decimal?      @db.Decimal(10, 2)
-  timeZone         String        @default("America/New_York")
+  timeZone         String        @default("America/Chicago")
   bankHoursBalanceMinutes Int   @default(0)
   bankHoursLimitMinutes Int?
   bankHoursExpiryMonths Int     @default(6)

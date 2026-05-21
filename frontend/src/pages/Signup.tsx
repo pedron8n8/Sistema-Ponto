@@ -31,6 +31,9 @@ const Signup = () => {
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(false)
@@ -98,9 +101,35 @@ const Signup = () => {
       }
     }
 
+    if (password !== confirmPassword) {
+      setError(t('signup.passwordMismatch', 'As senhas nao coincidem.'))
+      return
+    }
+
     setLoading(true)
 
     try {
+      const normalizedEmail = String(email || '').trim().toLowerCase()
+      if (normalizedEmail.includes('@')) {
+        try {
+          const availability = await apiFetch<{ available: boolean }>(
+            `/auth/check-email?email=${encodeURIComponent(normalizedEmail)}`
+          )
+          if (!availability.available) {
+            setError(
+              t(
+                'signup.emailTaken',
+                'Esse email ja esta cadastrado. Faca login ou recupere sua senha.'
+              )
+            )
+            setLoading(false)
+            return
+          }
+        } catch {
+          // Falha do check nao bloqueia signup -- backend ainda valida.
+        }
+      }
+
       await signUp({
         name,
         email,
@@ -266,15 +295,80 @@ const Signup = () => {
           <label className="mt-4 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
             {t('signup.passwordLabel')}
           </label>
-          <input
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            type="password"
-            required
-            minLength={6}
-            className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
-            placeholder={t('signup.passwordPlaceholder')}
-          />
+          <div className="relative mt-2">
+            <input
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              type={showPassword ? 'text' : 'password'}
+              required
+              minLength={6}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 pr-12 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
+              placeholder={t('signup.passwordPlaceholder')}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((prev) => !prev)}
+              aria-label={
+                showPassword
+                  ? t('common.hidePassword', 'Ocultar senha')
+                  : t('common.showPassword', 'Mostrar senha')
+              }
+              className="absolute inset-y-0 right-3 flex items-center text-slate-500 hover:text-slate-700"
+            >
+              {showPassword ? (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-5 w-5">
+                  <path d="M3 3l18 18" />
+                  <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" />
+                  <path d="M9.4 5.2A10.6 10.6 0 0 1 12 5c5 0 9 4 10 7-0.4 1.1-1.2 2.5-2.4 3.7" />
+                  <path d="M6.4 6.4C4.2 7.9 2.6 10.2 2 12c1 3 5 7 10 7 1.6 0 3.1-0.4 4.4-1" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-5 w-5">
+                  <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              )}
+            </button>
+          </div>
+
+          <label className="mt-4 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+            {t('signup.confirmPasswordLabel', 'Confirmar senha *')}
+          </label>
+          <div className="relative mt-2">
+            <input
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              type={showConfirmPassword ? 'text' : 'password'}
+              required
+              minLength={6}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 pr-12 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
+              placeholder={t('signup.confirmPasswordPlaceholder', 'Repita a senha')}
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirmPassword((prev) => !prev)}
+              aria-label={
+                showConfirmPassword
+                  ? t('common.hidePassword', 'Ocultar senha')
+                  : t('common.showPassword', 'Mostrar senha')
+              }
+              className="absolute inset-y-0 right-3 flex items-center text-slate-500 hover:text-slate-700"
+            >
+              {showConfirmPassword ? (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-5 w-5">
+                  <path d="M3 3l18 18" />
+                  <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" />
+                  <path d="M9.4 5.2A10.6 10.6 0 0 1 12 5c5 0 9 4 10 7-0.4 1.1-1.2 2.5-2.4 3.7" />
+                  <path d="M6.4 6.4C4.2 7.9 2.6 10.2 2 12c1 3 5 7 10 7 1.6 0 3.1-0.4 4.4-1" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-5 w-5">
+                  <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              )}
+            </button>
+          </div>
 
           {error ? (
             <p className="mt-4 text-xs text-rose-600">

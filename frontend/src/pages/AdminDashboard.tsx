@@ -360,7 +360,7 @@ const AdminDashboard = () => {
           workdayEndTime: user.workdayEndTime || '',
           hourlyRate:
             user.hourlyRate !== null && user.hourlyRate !== undefined ? `$${user.hourlyRate}` : '',
-          timeZone: user.timeZone || 'America/New_York',
+          timeZone: user.timeZone || 'America/Chicago',
         }
         return acc
       }, {})
@@ -1405,7 +1405,7 @@ const AdminDashboard = () => {
                                 workdayStartTime: '',
                                 workdayEndTime: '',
                                 hourlyRate: '',
-                                timeZone: 'America/New_York',
+                                timeZone: 'America/Chicago',
                               }),
                               contractDailyHours: event.target.value,
                             },
@@ -1426,7 +1426,7 @@ const AdminDashboard = () => {
                                 workdayStartTime: '',
                                 workdayEndTime: '',
                                 hourlyRate: '',
-                                timeZone: 'America/New_York',
+                                timeZone: 'America/Chicago',
                               }),
                               workdayStartTime: event.target.value,
                             },
@@ -1446,7 +1446,7 @@ const AdminDashboard = () => {
                                 workdayStartTime: '',
                                 workdayEndTime: '',
                                 hourlyRate: '',
-                                timeZone: 'America/New_York',
+                                timeZone: 'America/Chicago',
                               }),
                               workdayEndTime: event.target.value,
                             },
@@ -1466,7 +1466,7 @@ const AdminDashboard = () => {
                                 workdayStartTime: '',
                                 workdayEndTime: '',
                                 hourlyRate: '',
-                                timeZone: 'America/New_York',
+                                timeZone: 'America/Chicago',
                               }),
                               hourlyRate: normalizeCurrencyInput(event.target.value),
                             },
@@ -1476,7 +1476,7 @@ const AdminDashboard = () => {
                         className="w-full rounded-full border border-slate-200 bg-white px-3 py-1 text-xs"
                       />
                       <select
-                        value={workSettingsByUser[user.id]?.timeZone || 'America/New_York'}
+                        value={workSettingsByUser[user.id]?.timeZone || 'America/Chicago'}
                         onChange={(event) =>
                           setWorkSettingsByUser((prev) => ({
                             ...prev,
@@ -1486,7 +1486,7 @@ const AdminDashboard = () => {
                                 workdayStartTime: '',
                                 workdayEndTime: '',
                                 hourlyRate: '',
-                                timeZone: 'America/New_York',
+                                timeZone: 'America/Chicago',
                               }),
                               timeZone: event.target.value,
                             },

@@ -8,13 +8,16 @@ import PageMeta from '../components/PageMeta'
 
 const Login = () => {
   const navigate = useNavigate()
-  const { signIn, signInWithGoogle, session, profile, loading, profileError } = useAuth()
+  const { signIn, signInWithGoogle, resetPassword, session, profile, loading, profileError } = useAuth()
   const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [googleLoading, setGoogleLoading] = useState(false)
   const [emailLoading, setEmailLoading] = useState(false)
+  const [resetLoading, setResetLoading] = useState(false)
 
   useEffect(() => {
     if (loading || !session || !profile) return
@@ -64,6 +67,7 @@ const Login = () => {
   const handleEmailSignIn = async (event: React.FormEvent) => {
     event.preventDefault()
     setError('')
+    setNotice('')
     setEmailLoading(true)
 
     try {
@@ -72,6 +76,33 @@ const Login = () => {
       setError(err instanceof Error ? err.message : t('auth.signinFail'))
     } finally {
       setEmailLoading(false)
+    }
+  }
+
+  const handleForgotPassword = async () => {
+    setError('')
+    setNotice('')
+
+    const normalizedEmail = String(email || '').trim().toLowerCase()
+    if (!normalizedEmail.includes('@')) {
+      setError(t('auth.forgotEmailRequired', 'Informe seu email para receber o link de redefinicao.'))
+      return
+    }
+
+    setResetLoading(true)
+
+    try {
+      await resetPassword(normalizedEmail)
+      setNotice(
+        t(
+          'auth.forgotSent',
+          'Enviamos um link de redefinicao para o seu email. Verifique a caixa de entrada.'
+        )
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('auth.forgotFail', 'Nao foi possivel enviar o link de redefinicao.'))
+    } finally {
+      setResetLoading(false)
     }
   }
 
@@ -162,18 +193,56 @@ const Login = () => {
           />
 
           <label className="mt-6 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{t('auth.passwordLabel')}</label>
-          <input
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            type="password"
-            required
-            placeholder={t('auth.passwordPlaceholder')}
-            className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
-          />
+          <div className="relative mt-2">
+            <input
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              type={showPassword ? 'text' : 'password'}
+              required
+              placeholder={t('auth.passwordPlaceholder')}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 pr-12 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((prev) => !prev)}
+              aria-label={
+                showPassword
+                  ? t('common.hidePassword', 'Ocultar senha')
+                  : t('common.showPassword', 'Mostrar senha')
+              }
+              className="absolute inset-y-0 right-3 flex items-center text-slate-500 hover:text-slate-700"
+            >
+              {showPassword ? (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-5 w-5">
+                  <path d="M3 3l18 18" />
+                  <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" />
+                  <path d="M9.4 5.2A10.6 10.6 0 0 1 12 5c5 0 9 4 10 7-0.4 1.1-1.2 2.5-2.4 3.7" />
+                  <path d="M6.4 6.4C4.2 7.9 2.6 10.2 2 12c1 3 5 7 10 7 1.6 0 3.1-0.4 4.4-1" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-5 w-5">
+                  <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              )}
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleForgotPassword}
+            disabled={resetLoading || emailLoading || googleLoading}
+            className="mt-3 inline-flex text-xs font-semibold text-teal-700 transition hover:text-teal-900 disabled:opacity-60"
+          >
+            {resetLoading
+              ? t('auth.forgotSending', 'Enviando link...')
+              : t('auth.forgotPassword', 'Esqueceu a senha?')}
+          </button>
 
           {error || profileError ? (
             <p className="mt-4 text-xs text-rose-600">{error || profileError}</p>
           ) : null}
+          {notice ? <p className="mt-4 text-xs text-emerald-600">{notice}</p> : null}
 
           <button
             type="submit"
