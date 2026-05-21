@@ -221,7 +221,7 @@ const getReportData = async (filters) => {
       where: { supervisorId: teamId },
       select: { id: true },
     });
-    where.userId = { in: teamMembers.map((m) => m.id) };
+    where.userId = { in: [teamId, ...teamMembers.map((m) => m.id)] };
   }
 
   if (status && status !== 'ALL') {

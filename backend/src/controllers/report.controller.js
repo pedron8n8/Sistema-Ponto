@@ -520,7 +520,7 @@ const getDailyBreakdown = async (req, res) => {
           select: { id: true },
         });
 
-        allowedUserIds = teamMembers.map((member) => member.id);
+        allowedUserIds = [teamId, ...teamMembers.map((member) => member.id)];
       } else {
         const tenantUsers = await prisma.user.findMany({
           where: {
@@ -552,7 +552,7 @@ const getDailyBreakdown = async (req, res) => {
         where: { supervisorId: teamId },
         select: { id: true },
       });
-      where.userId = { in: members.map((m) => m.id) };
+      where.userId = { in: [teamId, ...members.map((m) => m.id)] };
     }
 
     const entries = await prisma.timeEntry.findMany({
