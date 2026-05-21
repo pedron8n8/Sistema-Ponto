@@ -206,22 +206,29 @@ const buildSummary = (entries) => {
 const getReportData = async (filters) => {
   const { userId, teamId, startDate, endDate, status, supervisorId, timeZone } = filters;
 
+  console.log('[reportWorker] getReportData filters:', JSON.stringify(filters));
+
   const where = {};
 
   if (userId) {
     where.userId = userId;
+    console.log('[reportWorker] branch=userId, target:', userId);
   } else if (supervisorId) {
     const subordinates = await prisma.user.findMany({
       where: { supervisorId },
       select: { id: true },
     });
     where.userId = { in: subordinates.map((s) => s.id) };
+    console.log('[reportWorker] branch=supervisorId, ids:', where.userId.in);
   } else if (teamId) {
     const teamMembers = await prisma.user.findMany({
       where: { supervisorId: teamId },
       select: { id: true },
     });
     where.userId = { in: [teamId, ...teamMembers.map((m) => m.id)] };
+    console.log('[reportWorker] branch=teamId, ids:', where.userId.in);
+  } else {
+    console.log('[reportWorker] no user filter (returns all entries in tenant)');
   }
 
   if (status && status !== 'ALL') {
@@ -291,6 +298,13 @@ const getReportData = async (filters) => {
     },
     orderBy: [{ clockIn: 'desc' }],
   });
+
+  const userBreakdown = entries.reduce((acc, e) => {
+    const key = e.user?.email || e.user?.id || 'unknown';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  console.log('[reportWorker] entries by user:', userBreakdown, 'total:', entries.length);
 
   const daily = buildDailyLogs(entries);
   const summary = buildSummary(entries);
