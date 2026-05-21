@@ -227,6 +227,7 @@ const Reports = () => {
       const exportJob = await apiFetch<ExportJobResponse>('/reports/export', {
         token,
         method: 'POST',
+        skipIdempotency: true,
         body: {
           startDate,
           endDate,

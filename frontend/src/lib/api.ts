@@ -332,6 +332,7 @@ type RequestOptions = {
   method?: string
   body?: unknown
   timeoutMs?: number
+  skipIdempotency?: boolean
 }
 
 type FormDataRequestOptions = {
@@ -441,7 +442,7 @@ export const apiFetch = async <T>(path: string, options: RequestOptions = {}): P
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
   const method = (options.method ?? 'GET').toUpperCase()
   const idempotencyHeaders =
-    IDEMPOTENCY_METHODS.has(method) && options.body !== undefined
+    !options.skipIdempotency && IDEMPOTENCY_METHODS.has(method) && options.body !== undefined
       ? await buildIdempotencyHeaders(options.body)
       : {}
 
