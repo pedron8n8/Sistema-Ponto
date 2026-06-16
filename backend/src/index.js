@@ -42,6 +42,14 @@ const corsOptions = {
       return callback(null, true);
     }
 
+    // Em dev, libera qualquer origem localhost/127.0.0.1 (qualquer porta) para
+    // que testar local sempre passe no CORS mesmo que o Vite suba em outra porta.
+    const isDev = process.env.NODE_ENV !== 'production';
+    const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(cleanOrigin);
+    if (isDev && isLocalhost) {
+      return callback(null, true);
+    }
+
     console.warn(`[CORS] Rejected origin: '${origin}'. Clean origin: '${cleanOrigin}'. Allowed origins:`, allowedOrigins);
     return callback(new Error('Origin nao permitida por CORS'));
   },

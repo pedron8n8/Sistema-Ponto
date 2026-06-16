@@ -30,6 +30,8 @@ import AdminProSettingsPage from './pages/AdminProSettingsPage'
 import SupervisorKpisPage from './pages/SupervisorKpisPage'
 import SupervisorPendingItemsPage from './pages/SupervisorPendingItemsPage'
 import SupervisorHoursPage from './pages/SupervisorHoursPage'
+import HrDailyTimePage from './pages/HrDailyTimePage'
+import HrSchedulesPage from './pages/HrSchedulesPage'
 import SuperAdminAccountsPage from './pages/SuperAdminAccountsPage'
 import Reports from './pages/Reports'
 import VacationMemberPage from './pages/VacationMemberPage'
@@ -189,6 +191,34 @@ const App = () => {
                     <ProtectedRoute allowedRoles={['SUPERVISOR', 'HR', 'ADMIN', 'SUPERADMIN']}>
                       <ShellLayout>
                         <SupervisorPendingItemsPage />
+                      </ShellLayout>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/hr"
+                  element={
+                    <ProtectedRoute allowedRoles={['HR', 'ADMIN', 'SUPERADMIN']}>
+                      <Navigate to="/app/hr/daily" replace />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/hr/daily"
+                  element={
+                    <ProtectedRoute allowedRoles={['HR', 'ADMIN', 'SUPERADMIN']}>
+                      <ShellLayout>
+                        <HrDailyTimePage />
+                      </ShellLayout>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/hr/schedules"
+                  element={
+                    <ProtectedRoute allowedRoles={['HR', 'ADMIN', 'SUPERADMIN']}>
+                      <ShellLayout>
+                        <HrSchedulesPage />
                       </ShellLayout>
                     </ProtectedRoute>
                   }

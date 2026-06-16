@@ -6,6 +6,7 @@ const {
   getEnabledOvertimeChannels,
 } = require('../utils/notifications');
 const { sendSlackDM } = require('../utils/slackNotifier');
+const { sendResendEmail } = require('../utils/resendNotifier');
 
 const SCAN_JOB_NAME = 'scan-end-of-shift-overtime';
 const DISPATCH_JOB_NAME = 'dispatch-end-of-shift-overtime';
@@ -490,23 +491,19 @@ const evaluateOvertimeThreshold = async ({ openEntry, member, now, workedMinutes
   }
 };
 
-const resolveShiftEndSupervisor = (member) => {
-  if (member.supervisor?.slackUserId) {
-    return {
-      id: member.supervisor.id,
-      name: member.supervisor.name,
-      slackUserId: member.supervisor.slackUserId,
-    };
-  }
-  if (member.organizationAdmin?.slackUserId) {
-    return {
-      id: member.organizationAdmin.id,
-      name: member.organizationAdmin.name,
-      slackUserId: member.organizationAdmin.slackUserId,
-    };
-  }
-  return null;
+const resolveSupervisorContact = (member) => {
+  const supervisor = member?.supervisor || member?.organizationAdmin;
+  if (!supervisor) return null;
+
+  return {
+    id: supervisor.id,
+    name: supervisor.name,
+    email: supervisor.email || null,
+    slackUserId: supervisor.slackUserId || null,
+  };
 };
+
+const resolveShiftEndSupervisor = (member) => resolveSupervisorContact(member);
 
 const evaluateShiftEndReminder = async ({ openEntry, member, now }) => {
   if (!member.slackUserId) {
@@ -661,6 +658,23 @@ const buildShiftEndSupervisorMessage = ({ phase, memberName, expectedEndAt, time
   return `:bell: *${memberName}* has reached the scheduled end of shift (${formattedEnd}) and is still clocked in. Reminder sent to clock out.`;
 };
 
+const buildShiftEndSupervisorEmail = ({ phase, memberName, expectedEndAt, timeZone, remainingMinutes }) => {
+  const formattedEnd = formatShiftEndTime(expectedEndAt, timeZone);
+
+  if (phase === 'PRE_END') {
+    const minutesLeft = Math.max(1, remainingMinutes);
+    return {
+      subject: `[SystemaPonto] ${memberName} esta proximo do fim de turno`,
+      text: `${memberName} esta a ~${minutesLeft} min do fim do turno (previsto para ${formattedEnd}). Um lembrete foi enviado para ajudar a evitar horas extras.`,
+    };
+  }
+
+  return {
+    subject: `[SystemaPonto] ${memberName} nao registrou saida`,
+    text: `${memberName} atingiu o horario previsto de fim de turno (${formattedEnd}) e ainda esta com o ponto aberto. Um lembrete de saida foi enviado.`,
+  };
+};
+
 const getWeekdayForTimeZone = (timeZone) => {
   try {
     const parts = new Intl.DateTimeFormat('en-US', {
@@ -719,6 +733,22 @@ const processClockInScanJob = async () => {
       slackUserId: true,
       timeZone: true,
       workdayStartTime: true,
+      supervisor: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          slackUserId: true,
+        },
+      },
+      organizationAdmin: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          slackUserId: true,
+        },
+      },
     },
   });
 
@@ -799,6 +829,7 @@ const evaluateClockInReminder = async ({ member }) => {
       email: member.email,
       slackUserId: member.slackUserId,
     },
+    supervisor: resolveSupervisorContact(member),
     triggeredAt: new Date().toISOString(),
   };
 
@@ -829,6 +860,22 @@ const buildClockInMessage = ({ phase, workdayStartTime, minutesFromStart }) => {
   return `:rotating_light: *You haven't clocked in yet.* Your shift was scheduled to start at ${workdayStartTime} (you're ~${minutesLate} min late).\nPlease clock in now. You can use \`/omni start <PIN>\` from Slack.`;
 };
 
+const buildClockInSupervisorEmail = ({ phase, memberName, workdayStartTime, minutesFromStart }) => {
+  if (phase === 'PRE_START') {
+    const minutesLeft = Math.max(1, -minutesFromStart);
+    return {
+      subject: `[SystemaPonto] ${memberName} tem turno comecando em breve`,
+      text: `${memberName} tem inicio de turno em ~${minutesLeft} min (as ${workdayStartTime}) e ainda nao registrou entrada. Um lembrete foi enviado.`,
+    };
+  }
+
+  const minutesLate = Math.max(1, minutesFromStart);
+  return {
+    subject: `[SystemaPonto] ${memberName} nao registrou entrada`,
+    text: `${memberName} ainda nao registrou entrada. O turno estava previsto para iniciar as ${workdayStartTime} (~${minutesLate} min de atraso). Um lembrete foi enviado.`,
+  };
+};
+
 const processClockInDispatchJob = async (job) => {
   const { payload, dedupeKey } = job.data || {};
 
@@ -852,7 +899,26 @@ const processClockInDispatchJob = async (job) => {
       throw new Error(`Failed to deliver Slack DM for clock-in reminder: ${result.reason || 'UNKNOWN'}`);
     }
 
-    return { delivered: true, sentAt: new Date().toISOString(), result };
+    const results = [{ target: 'member', ...result }];
+
+    // Notifica o supervisor por e-mail (Resend), assim como na mensagem do Slack.
+    if (payload.supervisor?.email) {
+      const supervisorEmail = buildClockInSupervisorEmail({
+        phase: payload.phase,
+        memberName: payload.member.name || 'Colaborador',
+        workdayStartTime: payload.workdayStartTime,
+        minutesFromStart: payload.minutesFromStart,
+      });
+
+      const supervisorEmailResult = await sendResendEmail({
+        to: payload.supervisor.email,
+        subject: supervisorEmail.subject,
+        text: supervisorEmail.text,
+      });
+      results.push({ target: 'supervisor-email', ...supervisorEmailResult });
+    }
+
+    return { delivered: true, sentAt: new Date().toISOString(), results };
   } catch (error) {
     if (dedupeKey) {
       await redis.del(dedupeKey);
@@ -897,6 +963,24 @@ const processShiftEndDispatchJob = async (job) => {
         text: supervisorText,
       });
       results.push({ target: 'supervisor', ...supervisorResult });
+    }
+
+    // Notifica o supervisor por e-mail (Resend), assim como na mensagem do Slack.
+    if (payload.supervisor?.email) {
+      const supervisorEmail = buildShiftEndSupervisorEmail({
+        phase: payload.phase,
+        memberName: payload.member.name || 'Colaborador',
+        expectedEndAt: payload.expectedEndAt,
+        timeZone: payload.timeZone,
+        remainingMinutes: payload.remainingMinutes,
+      });
+
+      const supervisorEmailResult = await sendResendEmail({
+        to: payload.supervisor.email,
+        subject: supervisorEmail.subject,
+        text: supervisorEmail.text,
+      });
+      results.push({ target: 'supervisor-email', ...supervisorEmailResult });
     }
 
     const memberDelivered = results.find((r) => r.target === 'member')?.delivered;

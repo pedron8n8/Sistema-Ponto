@@ -1,5 +1,6 @@
 const { prisma } = require('../config/database');
 const { buildUserPhotoUrl } = require('../utils/userPhoto');
+const { sendResendEmail } = require('../utils/resendNotifier');
 
 const ACTIVE_VACATION_STATUSES = ['REQUESTED', 'SUPERVISOR_APPROVED', 'HR_CONFIRMED'];
 const isElevatedVacationViewer = (role) => ['SUPERADMIN', 'ADMIN', 'HR'].includes(role);
@@ -130,8 +131,22 @@ const endOfDay = (date) => {
 };
 
 const sendVacationEmailNotification = ({ to, subject, body }) => {
-  // Placeholder de notificacao por e-mail ate integrar SMTP provider.
+  if (!to) return;
+
   console.log(`📧 [Vacation] To: ${to} | Subject: ${subject} | Body: ${body}`);
+
+  // Envio via Resend (fire-and-forget para nao bloquear a resposta da requisicao).
+  sendResendEmail({ to, subject, text: body })
+    .then((result) => {
+      if (!result.delivered) {
+        console.warn(
+          `📧 [Vacation] Falha ao enviar e-mail via Resend para ${to}: ${result.reason || 'UNKNOWN'}${result.details ? ` (${result.details})` : ''}`
+        );
+      }
+    })
+    .catch((error) => {
+      console.error(`📧 [Vacation] Erro ao enviar e-mail via Resend para ${to}:`, error.message);
+    });
 };
 
 const validateVacationDateRange = ({ startDate, endDate }) => {

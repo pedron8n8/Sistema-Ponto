@@ -3,6 +3,7 @@ const authRoutes = require('./auth.routes');
 const userRoutes = require('./user.routes');
 const timeRoutes = require('./time.routes');
 const supervisorRoutes = require('./supervisor.routes');
+const hrRoutes = require('./hr.routes');
 const reportRoutes = require('./report.routes');
 const adminRoutes = require('./admin.routes');
 const vacationRoutes = require('./vacation.routes');
@@ -28,6 +29,9 @@ router.use('/time', timeRoutes);
 
 // Rotas de supervisor (aprovação de pontos)
 router.use('/supervisor', supervisorRoutes);
+
+// Rotas de RH (edição de ponto e jornada — HR/ADMIN)
+router.use('/hr', hrRoutes);
 
 // Rotas de relatórios
 router.use('/reports', reportRoutes);

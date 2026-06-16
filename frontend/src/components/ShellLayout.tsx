@@ -102,6 +102,7 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
   const isOnlyAdmin = profile?.role === 'ADMIN'
   const canManageProSettings = profile?.role === 'ADMIN' || profile?.role === 'HR'
   const isSupervisor = profile?.role === 'SUPERVISOR' || profile?.role === 'HR' || isAdmin
+  const isHrOrAdmin = profile?.role === 'HR' || isAdmin
   const navSections: NavSection[] = [
     {
       title: t('General', 'Geral'),
@@ -161,6 +162,22 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
               },
             ]
           : []),
+      ],
+    },
+    {
+      title: t('HR', 'RH'),
+      visible: isHrOrAdmin,
+      items: [
+        {
+          to: '/app/hr/daily',
+          label: t('Daily time', 'Tempo diário'),
+          icon: <HistoryIcon />,
+        },
+        {
+          to: '/app/hr/schedules',
+          label: t('Schedules', 'Jornadas'),
+          icon: <SupervisorIcon />,
+        },
       ],
     },
     {

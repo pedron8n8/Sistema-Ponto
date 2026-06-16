@@ -5,10 +5,23 @@ backend/node_modules
 backend/dist
 frontend/node_modules
 frontend/dist
+
+# PWA dev artifacts (gerados pelo vite-plugin-pwa em modo dev, nao vao pra VPS)
+frontend/dev-dist
+
+# Arquivos de ambiente (todos os niveis) - contem segredos
 .env
+.env.local
+.env.*.local
 backend/.env
 frontend/.env
+
+# Scripts/dados locais que nao vao pra VPS
 backend/scripts/start-ssh-tunnel.ps1
 backend/scripts/pentest-phase2.js
 backend/scripts/create-demo-seed.js
 backend/demo-users.json
+
+# Captura de brainstorms / notas locais
+brainstorms/
+grill-me skill.md
