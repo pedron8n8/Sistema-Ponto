@@ -803,6 +803,7 @@ const SuperAdminAccountsPage = () => {
                   {account.admin.name || t('No name', 'Sem nome')}
                 </button>
                 <p className="text-sm text-slate-600">{account.admin.email}</p>
+                <p className="mt-1 font-mono text-[10px] text-slate-400">ID: {account.admin.id}</p>
                 <p className="mt-1 text-xs text-slate-500">
                   {t('Account created on', 'Conta criada em')}{' '}
                   {formatDateTime(account.admin.createdAt, locale)}
@@ -1159,11 +1160,12 @@ const SuperAdminAccountsPage = () => {
 
               {!linkedAccountsLoading && !linkedAccountsError && linkedAccounts.length > 0 ? (
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[1200px] text-left text-xs text-slate-600">
+                  <table className="w-full min-w-[1400px] text-left text-xs text-slate-600">
                     <thead>
                       <tr className="border-b border-slate-100 text-[11px] uppercase tracking-[0.15em] text-slate-500">
                         <th className="px-2 py-2 font-semibold">{t('Name', 'Nome')}</th>
                         <th className="px-2 py-2 font-semibold">{t('Email', 'Email')}</th>
+                        <th className="px-2 py-2 font-semibold">ID</th>
                         <th className="px-2 py-2 font-semibold">{t('Phone', 'Telefone')}</th>
                         <th className="px-2 py-2 font-semibold">Role</th>
                         <th className="px-2 py-2 font-semibold">{t('Supervisor', 'Supervisor')}</th>
@@ -1178,6 +1180,7 @@ const SuperAdminAccountsPage = () => {
                         <tr key={user.id} className="border-b border-slate-100/80 last:border-b-0">
                           <td className="px-2 py-2 font-semibold text-slate-800">{user.name || '-'}</td>
                           <td className="px-2 py-2">{user.email}</td>
+                          <td className="px-2 py-2 font-mono text-[10px]">{user.id}</td>
                           <td className="px-2 py-2">{user.phone || '-'}</td>
                           <td className="px-2 py-2">{user.role}</td>
                           <td className="px-2 py-2">{user.supervisor?.name || '-'}</td>

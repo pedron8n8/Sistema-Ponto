@@ -881,6 +881,7 @@ const AdminUsersPage = () => {
                     <p className="text-sm font-semibold text-slate-900">{user.name}</p>
                     <p className="text-xs text-slate-500">{user.email}</p>
                     <p className="mt-1 text-xs text-slate-600">Role: {user.role}</p>
+                    <p className="mt-1 font-mono text-[10px] text-slate-400">ID: {user.id}</p>
                   </div>
 
                   {canManageUsers ? (
@@ -1023,6 +1024,7 @@ const AdminUsersPage = () => {
                     <p className="text-sm font-semibold text-slate-900">{user.name}</p>
                     <p className="text-xs text-slate-500">{user.email}</p>
                     <p className="mt-1 text-xs text-slate-600">Role: {user.role}</p>
+                    <p className="mt-1 font-mono text-[10px] text-slate-400">ID: {user.id}</p>
                   </div>
 
                   {canManageUsers ? (

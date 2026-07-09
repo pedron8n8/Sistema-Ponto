@@ -23,6 +23,7 @@
     "reset:seed-logins": "node scripts/reset-seed-logins.js",
     "reset:seed-logins:all-plans": "node scripts/reset-seed-logins-all-plans.js",
     "create:demo-seed": "node scripts/create-demo-seed.js",
+    "create:user": "node scripts/create-user.js",
     "create:staff": "node scripts/create-staff-users.js",
     "create:rh": "node scripts/create-rh-user.js",
     "create:superadmin": "node scripts/create-superadmin-user.js",

@@ -39,6 +39,7 @@ type CurrentEntryResponse = {
 }
 
 type GeofenceConfig = {
+  geolocationEnabled?: boolean
   enabled: boolean
   mode: 'ALERT' | 'REJECT' | string
   locationValidationSource?: 'MOBILE' | 'TERMINAL_QR' | string
@@ -186,6 +187,7 @@ const ColaboradorDashboard = () => {
   }
 
   const activeEntry = useMemo(() => entries.find((entry) => !entry.clockOut) ?? null, [entries])
+  const geolocationEnabled = geofence?.geolocationEnabled !== false
   const mapCenter: [number, number] = useMemo(() => {
     if (currentPosition) return [currentPosition.lat, currentPosition.lng]
     if (geofence?.center) return [geofence.center.lat, geofence.center.lng]
@@ -350,9 +352,10 @@ const ColaboradorDashboard = () => {
   }
 
   const loadGeofence = async () => {
-    if (!token) return
+    if (!token) return null
     const response = await apiFetch<GeofenceResponse>('/time/geofence', { token })
     setGeofence(response.geofence)
+    return response.geofence
   }
 
   const loadFaceStatus = async () => {
@@ -789,7 +792,13 @@ const ColaboradorDashboard = () => {
   useEffect(() => {
     loadEntries().catch(() => undefined)
     loadCurrentEntry().catch(() => undefined)
-    loadGeofence().catch(() => undefined)
+    loadGeofence()
+      .then((config) => {
+        if (config?.geolocationEnabled !== false) {
+          refreshLocation().catch(() => undefined)
+        }
+      })
+      .catch(() => undefined)
     loadFaceStatus().catch(() => undefined)
     loadFaceModels().catch(() => {
       setFaceModelsReady(false)
@@ -800,7 +809,6 @@ const ColaboradorDashboard = () => {
         )
       )
     })
-    refreshLocation().catch(() => undefined)
     setPendingSyncCount(readOfflineQueue().length)
   }, [token])
 
@@ -1005,7 +1013,21 @@ const ColaboradorDashboard = () => {
         )
       }
 
-      const location = await refreshLocation()
+      let location: { lat: number; lng: number } | null = null
+      if (geolocationEnabled) {
+        try {
+          location = await refreshLocation()
+        } catch {
+          if (geofence?.enabled && geofence?.requireLocation) {
+            throw new Error(
+              t(
+                'Location is required to register time. Enable GPS and allow location access.',
+                'Localização é obrigatória para registrar o ponto. Ative o GPS e permita o acesso à localização.'
+              )
+            )
+          }
+        }
+      }
 
       let faceDescriptor: number[] | undefined
       let livenessData: LivenessData | undefined
@@ -1018,8 +1040,7 @@ const ColaboradorDashboard = () => {
 
       const payload = {
         notes,
-        latitude: location.lat,
-        longitude: location.lng,
+        ...(location ? { latitude: location.lat, longitude: location.lng } : {}),
         ...(pinValue ? { pin: pinValue } : {}),
         ...(faceDescriptor ? { faceDescriptor } : {}),
         ...(livenessData ? { livenessData } : {}),
@@ -1074,7 +1095,21 @@ const ColaboradorDashboard = () => {
         )
       }
 
-      const location = await refreshLocation()
+      let location: { lat: number; lng: number } | null = null
+      if (geolocationEnabled) {
+        try {
+          location = await refreshLocation()
+        } catch {
+          if (geofence?.enabled && geofence?.requireLocation) {
+            throw new Error(
+              t(
+                'Location is required to register time. Enable GPS and allow location access.',
+                'Localização é obrigatória para registrar o ponto. Ative o GPS e permita o acesso à localização.'
+              )
+            )
+          }
+        }
+      }
 
       let faceDescriptor: number[] | undefined
       let livenessData: LivenessData | undefined
@@ -1087,8 +1122,7 @@ const ColaboradorDashboard = () => {
 
       const payload = {
         notes,
-        latitude: location.lat,
-        longitude: location.lng,
+        ...(location ? { latitude: location.lat, longitude: location.lng } : {}),
         ...(pinValue ? { pin: pinValue } : {}),
         ...(faceDescriptor ? { faceDescriptor } : {}),
         ...(livenessData ? { livenessData } : {}),
@@ -1569,6 +1603,7 @@ const ColaboradorDashboard = () => {
         ) : null}
 
 
+        {geolocationEnabled ? (
         <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-lg font-semibold text-slate-900">{t('Geolocation', 'Geolocalizacao')}</h3>
@@ -1633,6 +1668,7 @@ const ColaboradorDashboard = () => {
             </MapContainer>
           </div>
         </div>
+        ) : null}
 
       </aside>
     </section>

@@ -17,6 +17,7 @@ const resolveLocationValidationSource = (value) => {
 };
 
 const readEnvGeofenceConfig = () => {
+  const geolocationEnabledEnv = String(process.env.GEOLOCATION_ENABLED || 'true').toLowerCase();
   const enabledEnv = String(process.env.GEOFENCE_ENABLED || 'true').toLowerCase();
   const requireLocationEnv = String(process.env.GEOFENCE_REQUIRE_LOCATION || 'false').toLowerCase();
   const modeEnv = String(process.env.GEOFENCE_MODE || 'ALERT').toUpperCase();
@@ -33,6 +34,7 @@ const readEnvGeofenceConfig = () => {
   );
 
   return {
+    geolocationEnabled: geolocationEnabledEnv !== 'false',
     enabled,
     requireLocation: requireLocationEnv === 'true',
     mode,
@@ -60,6 +62,10 @@ const updateGeofenceConfig = (partialConfig = {}) => {
 
   if (partialConfig.locationValidationSource !== undefined) {
     next.locationValidationSource = resolveLocationValidationSource(partialConfig.locationValidationSource);
+  }
+
+  if (partialConfig.geolocationEnabled !== undefined) {
+    next.geolocationEnabled = Boolean(partialConfig.geolocationEnabled);
   }
 
   if (partialConfig.enabled !== undefined) {
@@ -133,6 +139,17 @@ const evaluateGeofence = (location) => {
     };
   }
 
+  if (!config.geolocationEnabled) {
+    return {
+      enabled: false,
+      allowed: true,
+      reason: 'GEOLOCATION_DISABLED',
+      mode: config.mode,
+      requireLocation: false,
+      locationValidationSource: config.locationValidationSource,
+    };
+  }
+
   if (!config.enabled || !config.center) {
     return {
       enabled: false,
@@ -189,6 +206,7 @@ const getGeofencePublicConfig = () => {
   const config = getGeofenceConfig();
 
   return {
+    geolocationEnabled: config.geolocationEnabled,
     enabled: config.enabled,
     mode: config.mode,
     requireLocation: config.requireLocation,
@@ -198,10 +216,26 @@ const getGeofencePublicConfig = () => {
   };
 };
 
+const GEOFENCE_SETTING_KEY = 'geofence';
+
+const initGeofenceConfig = async () => {
+  try {
+    const { prisma } = require('../config/database');
+    const row = await prisma.appSetting.findUnique({ where: { key: GEOFENCE_SETTING_KEY } });
+    if (row?.value) {
+      updateGeofenceConfig(row.value);
+    }
+  } catch (error) {
+    console.warn('[geofence] Nao foi possivel carregar configuracao persistida:', error.message);
+  }
+};
+
 module.exports = {
   LOCATION_VALIDATION_SOURCES,
+  GEOFENCE_SETTING_KEY,
   evaluateGeofence,
   getGeofencePublicConfig,
   getGeofenceConfig,
   updateGeofenceConfig,
+  initGeofenceConfig,
 };

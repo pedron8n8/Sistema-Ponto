@@ -6,6 +6,7 @@ const {
   getGeofencePublicConfig,
   updateGeofenceConfig,
   LOCATION_VALIDATION_SOURCES,
+  GEOFENCE_SETTING_KEY,
 } = require('../utils/geofence');
 
 const TEAM_MEMBER_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];
@@ -1259,6 +1260,7 @@ const getLocationSettings = async (req, res) => {
     res.json({
       locationSettings: {
         locationValidationSource: geofence.locationValidationSource,
+        geolocationEnabled: geofence.geolocationEnabled,
         geofence: {
           enabled: geofence.enabled,
           mode: geofence.mode,
@@ -1287,6 +1289,7 @@ const updateLocationSettings = async (req, res) => {
   try {
     const {
       locationValidationSource,
+      geolocationEnabled,
       enabled,
       mode,
       requireLocation,
@@ -1296,6 +1299,7 @@ const updateLocationSettings = async (req, res) => {
 
     const nextConfig = updateGeofenceConfig({
       locationValidationSource,
+      geolocationEnabled,
       enabled,
       mode,
       requireLocation,
@@ -1303,10 +1307,17 @@ const updateLocationSettings = async (req, res) => {
       center,
     });
 
+    await prisma.appSetting.upsert({
+      where: { key: GEOFENCE_SETTING_KEY },
+      create: { key: GEOFENCE_SETTING_KEY, value: nextConfig },
+      update: { value: nextConfig },
+    });
+
     res.json({
       message: 'Configuração de localização atualizada com sucesso.',
       locationSettings: {
         locationValidationSource: nextConfig.locationValidationSource,
+        geolocationEnabled: nextConfig.geolocationEnabled,
         geofence: {
           enabled: nextConfig.enabled,
           mode: nextConfig.mode,

@@ -3,6 +3,7 @@ const { authMiddleware, roleCheck } = require('../middlewares');
 const {
   getTeamPendingEntries,
   approveEntry,
+  approveEntriesBulk,
   rejectEntry,
   requestEdit,
   getEntryDetails,
@@ -65,6 +66,13 @@ router.get('/entries/:id', getEntryDetails);
  * Body: { comment?: string }
  */
 router.patch('/approve/:id', approveEntry);
+
+/**
+ * POST /supervisor/approve-bulk
+ * Aprova vários registros de uma vez
+ * Body: { entryIds: string[], comment?: string }
+ */
+router.post('/approve-bulk', approveEntriesBulk);
 
 /**
  * PATCH /supervisor/reject/:id

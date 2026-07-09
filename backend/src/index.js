@@ -6,6 +6,7 @@ require('dotenv').config();
 const rateLimitMiddleware = require('./middlewares/rateLimit.middleware');
 const idempotencyMiddleware = require('./middlewares/idempotency.middleware');
 const { ensureUserPhotoDir } = require('./utils/userPhoto');
+const { initGeofenceConfig } = require('./utils/geofence');
 
 // Import routes
 const routes = require('./routes');
@@ -81,6 +82,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(idempotencyMiddleware);
 
 ensureUserPhotoDir();
+initGeofenceConfig().catch(() => undefined);
 app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
 
 // Health check route

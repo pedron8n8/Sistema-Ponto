@@ -105,6 +105,7 @@ type LocationValidationSource = 'MOBILE' | 'TERMINAL_QR'
 
 type AdminLocationSettings = {
   locationValidationSource: LocationValidationSource
+  geolocationEnabled: boolean
   geofence: {
     enabled: boolean
     mode: 'ALERT' | 'REJECT'
@@ -265,6 +266,7 @@ const AdminDashboard = () => {
   const [locationSettingsSaving, setLocationSettingsSaving] = useState(false)
   const [locationSettingsForm, setLocationSettingsForm] = useState({
     locationValidationSource: 'MOBILE' as LocationValidationSource,
+    geolocationEnabled: true,
     enabled: true,
     mode: 'ALERT' as 'ALERT' | 'REJECT',
     requireLocation: false,
@@ -418,6 +420,7 @@ const AdminDashboard = () => {
       setLocationSettings(response.locationSettings)
       setLocationSettingsForm({
         locationValidationSource: response.locationSettings.locationValidationSource,
+        geolocationEnabled: response.locationSettings.geolocationEnabled !== false,
         enabled: response.locationSettings.geofence.enabled,
         mode: response.locationSettings.geofence.mode,
         requireLocation: response.locationSettings.geofence.requireLocation,
@@ -936,7 +939,10 @@ const AdminDashboard = () => {
       const lng = Number(locationSettingsForm.centerLng)
       const radius = Number(locationSettingsForm.radiusMeters)
 
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      const hasCenter = Number.isFinite(lat) && Number.isFinite(lng)
+      const requiresGeofenceFields = locationSettingsForm.geolocationEnabled && locationSettingsForm.enabled
+
+      if (requiresGeofenceFields && !hasCenter) {
         setError(
           t(
             'Store latitude and longitude are required and must be valid.',
@@ -946,7 +952,7 @@ const AdminDashboard = () => {
         return
       }
 
-      if (!Number.isFinite(radius) || radius <= 0) {
+      if (requiresGeofenceFields && (!Number.isFinite(radius) || radius <= 0)) {
         setError(t('Geofence radius must be greater than zero.', 'Raio da cerca deve ser maior que zero.'))
         return
       }
@@ -958,14 +964,12 @@ const AdminDashboard = () => {
           method: 'PATCH',
           body: {
             locationValidationSource: locationSettingsForm.locationValidationSource,
+            geolocationEnabled: locationSettingsForm.geolocationEnabled,
             enabled: locationSettingsForm.enabled,
             mode: locationSettingsForm.mode,
             requireLocation: locationSettingsForm.requireLocation,
             radiusMeters: radius,
-            center: {
-              lat,
-              lng,
-            },
+            ...(hasCenter ? { center: { lat, lng } } : {}),
           },
         }
       )
@@ -1173,6 +1177,16 @@ const AdminDashboard = () => {
             </label>
 
             <div className="flex flex-col gap-2 pt-5 text-xs text-slate-700">
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={locationSettingsForm.geolocationEnabled}
+                  onChange={(event) =>
+                    setLocationSettingsForm((prev) => ({ ...prev, geolocationEnabled: event.target.checked }))
+                  }
+                />
+                {t('Use geolocation', 'Usar geolocalizacao')}
+              </label>
               <label className="inline-flex items-center gap-2">
                 <input
                   type="checkbox"

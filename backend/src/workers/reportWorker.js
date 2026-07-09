@@ -306,11 +306,16 @@ const getReportData = async (filters) => {
   }, {});
   console.log('[reportWorker] entries by user:', userBreakdown, 'total:', entries.length);
 
-  const daily = buildDailyLogs(entries);
+  const pendingEntries = entries.filter((entry) => entry.status === 'PENDING');
+  const reviewedEntries = entries.filter((entry) => entry.status !== 'PENDING');
+
+  const daily = buildDailyLogs(reviewedEntries);
+  const pendingDaily = buildDailyLogs(pendingEntries);
   const summary = buildSummary(entries);
 
   return {
     daily,
+    pendingDaily,
     summary,
     totalRecords: entries.length,
   };
@@ -320,8 +325,9 @@ const getReportData = async (filters) => {
  * Gera CSV de registros de ponto
  */
 const generateTimeEntriesCSV = async (filters) => {
-  const { daily, totalRecords } = await getReportData(filters);
-  const { headers, rows } = daily;
+  const { daily, pendingDaily, totalRecords } = await getReportData(filters);
+  const headers = daily.headers;
+  const rows = [...daily.rows, ...pendingDaily.rows];
 
   // Montar CSV
   const csvContent = [
@@ -339,11 +345,13 @@ const generateTimeEntriesCSV = async (filters) => {
  * Gera XLSX de registros de ponto
  */
 const generateTimeEntriesXLSX = async (filters) => {
-  const { daily, summary, totalRecords } = await getReportData(filters);
+  const { daily, pendingDaily, summary, totalRecords } = await getReportData(filters);
   const worksheet = xlsx.utils.aoa_to_sheet([daily.headers, ...daily.rows]);
+  const pendingWorksheet = xlsx.utils.aoa_to_sheet([pendingDaily.headers, ...pendingDaily.rows]);
   const summaryWorksheet = xlsx.utils.aoa_to_sheet([summary.headers, ...summary.rows]);
   const workbook = xlsx.utils.book_new();
   xlsx.utils.book_append_sheet(workbook, worksheet, 'Daily Logs');
+  xlsx.utils.book_append_sheet(workbook, pendingWorksheet, 'Pending Approval');
   xlsx.utils.book_append_sheet(workbook, summaryWorksheet, 'Summary & Pending');
   const content = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 

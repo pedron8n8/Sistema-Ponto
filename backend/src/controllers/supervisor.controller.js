@@ -1025,6 +1025,99 @@ const approveEntry = async (req, res) => {
 };
 
 /**
+ * POST /supervisor/approve-bulk
+ * Aprova vários registros de ponto de uma vez (aprovação em lote por período/colaborador)
+ * Body: { entryIds: string[], comment?: string }
+ */
+const approveEntriesBulk = async (req, res) => {
+  try {
+    const supervisorId = req.user.id;
+    const { entryIds, comment } = req.body || {};
+
+    if (!Array.isArray(entryIds) || entryIds.length === 0 || entryIds.length > 200) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Informe entryIds como um array com 1 a 200 registros.',
+      });
+    }
+
+    const entries = await prisma.timeEntry.findMany({
+      where: { id: { in: entryIds } },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            supervisorId: true,
+            organizationAdminId: true,
+          },
+        },
+      },
+    });
+
+    const foundIds = new Set(entries.map((entry) => entry.id));
+    const skipped = entryIds
+      .filter((id) => !foundIds.has(id))
+      .map((id) => ({ id, reason: 'NOT_FOUND' }));
+    const validIds = [];
+
+    for (const entry of entries) {
+      if (!canManageTeamUser({ actor: req.user, targetUser: entry.user })) {
+        skipped.push({ id: entry.id, reason: 'FORBIDDEN' });
+      } else if (req.user.role === 'ADMIN' && entry.user.organizationAdminId !== supervisorId) {
+        skipped.push({ id: entry.id, reason: 'FORBIDDEN' });
+      } else if (entry.status !== 'PENDING') {
+        skipped.push({ id: entry.id, reason: 'ENTRY_NOT_PENDING' });
+      } else if (!entry.clockOut) {
+        skipped.push({ id: entry.id, reason: 'ENTRY_OPEN' });
+      } else {
+        validIds.push(entry.id);
+      }
+    }
+
+    if (validIds.length === 0) {
+      return res.status(409).json({
+        error: 'Conflict',
+        message: 'Nenhum registro elegível para aprovação. Atualize a lista.',
+        approvedCount: 0,
+        skipped,
+      });
+    }
+
+    await prisma.$transaction([
+      prisma.timeEntry.updateMany({
+        where: { id: { in: validIds }, status: 'PENDING' },
+        data: { status: 'APPROVED' },
+      }),
+      prisma.approvalLog.createMany({
+        data: validIds.map((timeEntryId) => ({
+          timeEntryId,
+          reviewerId: supervisorId,
+          action: 'APPROVED',
+          comment: comment || null,
+        })),
+      }),
+    ]);
+
+    console.log(`✅ ${validIds.length} registros aprovados em lote por ${req.user.email}`);
+
+    res.json({
+      message: `${validIds.length} registro(s) aprovado(s) com sucesso`,
+      approvedCount: validIds.length,
+      skipped,
+    });
+  } catch (error) {
+    console.error('❌ Erro ao aprovar registros em lote:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao aprovar registros em lote',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
+/**
  * PATCH /supervisor/reject/:id
  * Rejeita um registro de ponto e registra no ApprovalLog
  */
@@ -1837,6 +1930,7 @@ const payTeamMemberBankHours = async (req, res) => {
 module.exports = {
   getTeamPendingEntries,
   approveEntry,
+  approveEntriesBulk,
   rejectEntry,
   requestEdit,
   getEntryDetails,
