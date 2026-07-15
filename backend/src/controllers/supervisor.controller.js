@@ -724,7 +724,7 @@ const sendSseEvent = (res, eventName, payload) => {
  */
 const getTeamPendingEntries = async (req, res) => {
   try {
-    const { status = 'PENDING', page = 1, limit = 20, userId, startDate, endDate } = req.query;
+    const { status = 'PENDING', page = 1, limit = 20, userId, groupId, startDate, endDate } = req.query;
 
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
@@ -738,6 +738,8 @@ const getTeamPendingEntries = async (req, res) => {
         id: true,
         name: true,
         email: true,
+        role: true,
+        supervisorId: true,
       },
     });
 
@@ -761,10 +763,13 @@ const getTeamPendingEntries = async (req, res) => {
     }
 
     const subordinateIds = subordinates.map((s) => s.id);
+    const groupedSubordinateIds = groupId
+      ? subordinates.filter((s) => s.supervisorId === groupId).map((s) => s.id)
+      : subordinateIds;
 
     // Filtros de busca
     const where = {
-      userId: userId ? userId : { in: subordinateIds },
+      userId: userId ? userId : { in: groupedSubordinateIds },
       ...(status !== 'ALL' && { status }),
     };
 

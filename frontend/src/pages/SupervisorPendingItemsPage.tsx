@@ -11,12 +11,15 @@ type Entry = {
   notes?: string | null
   status?: string
   workedMinutes?: number | null
+  lastAction?: { action: string; comment?: string | null; reviewer?: { name: string } } | null
 }
 
 type Subordinate = {
   id: string
   name: string
   email: string
+  role: string
+  supervisorId?: string | null
 }
 
 type Stats = {
@@ -102,6 +105,7 @@ const SupervisorPendingItemsPage = () => {
   const [filters, setFilters] = useState({
     status: 'PENDING',
     userId: '',
+    groupId: '',
   })
   const [periodType, setPeriodType] = useState<PeriodType>('day')
   const [anchorDate, setAnchorDate] = useState(() => toYmd(new Date()))
@@ -124,18 +128,19 @@ const SupervisorPendingItemsPage = () => {
       const query = new URLSearchParams()
       if (filters.status) query.set('status', filters.status)
       if (filters.userId) query.set('userId', filters.userId)
+      if (filters.groupId) query.set('groupId', filters.groupId)
       query.set('startDate', startDate)
       query.set('endDate', endDate)
       query.set('limit', '500')
 
-      const [entriesResponse, teamResponse] = await Promise.all([
-        apiFetch<{ entries: Entry[]; stats: Stats }>(`/supervisor/entries?${query.toString()}`, { token }),
-        apiFetch<{ subordinates: Subordinate[] }>('/supervisor/team', { token }),
-      ])
+      const entriesResponse = await apiFetch<{ entries: Entry[]; stats: Stats; subordinates: Subordinate[] }>(
+        `/supervisor/entries?${query.toString()}`,
+        { token }
+      )
 
       setEntries(entriesResponse.entries || [])
       setStats(entriesResponse.stats || defaultStats)
-      setSubordinates(teamResponse.subordinates || [])
+      setSubordinates(entriesResponse.subordinates || [])
     } catch (err) {
       setEntries([])
       setStats(defaultStats)
@@ -147,7 +152,14 @@ const SupervisorPendingItemsPage = () => {
 
   useEffect(() => {
     loadData().catch(() => undefined)
-  }, [token, filters.status, filters.userId, startDate, endDate])
+  }, [token, filters.status, filters.userId, filters.groupId, startDate, endDate])
+
+  const groups = useMemo(() => subordinates.filter((s) => s.role === 'SUPERVISOR'), [subordinates])
+
+  const visibleSubordinates = useMemo(
+    () => (filters.groupId ? subordinates.filter((s) => s.supervisorId === filters.groupId) : subordinates),
+    [subordinates, filters.groupId]
+  )
 
   const pendingCount = useMemo(() => entries.filter((entry) => !entry.clockOut).length, [entries])
 
@@ -274,6 +286,15 @@ const SupervisorPendingItemsPage = () => {
     }
   }
 
+  const entryRowClass = (entry: Entry) => {
+    if (entry.status === 'APPROVED') return 'rounded-2xl border border-emerald-200 bg-emerald-50 p-4'
+    if (entry.status === 'REJECTED') return 'rounded-2xl border border-rose-200 bg-rose-50 p-4'
+    if (entry.status === 'PENDING' && entry.lastAction?.action === 'EDIT_REQUESTED') {
+      return 'rounded-2xl border border-amber-200 bg-amber-50 p-4'
+    }
+    return 'rounded-2xl border border-slate-100 bg-slate-50/70 p-4'
+  }
+
   const formatDayLabel = (dayKey: string) =>
     parseYmd(dayKey).toLocaleDateString(locale, { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })
 
@@ -298,7 +319,7 @@ const SupervisorPendingItemsPage = () => {
           <span className="rounded-full bg-slate-100 px-3 py-1">{t('Open', 'Em aberto')} {pendingCount}</span>
         </div>
 
-        <div className="mt-4 grid gap-2 md:grid-cols-4">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           <select
             value={filters.status}
             onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))}
@@ -310,13 +331,35 @@ const SupervisorPendingItemsPage = () => {
             <option value="ALL">{t('All', 'Todos')}</option>
           </select>
 
+          {groups.length > 0 ? (
+            <select
+              value={filters.groupId}
+              onChange={(event) => {
+                const groupId = event.target.value
+                setFilters((prev) => {
+                  const stillVisible =
+                    !groupId || subordinates.some((s) => s.id === prev.userId && s.supervisorId === groupId)
+                  return { ...prev, groupId, userId: stillVisible ? prev.userId : '' }
+                })
+              }}
+              className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
+            >
+              <option value="">{t('All groups', 'Todos os grupos')}</option>
+              {groups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
+
           <select
             value={filters.userId}
             onChange={(event) => setFilters((prev) => ({ ...prev, userId: event.target.value }))}
             className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
           >
             <option value="">{t('All employees', 'Todos os colaboradores')}</option>
-            {subordinates.map((subordinate) => (
+            {visibleSubordinates.map((subordinate) => (
               <option key={subordinate.id} value={subordinate.id}>
                 {subordinate.name}
               </option>
@@ -340,14 +383,12 @@ const SupervisorPendingItemsPage = () => {
             onChange={(event) => event.target.value && setAnchorDate(event.target.value)}
             className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
           />
-        </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
           <button
             onClick={() => shiftPeriod(-1)}
             className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
           >
-            ◀
+            {t('Previous', 'Anterior')}
           </button>
           <span className="rounded-full bg-slate-100 px-3 py-2 text-xs text-slate-700">
             {parseYmd(startDate).toLocaleDateString(locale)} — {parseYmd(endDate).toLocaleDateString(locale)}
@@ -356,7 +397,7 @@ const SupervisorPendingItemsPage = () => {
             onClick={() => shiftPeriod(1)}
             className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
           >
-            ▶
+            {t('Next', 'Próximo')}
           </button>
           <button
             onClick={() => loadData().catch(() => undefined)}
@@ -410,7 +451,7 @@ const SupervisorPendingItemsPage = () => {
 
                         <div className="mt-2 space-y-3">
                           {day.entries.map((entry) => (
-                            <div key={entry.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+                            <div key={entry.id} className={entryRowClass(entry)}>
                               <p className="text-xs text-slate-600">
                                 {t('Clock-in:', 'Entrada:')} {new Date(entry.clockIn).toLocaleString(locale)}
                                 {entry.clockOut
@@ -420,46 +461,64 @@ const SupervisorPendingItemsPage = () => {
                               </p>
                               {entry.notes ? <p className="mt-1 text-xs text-slate-600">{t('Notes:', 'Notas:')} {entry.notes}</p> : null}
 
-                              <textarea
-                                value={commentByEntry[entry.id] || ''}
-                                onChange={(event) =>
-                                  setCommentByEntry((prev) => ({
-                                    ...prev,
-                                    [entry.id]: event.target.value,
-                                  }))
-                                }
-                                placeholder={t(
-                                  'Comment (required to reject/request edit)',
-                                  'Comentario (obrigatorio para rejeitar/solicitar ajuste)'
-                                )}
-                                className="mt-3 h-20 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs"
-                              />
+                              {entry.status === 'PENDING' && entry.lastAction?.action !== 'EDIT_REQUESTED' ? (
+                                <>
+                                  <textarea
+                                    value={commentByEntry[entry.id] || ''}
+                                    onChange={(event) =>
+                                      setCommentByEntry((prev) => ({
+                                        ...prev,
+                                        [entry.id]: event.target.value,
+                                      }))
+                                    }
+                                    placeholder={t(
+                                      'Comment (required to reject/request edit)',
+                                      'Comentario (obrigatorio para rejeitar/solicitar ajuste)'
+                                    )}
+                                    className="mt-3 h-20 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs"
+                                  />
 
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                <button
-                                  onClick={() => handleReview(entry.id, 'APPROVE')}
-                                  disabled={Boolean(actionLoadingByEntry[entry.id])}
-                                  className="rounded-full bg-teal-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
-                                >
-                                  {t('Approve', 'Aprovar')}
-                                </button>
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    <button
+                                      onClick={() => handleReview(entry.id, 'APPROVE')}
+                                      disabled={Boolean(actionLoadingByEntry[entry.id])}
+                                      className="rounded-full bg-teal-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                                    >
+                                      {t('Approve', 'Aprovar')}
+                                    </button>
 
-                                <button
-                                  onClick={() => handleReview(entry.id, 'REQUEST_EDIT')}
-                                  disabled={Boolean(actionLoadingByEntry[entry.id])}
-                                  className="rounded-full border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-700 disabled:opacity-50"
-                                >
-                                  {t('Request edit', 'Solicitar ajuste')}
-                                </button>
+                                    <button
+                                      onClick={() => handleReview(entry.id, 'REQUEST_EDIT')}
+                                      disabled={Boolean(actionLoadingByEntry[entry.id])}
+                                      className="rounded-full border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-700 disabled:opacity-50"
+                                    >
+                                      {t('Request edit', 'Solicitar ajuste')}
+                                    </button>
 
-                                <button
-                                  onClick={() => handleReview(entry.id, 'REJECT')}
-                                  disabled={Boolean(actionLoadingByEntry[entry.id])}
-                                  className="rounded-full border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
-                                >
-                                  {t('Reject', 'Rejeitar')}
-                                </button>
-                              </div>
+                                    <button
+                                      onClick={() => handleReview(entry.id, 'REJECT')}
+                                      disabled={Boolean(actionLoadingByEntry[entry.id])}
+                                      className="rounded-full border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
+                                    >
+                                      {t('Reject', 'Rejeitar')}
+                                    </button>
+                                  </div>
+                                </>
+                              ) : (
+                                <p className="mt-3 text-xs font-semibold text-slate-700">
+                                  {entry.status === 'APPROVED'
+                                    ? t('Approved', 'Aprovado')
+                                    : entry.status === 'REJECTED'
+                                      ? t('Rejected', 'Rejeitado')
+                                      : t('Sent for edit', 'Enviado para ajuste')}
+                                  {entry.status === 'REJECTED' && entry.lastAction?.action === 'REJECTED' && entry.lastAction.comment
+                                    ? ` — ${entry.lastAction.comment}`
+                                    : ''}
+                                  {entry.status === 'PENDING' && entry.lastAction?.action === 'EDIT_REQUESTED' && entry.lastAction.comment
+                                    ? ` — ${entry.lastAction.comment}`
+                                    : ''}
+                                </p>
+                              )}
                             </div>
                           ))}
                         </div>

@@ -17,6 +17,9 @@ type Entry = {
   clockIn: string
   clockOut: string | null
   notes?: string | null
+  workedMinutes?: number
+  breakMinutes?: number
+  overtimeMinutes?: number
 }
 
 type Subordinate = {
@@ -239,6 +242,8 @@ const SupervisorDashboard = () => {
   })
   const [hoursKpi, setHoursKpi] = useState<HoursKpiResponse | null>(null)
   const [hoursKpiPeriod, setHoursKpiPeriod] = useState<'daily' | 'weekly' | 'monthly'>('weekly')
+  const [hoursKpiStartDate, setHoursKpiStartDate] = useState('')
+  const [hoursKpiEndDate, setHoursKpiEndDate] = useState('')
   const [hoursKpiLoading, setHoursKpiLoading] = useState(false)
   const [hoursKpiError, setHoursKpiError] = useState('')
   const [nowMs, setNowMs] = useState(Date.now())
@@ -433,6 +438,8 @@ const SupervisorDashboard = () => {
     try {
       const query = new URLSearchParams({
         period: hoursKpiPeriod,
+        ...(hoursKpiStartDate ? { startDate: hoursKpiStartDate } : {}),
+        ...(hoursKpiEndDate ? { endDate: hoursKpiEndDate } : {}),
         ...(presenceFilters.branch ? { branch: presenceFilters.branch } : {}),
         ...(presenceFilters.department ? { department: presenceFilters.department } : {}),
         ...(presenceFilters.team ? { team: presenceFilters.team } : {}),
@@ -577,7 +584,15 @@ const SupervisorDashboard = () => {
 
   useEffect(() => {
     loadHoursKpi().catch(() => undefined)
-  }, [token, hoursKpiPeriod, presenceFilters.branch, presenceFilters.department, presenceFilters.team])
+  }, [
+    token,
+    hoursKpiPeriod,
+    hoursKpiStartDate,
+    hoursKpiEndDate,
+    presenceFilters.branch,
+    presenceFilters.department,
+    presenceFilters.team,
+  ])
 
   useEffect(() => {
     if (!token) return
@@ -1046,18 +1061,51 @@ const SupervisorDashboard = () => {
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-lg font-semibold text-slate-900">{t('Hour KPIs', 'KPIs de horas')}</h3>
-          <select
-            value={hoursKpiPeriod}
-            onChange={(event) =>
-              setHoursKpiPeriod(event.target.value as 'daily' | 'weekly' | 'monthly')
-            }
-            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
-          >
-            <option value="daily">{t('Daily', 'Diario')}</option>
-            <option value="weekly">{t('Weekly', 'Semanal')}</option>
-            <option value="monthly">{t('Monthly', 'Mensal')}</option>
-          </select>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={hoursKpiPeriod}
+              onChange={(event) =>
+                setHoursKpiPeriod(event.target.value as 'daily' | 'weekly' | 'monthly')
+              }
+              disabled={Boolean(hoursKpiStartDate || hoursKpiEndDate)}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 disabled:opacity-50"
+            >
+              <option value="daily">{t('Daily', 'Diario')}</option>
+              <option value="weekly">{t('Weekly', 'Semanal')}</option>
+              <option value="monthly">{t('Monthly', 'Mensal')}</option>
+            </select>
+            <input
+              type="date"
+              value={hoursKpiStartDate}
+              onChange={(event) => setHoursKpiStartDate(event.target.value)}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
+            />
+            <span className="text-xs text-slate-400">{t('to', 'até')}</span>
+            <input
+              type="date"
+              value={hoursKpiEndDate}
+              onChange={(event) => setHoursKpiEndDate(event.target.value)}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
+            />
+            {hoursKpiStartDate || hoursKpiEndDate ? (
+              <button
+                onClick={() => {
+                  setHoursKpiStartDate('')
+                  setHoursKpiEndDate('')
+                }}
+                className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
+              >
+                {t('Clear', 'Limpar')}
+              </button>
+            ) : null}
+          </div>
         </div>
+        <p className="mt-2 text-[11px] text-slate-400">
+          {t(
+            'Pick a custom date range to override the period above.',
+            'Escolha um período customizado para substituir o período acima.'
+          )}
+        </p>
 
         <div className="mt-4 grid gap-2 text-xs text-slate-600 md:grid-cols-3">
           <span className="rounded-full bg-slate-100 px-3 py-1">
@@ -1112,11 +1160,22 @@ const SupervisorDashboard = () => {
               <div key={item.member.id} className="rounded-2xl border border-slate-100 bg-white p-3 text-xs text-slate-600">
                 <p className="font-semibold text-slate-800">{item.member.name}</p>
                 <p className="mt-1 text-slate-500">{item.member.email}</p>
-                <p className="mt-2">{t('Expected:', 'Previsto:')} {formatShortDuration(item.expectedMinutes)}</p>
-                <p>{t('Worked:', 'Realizado:')} {formatShortDuration(item.workedMinutes)}</p>
-                <p>{t('Overtime:', 'Extras:')} {formatShortDuration(item.overtimeMinutes)}</p>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-xl bg-slate-50 px-2 py-1.5">
+                    <p className="text-[10px] uppercase tracking-[0.1em] text-slate-400">{t('Expected', 'Previsto')}</p>
+                    <p className="mt-0.5 font-semibold text-slate-800">{formatShortDuration(item.expectedMinutes)}</p>
+                  </div>
+                  <div className="rounded-xl bg-teal-50 px-2 py-1.5">
+                    <p className="text-[10px] uppercase tracking-[0.1em] text-teal-600">{t('Worked', 'Realizado')}</p>
+                    <p className="mt-0.5 font-semibold text-teal-800">{formatShortDuration(item.workedMinutes)}</p>
+                  </div>
+                  <div className="rounded-xl bg-rose-50 px-2 py-1.5">
+                    <p className="text-[10px] uppercase tracking-[0.1em] text-rose-500">{t('Overtime', 'Extras')}</p>
+                    <p className="mt-0.5 font-semibold text-rose-700">{formatShortDuration(item.overtimeMinutes)}</p>
+                  </div>
+                </div>
                 {'openMinutes' in item && Number(item.openMinutes || 0) > 0 ? (
-                  <p className="text-teal-700">
+                  <p className="mt-2 text-teal-700">
                     {t('Open now:', 'Em aberto agora:')} {formatShortDuration(Number(item.openMinutes || 0))}
                   </p>
                 ) : null}
@@ -1199,12 +1258,19 @@ const SupervisorDashboard = () => {
                     <p className="text-sm font-semibold text-slate-800">{entry.user.name}</p>
                     <p className="text-xs text-slate-500">{entry.user.email}</p>
                   </div>
-                  <div className="text-xs text-slate-600">
-                    {formatDateWithTimeZone(entry.clockIn, viewTimeZone)} •{' '}
-                    {formatTimeWithTimeZone(entry.clockIn, viewTimeZone)} -{' '}
-                    {entry.clockOut
-                      ? formatTimeWithTimeZone(entry.clockOut, viewTimeZone)
-                      : t('Open', 'Em aberto')}
+                  <div className="text-right text-xs text-slate-600">
+                    <p>
+                      {formatDateWithTimeZone(entry.clockIn, viewTimeZone)} •{' '}
+                      {formatTimeWithTimeZone(entry.clockIn, viewTimeZone)} -{' '}
+                      {entry.clockOut
+                        ? formatTimeWithTimeZone(entry.clockOut, viewTimeZone)
+                        : t('Open', 'Em aberto')}
+                    </p>
+                    {entry.clockOut ? (
+                      <p className="mt-1 font-semibold text-teal-700">
+                        {t('Worked:', 'Trabalhado:')} {formatShortDuration(entry.workedMinutes || 0)}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
                 {entry.notes ? (
@@ -1466,6 +1532,27 @@ const SupervisorDashboard = () => {
                   ? formatTimeWithTimeZone(entryDetail.entry.clockOut, viewTimeZone)
                   : t('Open', 'Em aberto')}
               </p>
+            </div>
+
+            <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-xl bg-teal-50 px-2 py-2">
+                <p className="text-[10px] uppercase tracking-[0.1em] text-teal-600">{t('Worked', 'Trabalhado')}</p>
+                <p className="mt-0.5 text-sm font-semibold text-teal-800">
+                  {formatShortDuration(entryDetail.entry.workedMinutes || 0)}
+                </p>
+              </div>
+              <div className="rounded-xl bg-rose-50 px-2 py-2">
+                <p className="text-[10px] uppercase tracking-[0.1em] text-rose-500">{t('Overtime', 'Hora extra')}</p>
+                <p className="mt-0.5 text-sm font-semibold text-rose-700">
+                  {formatShortDuration(entryDetail.entry.overtimeMinutes || 0)}
+                </p>
+              </div>
+              <div className="rounded-xl bg-slate-50 px-2 py-2">
+                <p className="text-[10px] uppercase tracking-[0.1em] text-slate-400">{t('Break', 'Intervalo')}</p>
+                <p className="mt-0.5 text-sm font-semibold text-slate-700">
+                  {formatShortDuration(entryDetail.entry.breakMinutes || 0)}
+                </p>
+              </div>
             </div>
 
             <div className="mt-4 rounded-2xl border border-slate-100 bg-white p-4">
