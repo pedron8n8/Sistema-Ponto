@@ -35,6 +35,7 @@ const removePhotoFileIfExists = (photoPath) => {
 
 const ALL_ROLES = ['SUPERADMIN', 'ADMIN', 'HR', 'SUPERVISOR', 'MEMBER'];
 const TEAM_MEMBER_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];
+const HR_MANAGEABLE_ROLES = ['SUPERVISOR', 'MEMBER'];
 const ADMIN_PLAN_STATUSES = ['ACTIVE', 'INACTIVE'];
 const parsedExtraAdminSeatMonthlyUsd = Number(process.env.EXTRA_ADMIN_SEAT_MONTHLY_USD);
 const EXTRA_ADMIN_SEAT_MONTHLY_USD = Number(
@@ -476,6 +477,13 @@ const createUser = async (req, res) => {
       });
     }
 
+    if (req.user.role === 'HR' && !HR_MANAGEABLE_ROLES.includes(requestedRole)) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'HR só pode criar usuários Supervisor ou Membro',
+      });
+    }
+
     if (requestedRole === 'SUPERADMIN' && req.user.role !== 'SUPERADMIN') {
       return res.status(403).json({
         error: 'Forbidden',
@@ -499,6 +507,36 @@ const createUser = async (req, res) => {
     if (req.user.role === 'ADMIN') {
       targetOrganizationAdminId = req.user.id;
       organizationAdmin = req.user;
+    }
+
+    if (req.user.role === 'HR') {
+      if (!req.user.organizationAdminId) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'Usuário HR sem administrador vinculado.',
+        });
+      }
+
+      organizationAdmin = await prisma.user.findUnique({
+        where: { id: req.user.organizationAdminId },
+        select: {
+          id: true,
+          role: true,
+          adminSeatLimit: true,
+          adminExtraSeatPrice: true,
+          adminPlanId: true,
+          adminPlanStatus: true,
+        },
+      });
+
+      if (!organizationAdmin || organizationAdmin.role !== 'ADMIN') {
+        return res.status(404).json({
+          error: 'Not Found',
+          message: 'Administrador responsável não encontrado',
+        });
+      }
+
+      targetOrganizationAdminId = organizationAdmin.id;
     }
 
     if (req.user.role === 'SUPERADMIN' && TEAM_MEMBER_ROLES.includes(requestedRole)) {
@@ -562,6 +600,17 @@ const createUser = async (req, res) => {
         req.user.role === 'ADMIN' &&
         supervisor.id !== req.user.id &&
         supervisor.organizationAdminId !== req.user.id
+      ) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Supervisor deve pertencer ao seu time de administração',
+        });
+      }
+
+      if (
+        req.user.role === 'HR' &&
+        supervisor.id !== req.user.id &&
+        supervisor.organizationAdminId !== req.user.organizationAdminId
       ) {
         return res.status(403).json({
           error: 'Forbidden',
@@ -911,10 +960,34 @@ const updateUser = async (req, res) => {
       });
     }
 
+    if (
+      req.user.role === 'HR' &&
+      existingUser.organizationAdminId !== req.user.organizationAdminId
+    ) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você só pode editar usuários do seu próprio time',
+      });
+    }
+
+    if (req.user.role === 'HR' && !HR_MANAGEABLE_ROLES.includes(existingUser.role)) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'HR só pode editar usuários Supervisor ou Membro',
+      });
+    }
+
     if (req.user.role === 'ADMIN' && role && !TEAM_MEMBER_ROLES.includes(role)) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Admin só pode definir papéis do time (HR, SUPERVISOR, MEMBER)',
+      });
+    }
+
+    if (req.user.role === 'HR' && role && !HR_MANAGEABLE_ROLES.includes(role)) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'HR só pode definir papéis Supervisor ou Membro',
       });
     }
 
@@ -980,6 +1053,17 @@ const updateUser = async (req, res) => {
         req.user.role === 'ADMIN' &&
         supervisor.id !== req.user.id &&
         supervisor.organizationAdminId !== req.user.id
+      ) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Supervisor deve pertencer ao seu time de administração',
+        });
+      }
+
+      if (
+        req.user.role === 'HR' &&
+        supervisor.id !== req.user.id &&
+        supervisor.organizationAdminId !== req.user.organizationAdminId
       ) {
         return res.status(403).json({
           error: 'Forbidden',

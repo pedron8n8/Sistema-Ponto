@@ -32,6 +32,7 @@ import SupervisorPendingItemsPage from './pages/SupervisorPendingItemsPage'
 import SupervisorHoursPage from './pages/SupervisorHoursPage'
 import HrDailyTimePage from './pages/HrDailyTimePage'
 import HrSchedulesPage from './pages/HrSchedulesPage'
+import HrGroupsPage from './pages/HrGroupsPage'
 import SuperAdminAccountsPage from './pages/SuperAdminAccountsPage'
 import Reports from './pages/Reports'
 import VacationMemberPage from './pages/VacationMemberPage'
@@ -219,6 +220,16 @@ const App = () => {
                     <ProtectedRoute allowedRoles={['HR', 'ADMIN', 'SUPERADMIN']}>
                       <ShellLayout>
                         <HrSchedulesPage />
+                      </ShellLayout>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/hr/groups"
+                  element={
+                    <ProtectedRoute allowedRoles={['HR', 'ADMIN', 'SUPERADMIN']}>
+                      <ShellLayout>
+                        <HrGroupsPage />
                       </ShellLayout>
                     </ProtectedRoute>
                   }

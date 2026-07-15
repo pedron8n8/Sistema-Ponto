@@ -154,15 +154,15 @@ router.get('/:id', roleCheck(['ADMIN', 'HR', 'SUPERVISOR']), userController.getU
 
 /**
  * POST /api/v1/users
- * Cria novo usuário (apenas Admin)
+ * Cria novo usuário (Admin cria qualquer role do time; HR só Supervisor/Membro)
  */
-router.post('/', roleCheck(['ADMIN']), userController.createUser);
+router.post('/', roleCheck(['ADMIN', 'HR']), userController.createUser);
 
 /**
  * PATCH /api/v1/users/:id
- * Atualiza dados do usuário (apenas Admin)
+ * Atualiza dados do usuário (Admin edita qualquer role do time; HR só Supervisor/Membro)
  */
-router.patch('/:id', roleCheck(['ADMIN']), userController.updateUser);
+router.patch('/:id', roleCheck(['ADMIN', 'HR']), userController.updateUser);
 
 /**
  * DELETE /api/v1/users/:id

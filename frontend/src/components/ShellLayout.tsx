@@ -178,6 +178,11 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
           label: t('Schedules', 'Jornadas'),
           icon: <SupervisorIcon />,
         },
+        {
+          to: '/app/hr/groups',
+          label: t('Teams & groups', 'Equipes e grupos'),
+          icon: <SupervisorIcon />,
+        },
       ],
     },
     {
