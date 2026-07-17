@@ -306,20 +306,15 @@ const updateHrEntry = async (req, res) => {
       nextClockIn = parsed;
     }
     if (clockOut !== undefined) {
+      // null/'' = registro permanece aberto; só rejeitamos um valor não-vazio que não parseia.
       const parsed = parseDateValue(clockOut);
-      if (!parsed) return res.status(400).json({ error: 'Bad Request', message: 'clockOut inválido.' });
+      if (clockOut && !parsed) return res.status(400).json({ error: 'Bad Request', message: 'clockOut inválido.' });
       data.clockOut = parsed;
       nextClockOut = parsed;
     }
 
-    // Registros abertos (sem clockOut) não são editáveis sem informar a saída.
-    if (!nextClockOut) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Informe o horário de saída (clockOut) para editar este registro.',
-      });
-    }
-    if (new Date(nextClockOut).getTime() <= new Date(nextClockIn).getTime()) {
+    // Registros abertos (sem clockOut) continuam rastreando: só validamos a saída quando ela existe.
+    if (nextClockOut && new Date(nextClockOut).getTime() <= new Date(nextClockIn).getTime()) {
       return res.status(400).json({ error: 'Bad Request', message: 'A saída deve ser posterior à entrada.' });
     }
 
@@ -340,7 +335,8 @@ const updateHrEntry = async (req, res) => {
 
     await prisma.timeEntry.update({
       where: { id },
-      data: { ...data, status: 'APPROVED' },
+      // Registro aberto continua rastreando (mantém status atual); só aprovamos ao fechar.
+      data: nextClockOut ? { ...data, status: 'APPROVED' } : data,
     });
 
     // Recalcula o(s) dia(s) afetado(s) — entrada pode ter mudado de dia.
