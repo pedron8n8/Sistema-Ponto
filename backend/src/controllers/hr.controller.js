@@ -1,6 +1,7 @@
 const { prisma } = require('../config/database');
 const { recalculateUserDay, reverseEntryBankHours } = require('../utils/recalcDay');
 const { sendResendEmail } = require('../utils/resendNotifier');
+const { parseLocalDate } = require('../utils/timeCalculations');
 
 const TEAM_MEMBER_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];
 
@@ -35,11 +36,7 @@ const canManageTarget = (actor, target) => {
   return target.organizationAdminId === ownerId;
 };
 
-const parseDateValue = (value) => {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-};
+const parseDateValue = (value) => parseLocalDate(value);
 
 const normalizeBreakMinutes = (value) => {
   const parsed = Number(value);

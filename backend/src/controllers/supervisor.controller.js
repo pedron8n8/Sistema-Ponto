@@ -1,6 +1,8 @@
 const { prisma } = require('../config/database');
 const { adjustBankHours, settleBankHoursAccruals } = require('../utils/bankHours');
+const { reverseEntryBankHours } = require('../utils/recalcDay');
 const { normalizeMinutes, normalizeTime, normalizeTimeZone } = require('../utils/workSettings');
+const { parseLocalDate } = require('../utils/timeCalculations');
 
 const PRESENCE_REFRESH_MS = 15000;
 const DEFAULT_OVERTIME_LIMIT_MINUTES = Number(process.env.OVERTIME_DAILY_LIMIT_MINUTES || 120);
@@ -109,8 +111,8 @@ const isWithinConfiguredWorkday = ({ nowMinutes, startTime, endTime }) => {
 
 const getDateRangeFromPeriod = ({ period, startDate, endDate }) => {
   if (startDate || endDate) {
-    const start = startDate ? new Date(startDate) : new Date('1970-01-01T00:00:00.000Z');
-    const end = endDate ? new Date(endDate) : new Date();
+    const start = startDate ? parseLocalDate(startDate) : new Date('1970-01-01T00:00:00.000Z');
+    const end = endDate ? parseLocalDate(endDate) : new Date();
     end.setHours(23, 59, 59, 999);
     return { start, end, period: startDate || endDate ? 'custom' : period };
   }
@@ -781,10 +783,10 @@ const getTeamPendingEntries = async (req, res) => {
     if (startDate || endDate) {
       where.clockIn = {};
       if (startDate) {
-        where.clockIn.gte = new Date(startDate);
+        where.clockIn.gte = parseLocalDate(startDate);
       }
       if (endDate) {
-        const end = new Date(endDate);
+        const end = parseLocalDate(endDate);
         end.setHours(23, 59, 59, 999);
         where.clockIn.lte = end;
       }
@@ -987,6 +989,19 @@ const approveEntry = async (req, res) => {
       });
     }
 
+    // Horas extras precisam ser decididas (aprovadas ou negadas) antes do ponto
+    if (entry.overtimeStatus === 'PENDING') {
+      return res.status(409).json({
+        error: 'Conflict',
+        code: 'OVERTIME_PENDING',
+        message: 'Decida as horas extras deste registro (aprovar ou negar) antes de concluir a revisão.',
+        entry: {
+          id: entry.id,
+          status: entry.status,
+        },
+      });
+    }
+
     // Atualiza o status e cria o log em uma transação
     const [updatedEntry, approvalLog] = await prisma.$transaction([
       prisma.timeEntry.update({
@@ -1076,6 +1091,8 @@ const approveEntriesBulk = async (req, res) => {
         skipped.push({ id: entry.id, reason: 'ENTRY_NOT_PENDING' });
       } else if (!entry.clockOut) {
         skipped.push({ id: entry.id, reason: 'ENTRY_OPEN' });
+      } else if (entry.overtimeStatus === 'PENDING') {
+        skipped.push({ id: entry.id, reason: 'OVERTIME_PENDING' });
       } else {
         validIds.push(entry.id);
       }
@@ -1195,6 +1212,19 @@ const rejectEntry = async (req, res) => {
       });
     }
 
+    // Horas extras precisam ser decididas (aprovadas ou negadas) antes do ponto
+    if (entry.overtimeStatus === 'PENDING') {
+      return res.status(409).json({
+        error: 'Conflict',
+        code: 'OVERTIME_PENDING',
+        message: 'Decida as horas extras deste registro (aprovar ou negar) antes de concluir a revisão.',
+        entry: {
+          id: entry.id,
+          status: entry.status,
+        },
+      });
+    }
+
     // Atualiza o status e cria o log
     const [updatedEntry, approvalLog] = await prisma.$transaction([
       prisma.timeEntry.update({
@@ -1232,6 +1262,213 @@ const rejectEntry = async (req, res) => {
     res.status(500).json({
       error: 'Internal Server Error',
       message: 'Erro ao rejeitar registro',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
+/**
+ * Validações comuns aos endpoints de decisão de horas extras.
+ * Retorna o registro ou null (resposta de erro já enviada).
+ */
+const loadEntryForOvertimeDecision = async (req, res) => {
+  const supervisorId = req.user.id;
+  const { id } = req.params;
+
+  const entry = await prisma.timeEntry.findUnique({
+    where: { id },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          supervisorId: true,
+          organizationAdminId: true,
+        },
+      },
+    },
+  });
+
+  if (!entry) {
+    res.status(404).json({
+      error: 'Not Found',
+      message: 'Registro de ponto não encontrado',
+    });
+    return null;
+  }
+
+  if (!canManageTeamUser({ actor: req.user, targetUser: entry.user })) {
+    res.status(403).json({
+      error: 'Forbidden',
+      message: 'Você só pode revisar horas extras de seus subordinados',
+    });
+    return null;
+  }
+
+  if (req.user.role === 'ADMIN' && entry.user.organizationAdminId !== supervisorId) {
+    res.status(403).json({
+      error: 'Forbidden',
+      message: 'Você só pode revisar horas extras do seu tenant',
+    });
+    return null;
+  }
+
+  if (entry.status !== 'PENDING') {
+    res.status(409).json({
+      error: 'Conflict',
+      code: 'ENTRY_NOT_PENDING',
+      message: `Registro já está com status ${entry.status}. Atualize a lista para ver o estado atual.`,
+      entry: { id: entry.id, status: entry.status },
+    });
+    return null;
+  }
+
+  if (!entry.clockOut) {
+    res.status(422).json({
+      error: 'Unprocessable Entity',
+      code: 'ENTRY_OPEN',
+      message: 'Não é possível revisar horas extras de um registro ainda em andamento (sem clock-out).',
+      entry: { id: entry.id, status: entry.status },
+    });
+    return null;
+  }
+
+  if (entry.overtimeStatus !== 'PENDING') {
+    res.status(409).json({
+      error: 'Conflict',
+      code: 'OVERTIME_NOT_PENDING',
+      message: 'Este registro não possui horas extras aguardando decisão.',
+      entry: { id: entry.id, status: entry.status, overtimeStatus: entry.overtimeStatus },
+    });
+    return null;
+  }
+
+  return entry;
+};
+
+/**
+ * PATCH /supervisor/overtime/:id/approve
+ * Aprova as horas extras de um registro (pré-requisito para aprovar/rejeitar o ponto)
+ */
+const approveOvertime = async (req, res) => {
+  try {
+    const supervisorId = req.user.id;
+    const { id } = req.params;
+    const { comment } = req.body || {};
+
+    const entry = await loadEntryForOvertimeDecision(req, res);
+    if (!entry) return;
+
+    const [updatedEntry, approvalLog] = await prisma.$transaction([
+      prisma.timeEntry.update({
+        where: { id },
+        data: { overtimeStatus: 'APPROVED' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      }),
+      prisma.approvalLog.create({
+        data: {
+          timeEntryId: id,
+          reviewerId: supervisorId,
+          action: 'OVERTIME_APPROVED',
+          comment: comment || null,
+        },
+      }),
+    ]);
+
+    console.log(`✅ Horas extras do registro ${id} aprovadas por ${req.user.email}`);
+
+    res.json({
+      message: 'Horas extras aprovadas com sucesso',
+      entry: updatedEntry,
+      approvalLog,
+    });
+  } catch (error) {
+    console.error('❌ Erro ao aprovar horas extras:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao aprovar horas extras',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
+/**
+ * PATCH /supervisor/overtime/:id/reject
+ * Nega as horas extras de um registro: zera o efeito (não paga, não acumula banco)
+ * revertendo o crédito de banco de horas já lançado. O ponto continua aprovável depois.
+ */
+const rejectOvertime = async (req, res) => {
+  try {
+    const supervisorId = req.user.id;
+    const { id } = req.params;
+    const { comment } = req.body || {};
+
+    // Comentário obrigatório para negar horas extras
+    if (!comment || comment.trim().length < 5) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Comentário obrigatório para negar horas extras (mínimo 5 caracteres)',
+      });
+    }
+
+    const entry = await loadEntryForOvertimeDecision(req, res);
+    if (!entry) return;
+
+    // Reverte o crédito de banco de horas já lançado no clock-out
+    await reverseEntryBankHours(id);
+
+    const [updatedEntry, approvalLog] = await prisma.$transaction([
+      prisma.timeEntry.update({
+        where: { id },
+        data: {
+          overtimeStatus: 'REJECTED',
+          overtimeMinutes: 0,
+          overtimeMinutes50: 0,
+          overtimeMinutes100: 0,
+          overtimePercent: 0,
+          bankHoursAccruedMinutes: 0,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      }),
+      prisma.approvalLog.create({
+        data: {
+          timeEntryId: id,
+          reviewerId: supervisorId,
+          action: 'OVERTIME_REJECTED',
+          comment: `${comment.trim()} [HE original: ${entry.overtimeMinutes}min (50%: ${entry.overtimeMinutes50}min, 100%: ${entry.overtimeMinutes100}min), banco: ${entry.bankHoursAccruedMinutes}min]`,
+        },
+      }),
+    ]);
+
+    console.log(`❌ Horas extras do registro ${id} negadas por ${req.user.email}`);
+
+    res.json({
+      message: 'Horas extras negadas',
+      entry: updatedEntry,
+      approvalLog,
+    });
+  } catch (error) {
+    console.error('❌ Erro ao negar horas extras:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao negar horas extras',
       ...(process.env.NODE_ENV === 'development' && { details: error.message }),
     });
   }
@@ -1937,6 +2174,8 @@ module.exports = {
   approveEntry,
   approveEntriesBulk,
   rejectEntry,
+  approveOvertime,
+  rejectOvertime,
   requestEdit,
   getEntryDetails,
   getTeamMembers,

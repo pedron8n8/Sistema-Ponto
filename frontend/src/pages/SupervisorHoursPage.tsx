@@ -322,9 +322,21 @@ const SupervisorHoursPage = () => {
                   <p className="text-xs text-slate-500">{member.email}</p>
                 </div>
 
-                <div className="mt-3 grid gap-2 text-xs text-slate-500 md:grid-cols-5 md:items-center">
+                <div className="mt-3 hidden text-[10px] uppercase tracking-wide text-slate-400 md:grid md:grid-cols-5 md:gap-2">
+                  <span>{t('Daily workday', 'Jornada diária')}</span>
+                  <span>{t('Entry time', 'Horário de entrada')}</span>
+                  <span>{t('Exit time', 'Horário de saída')}</span>
+                  <span>{t('Timezone', 'Fuso horário')}</span>
+                  <span />
+                </div>
+
+                <div className="mt-1 grid gap-2 text-xs text-slate-500 md:grid-cols-5 md:items-center">
                   <input
                     type="text"
+                    title={t(
+                      'Total contracted hours per day, format hh:mm',
+                      'Total de horas contratadas por dia, formato hh:mm'
+                    )}
                     value={teamWorkSettingsByUser[member.id]?.contractDailyHours || ''}
                     onChange={(event) =>
                       setTeamWorkSettingsByUser((prev) => ({
@@ -346,6 +358,7 @@ const SupervisorHoursPage = () => {
 
                   <input
                     type="time"
+                    title={t('Time the workday starts (entry time)', 'Horário em que a jornada começa (entrada)')}
                     value={teamWorkSettingsByUser[member.id]?.workdayStartTime || ''}
                     onChange={(event) =>
                       setTeamWorkSettingsByUser((prev) => ({
@@ -366,6 +379,7 @@ const SupervisorHoursPage = () => {
 
                   <input
                     type="time"
+                    title={t('Time the workday ends (exit time)', 'Horário em que a jornada termina (saída)')}
                     value={teamWorkSettingsByUser[member.id]?.workdayEndTime || ''}
                     onChange={(event) =>
                       setTeamWorkSettingsByUser((prev) => ({
@@ -385,6 +399,7 @@ const SupervisorHoursPage = () => {
                   />
 
                   <select
+                    title={t('Timezone used to compute this member\'s workday', 'Fuso horário usado para calcular a jornada deste colaborador')}
                     value={teamWorkSettingsByUser[member.id]?.timeZone || 'America/Chicago'}
                     onChange={(event) =>
                       setTeamWorkSettingsByUser((prev) => ({
@@ -484,19 +499,49 @@ const SupervisorHoursPage = () => {
               </div>
 
               <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-5">
-                <span className="rounded-full bg-white px-3 py-1">
+                <span
+                  className="rounded-full bg-white px-3 py-1"
+                  title={t(
+                    'Net balance: credit minus debt, all time',
+                    'Saldo líquido: crédito menos devedor, desde o início'
+                  )}
+                >
                   {t('Balance:', 'Saldo:')} {formatMinutesLabel(row.bankHours.balanceMinutes)}
                 </span>
-                <span className="rounded-full bg-white px-3 py-1">
+                <span
+                  className="rounded-full bg-white px-3 py-1"
+                  title={t(
+                    'Extra hours worked beyond the contracted workday',
+                    'Horas extras trabalhadas além da jornada contratual'
+                  )}
+                >
                   {t('Credit:', 'Crédito:')} {formatMinutesLabel(row.bankHours.creditMinutes)}
                 </span>
-                <span className="rounded-full bg-white px-3 py-1">
+                <span
+                  className="rounded-full bg-white px-3 py-1"
+                  title={t(
+                    'Hours short of the contracted workday',
+                    'Horas devidas abaixo da jornada contratual'
+                  )}
+                >
                   {t('Debt:', 'Devedor:')} {formatMinutesLabel(row.bankHours.debtMinutes)}
                 </span>
-                <span className="rounded-full bg-white px-3 py-1">
+                <span
+                  className="rounded-full bg-white px-3 py-1"
+                  title={t(
+                    'Balance not yet paid out or settled',
+                    'Saldo ainda não pago ou compensado'
+                  )}
+                >
                   {t('Pending:', 'Pendente:')} {formatMinutesLabel(row.bankHours.pendingMinutes)}
                 </span>
-                <span className="rounded-full bg-white px-3 py-1">
+                <span
+                  className="rounded-full bg-white px-3 py-1"
+                  title={t(
+                    'Amount already paid out or settled',
+                    'Valor já pago ou compensado'
+                  )}
+                >
                   {t('Paid:', 'Pago:')} {formatMinutesLabel(row.bankHours.paidMinutes)}
                 </span>
               </div>

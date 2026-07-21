@@ -2,6 +2,7 @@ const { prisma } = require('../config/database');
 const { hashPin, isValidPinFormat } = require('../utils/pinAuth');
 const { adjustBankHours, settleBankHoursAccruals } = require('../utils/bankHours');
 const { normalizeMinutes, normalizeTime, normalizeHourlyRate, normalizeTimeZone } = require('../utils/workSettings');
+const { parseLocalDate } = require('../utils/timeCalculations');
 const {
   getGeofencePublicConfig,
   updateGeofenceConfig,
@@ -247,10 +248,10 @@ const getUserTimeEntries = async (req, res) => {
     if (startDate || endDate) {
       where.clockIn = {};
       if (startDate) {
-        where.clockIn.gte = new Date(startDate);
+        where.clockIn.gte = parseLocalDate(startDate);
       }
       if (endDate) {
-        const end = new Date(endDate);
+        const end = parseLocalDate(endDate);
         end.setHours(23, 59, 59, 999);
         where.clockIn.lte = end;
       }
@@ -668,10 +669,10 @@ const getSystemStats = async (req, res) => {
     if (startDate || endDate) {
       dateFilter.clockIn = {};
       if (startDate) {
-        dateFilter.clockIn.gte = new Date(startDate);
+        dateFilter.clockIn.gte = parseLocalDate(startDate);
       }
       if (endDate) {
-        const end = new Date(endDate);
+        const end = parseLocalDate(endDate);
         end.setHours(23, 59, 59, 999);
         dateFilter.clockIn.lte = end;
       }

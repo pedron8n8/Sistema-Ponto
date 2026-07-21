@@ -48,6 +48,17 @@ const isSameDay = (date1, date2) => {
 };
 
 /**
+ * Converte 'YYYY-MM-DD' em Date à meia-noite LOCAL.
+ * new Date('YYYY-MM-DD') interpreta como UTC e desloca o dia em fusos negativos,
+ * o que quebra filtros de data combinados com setHours() local.
+ */
+const parseLocalDate = (value) => {
+  if (!value) return null;
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`) : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+/**
  * Obtém o início e fim do dia
  */
 const getStartOfDay = (date = new Date()) => {
@@ -124,6 +135,7 @@ const formatDateTime = (date, locale = 'pt-BR') => {
 module.exports = {
   calculateDuration,
   isSameDay,
+  parseLocalDate,
   getStartOfDay,
   getEndOfDay,
   getStartOfWeek,

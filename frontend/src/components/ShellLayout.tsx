@@ -255,10 +255,10 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
     <div className="min-h-screen bg-transparent text-slate-900">
       <div className="flex">
         <aside className="peer/sidebar group/sidebar fixed left-0 top-0 z-20 hidden h-screen border-r border-white/80 bg-white/85 p-2 shadow-[0_18px_35px_-25px_rgba(15,23,42,0.55)] backdrop-blur transition-all duration-300 md:block md:w-[4.5rem] md:hover:w-64 md:focus-within:w-64">
-          <div className="flex h-full flex-col">
+          <div className="flex h-full min-h-0 flex-col">
             <Link
               to="/app/perfil-completo"
-              className="mb-4 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-slate-700 transition hover:bg-slate-100"
+              className="mb-4 flex shrink-0 items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-slate-700 transition hover:bg-slate-100"
               title={t('Open complete profile', 'Abrir perfil completo')}
             >
               <UserAvatar name={profile?.name} photoUrl={profile?.photoUrl} size="sm" />
@@ -267,7 +267,7 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
               </div>
             </Link>
 
-            <nav className="space-y-3">
+            <nav className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden pr-1">
               {navSections
                 .filter((section) => section.visible)
                 .map((section) => (
@@ -297,7 +297,7 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
                 ))}
             </nav>
 
-            <div className="mt-auto rounded-2xl border border-slate-200 bg-white/80 p-3 text-slate-700 transition-all duration-200 md:max-h-0 md:overflow-hidden md:opacity-0 md:group-hover/sidebar:max-h-[18rem] md:group-hover/sidebar:opacity-100 md:group-focus-within/sidebar:max-h-[18rem] md:group-focus-within/sidebar:opacity-100">
+            <div className="mt-auto shrink-0 rounded-2xl border border-slate-200 bg-white/80 p-3 text-slate-700 transition-all duration-200 md:max-h-0 md:overflow-hidden md:opacity-0 md:group-hover/sidebar:max-h-[18rem] md:group-hover/sidebar:opacity-100 md:group-focus-within/sidebar:max-h-[18rem] md:group-focus-within/sidebar:opacity-100">
               <div className="space-y-3">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">{t('TZ', 'Fuso')}</p>

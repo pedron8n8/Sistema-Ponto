@@ -20,6 +20,7 @@ type Entry = {
   workedMinutes?: number
   breakMinutes?: number
   overtimeMinutes?: number
+  overtimeStatus?: 'PENDING' | 'APPROVED' | 'REJECTED' | null
 }
 
 type Subordinate = {
@@ -710,6 +711,44 @@ const SupervisorDashboard = () => {
     }
   }
 
+  const submitOvertimeReview = async (decision: 'APPROVE' | 'REJECT') => {
+    if (!token || !review.entry) return
+    const comment = review.comment.trim()
+    if (decision === 'REJECT' && comment.length < 5) {
+      setError(
+        t(
+          'To deny overtime, provide a comment with at least 5 characters.',
+          'Para negar horas extras, informe comentario com pelo menos 5 caracteres.'
+        )
+      )
+      return
+    }
+    setError('')
+    try {
+      await apiFetch(`/supervisor/overtime/${review.entry.id}/${decision === 'APPROVE' ? 'approve' : 'reject'}`, {
+        token,
+        method: 'PATCH',
+        body: comment ? { comment } : {},
+      })
+      // Mantém o modal aberto e libera a decisão do ponto
+      setReview((prev) =>
+        prev.entry
+          ? {
+              ...prev,
+              entry: {
+                ...prev.entry,
+                overtimeStatus: decision === 'APPROVE' ? 'APPROVED' : 'REJECTED',
+                ...(decision === 'REJECT' ? { overtimeMinutes: 0 } : {}),
+              },
+            }
+          : prev
+      )
+      await loadEntries()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Failed to review overtime.', 'Falha ao revisar horas extras'))
+    }
+  }
+
   const handleUpdateTeamWorkSettings = async (userId: string) => {
     if (!token) return
 
@@ -824,7 +863,10 @@ const SupervisorDashboard = () => {
     }
   }
 
-  const canSubmit = review.action === 'APPROVE' || review.comment.trim().length >= 3
+  const canSubmit =
+    review.action === 'APPROVE'
+      ? review.entry?.overtimeStatus !== 'PENDING'
+      : review.comment.trim().length >= 3
 
   return (
     <section className="grid gap-6">
@@ -1593,6 +1635,35 @@ const SupervisorDashboard = () => {
             <p className="mt-2 text-xs text-slate-500">
               {review.entry.user.name} • {formatDateTimeWithTimeZone(review.entry.clockIn, viewTimeZone)}
             </p>
+
+            {review.entry.overtimeStatus === 'PENDING' ? (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <p className="text-xs font-semibold text-amber-800">
+                  {t('Overtime awaiting decision:', 'Horas extras aguardando decisao:')}{' '}
+                  {formatShortDuration(review.entry.overtimeMinutes || 0)}
+                </p>
+                <p className="mt-1 text-xs text-amber-700">
+                  {t(
+                    'Approve or deny the overtime before approving the entry. Denying requires a comment (min. 5 characters).',
+                    'Aprove ou negue as horas extras antes de aprovar o ponto. Negar exige comentario (min. 5 caracteres).'
+                  )}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => submitOvertimeReview('APPROVE')}
+                    className="rounded-full bg-emerald-600 px-3 py-2 text-xs font-semibold text-white"
+                  >
+                    {t('Approve overtime', 'Aprovar horas extras')}
+                  </button>
+                  <button
+                    onClick={() => submitOvertimeReview('REJECT')}
+                    className="rounded-full border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700"
+                  >
+                    {t('Deny overtime', 'Negar horas extras')}
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
             <label className="mt-5 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
               {t('Comment', 'Comentario')}

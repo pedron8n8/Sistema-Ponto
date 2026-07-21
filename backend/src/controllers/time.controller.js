@@ -772,6 +772,10 @@ const clockOut = async (req, res) => {
         location: locationPayload,
         breakMinutes: breakSummary.totalMinutes,
         breakStartedAt: null,
+        // Fecha a pausa que estava aberta no clock-out (se houver).
+        ...(openEntry.breakStartedAt && {
+          breaks: [...(Array.isArray(openEntry.breaks) ? openEntry.breaks : []), { start: openEntry.breakStartedAt, end: clockOutTime }],
+        }),
       },
       include: {
         user: {
@@ -859,6 +863,7 @@ const clockOut = async (req, res) => {
         overtimeMinutes100: overtime.overtimeMinutes100,
         overtimePercent: overtime.overtimePercent,
         bankHoursAccruedMinutes: bankHoursResult.accruedMinutes,
+        overtimeStatus: overtime.overtimeMinutes > 0 ? 'PENDING' : null,
       },
       include: {
         user: {
@@ -1019,6 +1024,7 @@ const resumeBreak = async (req, res) => {
       data: {
         breakMinutes: breakSummary.totalMinutes,
         breakStartedAt: null,
+        breaks: [...(Array.isArray(openEntry.breaks) ? openEntry.breaks : []), { start: openEntry.breakStartedAt, end: now }],
       },
     });
 

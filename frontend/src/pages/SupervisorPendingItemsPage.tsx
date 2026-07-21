@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from 'react-i18next'
+import JourneyModal from '../components/JourneyModal'
 
 type Entry = {
   id: string
@@ -11,6 +12,10 @@ type Entry = {
   notes?: string | null
   status?: string
   workedMinutes?: number | null
+  overtimeMinutes?: number | null
+  overtimeStatus?: 'PENDING' | 'APPROVED' | 'REJECTED' | null
+  breakMinutes?: number | null
+  breaks?: { start: string; end: string }[] | null
   lastAction?: { action: string; comment?: string | null; reviewer?: { name: string } } | null
 }
 
@@ -101,6 +106,7 @@ const SupervisorPendingItemsPage = () => {
   const [actionLoadingByEntry, setActionLoadingByEntry] = useState<Record<string, boolean>>({})
   const [commentByEntry, setCommentByEntry] = useState<Record<string, string>>({})
   const [bulkLoadingByUser, setBulkLoadingByUser] = useState<Record<string, boolean>>({})
+  const [detailEntryId, setDetailEntryId] = useState<string | null>(null)
 
   const [filters, setFilters] = useState({
     status: 'PENDING',
@@ -185,7 +191,7 @@ const SupervisorPendingItemsPage = () => {
       day.entries.push(entry)
       day.totalMinutes += minutes
       group.totalMinutes += minutes
-      if (entry.status === 'PENDING' && entry.clockOut) {
+      if (entry.status === 'PENDING' && entry.clockOut && entry.overtimeStatus !== 'PENDING') {
         group.approvableIds.push(entry.id)
       }
     }
@@ -242,6 +248,47 @@ const SupervisorPendingItemsPage = () => {
       await loadData()
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Could not review pending item.', 'Erro ao revisar item pendente'))
+    } finally {
+      setActionLoadingByEntry((prev) => ({ ...prev, [entryId]: false }))
+    }
+  }
+
+  const handleOvertimeReview = async (entryId: string, decision: 'APPROVE' | 'REJECT') => {
+    if (!token) return
+
+    setNotice('')
+    setError('')
+    setActionLoadingByEntry((prev) => ({ ...prev, [entryId]: true }))
+
+    const comment = (commentByEntry[entryId] || '').trim()
+    if (decision === 'REJECT' && comment.length < 5) {
+      setActionLoadingByEntry((prev) => ({ ...prev, [entryId]: false }))
+      setError(
+        t(
+          'To deny overtime, provide a comment with at least 5 characters.',
+          'Para negar horas extras, informe comentario com pelo menos 5 caracteres.'
+        )
+      )
+      return
+    }
+
+    try {
+      await apiFetch(`/supervisor/overtime/${entryId}/${decision === 'APPROVE' ? 'approve' : 'reject'}`, {
+        token,
+        method: 'PATCH',
+        body: comment ? { comment } : {},
+      })
+
+      setNotice(
+        decision === 'APPROVE'
+          ? t('Overtime approved. You can now review the entry.', 'Horas extras aprovadas. Agora voce pode revisar o ponto.')
+          : t('Overtime denied (not paid). You can now review the entry.', 'Horas extras negadas (nao pagas). Agora voce pode revisar o ponto.')
+      )
+
+      setCommentByEntry((prev) => ({ ...prev, [entryId]: '' }))
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Could not review overtime.', 'Erro ao revisar horas extras'))
     } finally {
       setActionLoadingByEntry((prev) => ({ ...prev, [entryId]: false }))
     }
@@ -452,17 +499,51 @@ const SupervisorPendingItemsPage = () => {
                         <div className="mt-2 space-y-3">
                           {day.entries.map((entry) => (
                             <div key={entry.id} className={entryRowClass(entry)}>
-                              <p className="text-xs text-slate-600">
+                              <button
+                                type="button"
+                                onClick={() => setDetailEntryId(entry.id)}
+                                title={t('View journey details', 'Ver detalhes da jornada')}
+                                className="text-left text-xs text-slate-600 underline decoration-dotted underline-offset-2 hover:text-slate-900"
+                              >
                                 {t('Clock-in:', 'Entrada:')} {new Date(entry.clockIn).toLocaleString(locale)}
                                 {entry.clockOut
                                   ? ` | ${t('Clock-out:', 'Saida:')} ${new Date(entry.clockOut).toLocaleString(locale)}`
                                   : ` | ${t('Open', 'Em aberto')}`}
                                 {` | ${t('Worked:', 'Trabalhado:')} ${fmtHM(entryMinutes(entry))}`}
-                              </p>
+                              </button>
                               {entry.notes ? <p className="mt-1 text-xs text-slate-600">{t('Notes:', 'Notas:')} {entry.notes}</p> : null}
 
-                              {entry.status === 'PENDING' && entry.lastAction?.action !== 'EDIT_REQUESTED' ? (
+                              {(entry.overtimeMinutes ?? 0) > 0 || entry.overtimeStatus ? (
+                                <p className="mt-2 text-xs">
+                                  <span
+                                    className={
+                                      entry.overtimeStatus === 'APPROVED'
+                                        ? 'rounded-full bg-emerald-100 px-3 py-1 font-semibold text-emerald-700'
+                                        : entry.overtimeStatus === 'REJECTED'
+                                          ? 'rounded-full bg-rose-100 px-3 py-1 font-semibold text-rose-700'
+                                          : 'rounded-full bg-amber-100 px-3 py-1 font-semibold text-amber-700'
+                                    }
+                                  >
+                                    {t('Overtime:', 'Horas extras:')} {fmtHM(entry.overtimeMinutes || 0)}
+                                    {' — '}
+                                    {entry.overtimeStatus === 'APPROVED'
+                                      ? t('approved', 'aprovadas')
+                                      : entry.overtimeStatus === 'REJECTED'
+                                        ? t('denied (not paid)', 'negadas (nao pagas)')
+                                        : t('awaiting decision', 'aguardando decisao')}
+                                  </span>
+                                </p>
+                              ) : null}
+
+                              {entry.status === 'PENDING' ? (
                                 <>
+                                  {entry.lastAction?.action === 'EDIT_REQUESTED' ? (
+                                    <p className="mt-2 text-xs font-semibold text-amber-700">
+                                      {t('Sent for edit', 'Enviado para ajuste')}
+                                      {entry.lastAction?.comment ? ` — ${entry.lastAction.comment}` : ''}
+                                    </p>
+                                  ) : null}
+
                                   <textarea
                                     value={commentByEntry[entry.id] || ''}
                                     onChange={(event) =>
@@ -478,10 +559,34 @@ const SupervisorPendingItemsPage = () => {
                                     className="mt-3 h-20 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs"
                                   />
 
+                                  {entry.overtimeStatus === 'PENDING' ? (
+                                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                                      <button
+                                        onClick={() => handleOvertimeReview(entry.id, 'APPROVE')}
+                                        disabled={Boolean(actionLoadingByEntry[entry.id])}
+                                        className="rounded-full bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                                      >
+                                        {t('Approve OT', 'Aprovar HE')}
+                                      </button>
+
+                                      <button
+                                        onClick={() => handleOvertimeReview(entry.id, 'REJECT')}
+                                        disabled={Boolean(actionLoadingByEntry[entry.id])}
+                                        className="rounded-full border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
+                                      >
+                                        {t('Deny OT', 'Negar HE')}
+                                      </button>
+
+                                      <span className="text-xs text-amber-700">
+                                        {t('Decide the overtime before reviewing the entry.', 'Decida as horas extras antes de revisar o ponto.')}
+                                      </span>
+                                    </div>
+                                  ) : null}
+
                                   <div className="mt-3 flex flex-wrap gap-2">
                                     <button
                                       onClick={() => handleReview(entry.id, 'APPROVE')}
-                                      disabled={Boolean(actionLoadingByEntry[entry.id])}
+                                      disabled={Boolean(actionLoadingByEntry[entry.id]) || entry.overtimeStatus === 'PENDING'}
                                       className="rounded-full bg-teal-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
                                     >
                                       {t('Approve', 'Aprovar')}
@@ -497,7 +602,7 @@ const SupervisorPendingItemsPage = () => {
 
                                     <button
                                       onClick={() => handleReview(entry.id, 'REJECT')}
-                                      disabled={Boolean(actionLoadingByEntry[entry.id])}
+                                      disabled={Boolean(actionLoadingByEntry[entry.id]) || entry.overtimeStatus === 'PENDING'}
                                       className="rounded-full border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
                                     >
                                       {t('Reject', 'Rejeitar')}
@@ -506,15 +611,8 @@ const SupervisorPendingItemsPage = () => {
                                 </>
                               ) : (
                                 <p className="mt-3 text-xs font-semibold text-slate-700">
-                                  {entry.status === 'APPROVED'
-                                    ? t('Approved', 'Aprovado')
-                                    : entry.status === 'REJECTED'
-                                      ? t('Rejected', 'Rejeitado')
-                                      : t('Sent for edit', 'Enviado para ajuste')}
+                                  {entry.status === 'APPROVED' ? t('Approved', 'Aprovado') : t('Rejected', 'Rejeitado')}
                                   {entry.status === 'REJECTED' && entry.lastAction?.action === 'REJECTED' && entry.lastAction.comment
-                                    ? ` — ${entry.lastAction.comment}`
-                                    : ''}
-                                  {entry.status === 'PENDING' && entry.lastAction?.action === 'EDIT_REQUESTED' && entry.lastAction.comment
                                     ? ` — ${entry.lastAction.comment}`
                                     : ''}
                                 </p>
@@ -531,6 +629,14 @@ const SupervisorPendingItemsPage = () => {
           )}
         </div>
       </div>
+
+      {detailEntryId
+        ? (() => {
+            const de = entries.find((e) => e.id === detailEntryId)
+            if (!de) return null
+            return <JourneyModal entry={de} onClose={() => setDetailEntryId(null)} t={t} locale={locale} />
+          })()
+        : null}
     </section>
   )
 }

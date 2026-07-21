@@ -237,6 +237,26 @@ const PT_TO_EN_ERROR_RULES: Array<{ pattern: RegExp; replacement: string }> = [
     replacement: 'Only administrators can issue public API tokens.',
   },
   {
+    pattern: /decida\s+as\s+horas\s+extras/i,
+    replacement: 'Decide the overtime (approve or deny) before completing the review.',
+  },
+  {
+    pattern: /horas\s+extras\s+aprovadas/i,
+    replacement: 'Overtime approved successfully.',
+  },
+  {
+    pattern: /horas\s+extras\s+negadas/i,
+    replacement: 'Overtime denied.',
+  },
+  {
+    pattern: /coment[aá]rio\s+obrigat[óo]rio\s+para\s+negar\s+horas\s+extras/i,
+    replacement: 'A comment (min. 5 characters) is required to deny overtime.',
+  },
+  {
+    pattern: /n[aã]o\s+possui\s+horas\s+extras\s+aguardando/i,
+    replacement: 'This entry has no overtime awaiting decision.',
+  },
+  {
     pattern: /registro\s+aprovado\s+com\s+sucesso|registro\s+aprovado/i,
     replacement: 'Entry approved successfully.',
   },
@@ -478,7 +498,9 @@ export const apiFetch = async <T>(path: string, options: RequestOptions = {}): P
     const payload = await readJsonResponse(res).catch(() => ({}))
     const errorMessage = translateApiMessage(payload || localizeMessage('Request failed.', 'Erro na requisicao'))
     toast.error(errorMessage)
-    throw new Error(errorMessage)
+    const error = new Error(errorMessage) as Error & { status?: number }
+    error.status = res.status
+    throw error
   }
 
   return (await readJsonResponse(res)) as T

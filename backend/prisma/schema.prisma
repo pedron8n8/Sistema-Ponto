@@ -163,11 +163,13 @@ model TimeEntry {
   workedMinutes Int         @default(0)
   breakMinutes Int         @default(0)
   breakStartedAt DateTime?
+  breaks      Json?         // [{ start: ISO, end: ISO }] intervalos de pausa fechados
   overtimeMinutes Int       @default(0)
   overtimeMinutes50 Int     @default(0)
   overtimeMinutes100 Int    @default(0)
   overtimePercent Int       @default(0)
   bankHoursAccruedMinutes Int @default(0)
+  overtimeStatus EntryStatus? // null = sem HE a decidir; decisão prévia obrigatória antes de aprovar/rejeitar o ponto
   status      EntryStatus   @default(PENDING)
   logs        ApprovalLog[]
   bankHoursEntries BankHoursEntry[]

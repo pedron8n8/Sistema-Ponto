@@ -69,7 +69,7 @@ const recalculateUserDay = async ({ userId, date }) => {
       clockOut: { not: null },
     },
     orderBy: { clockIn: 'asc' },
-    select: { id: true, clockIn: true, clockOut: true, breakMinutes: true },
+    select: { id: true, clockIn: true, clockOut: true, breakMinutes: true, status: true, overtimeStatus: true },
   });
 
   let workedMinutesBeforeEntry = 0;
@@ -87,6 +87,31 @@ const recalculateUserDay = async ({ userId, date }) => {
       breakMinutes: entry.breakMinutes,
     });
 
+    // HE negada é definitiva: mantém efeito zerado e não re-credita banco de horas,
+    // mesmo que o recálculo do dia volte a produzir horas extras para este registro.
+    if (entry.overtimeStatus === 'REJECTED') {
+      await prisma.timeEntry.update({
+        where: { id: entry.id },
+        data: {
+          workedMinutes: overtime.workedMinutes,
+          overtimeMinutes: 0,
+          overtimeMinutes50: 0,
+          overtimeMinutes100: 0,
+          overtimePercent: 0,
+          bankHoursAccruedMinutes: 0,
+        },
+      });
+
+      workedMinutesBeforeEntry += overtime.workedMinutes;
+      results.push({
+        id: entry.id,
+        workedMinutes: overtime.workedMinutes,
+        overtimeMinutes: 0,
+        bankHoursAccruedMinutes: 0,
+      });
+      continue;
+    }
+
     const bankHoursResult = await accrueBankHours({
       userId,
       overtimeMinutes: overtime.overtimeMinutes,
@@ -102,6 +127,14 @@ const recalculateUserDay = async ({ userId, date }) => {
         overtimeMinutes100: overtime.overtimeMinutes100,
         overtimePercent: overtime.overtimePercent,
         bankHoursAccruedMinutes: bankHoursResult.accruedMinutes,
+        // Decisão de HE: aprovação sobrevive a mudanças de valor; registros já aprovados
+        // (edição/criação do HR) auto-aprovam a HE; sem HE, limpa a pendência.
+        overtimeStatus:
+          overtime.overtimeMinutes > 0
+            ? entry.overtimeStatus === 'APPROVED' || entry.status !== 'PENDING'
+              ? 'APPROVED'
+              : 'PENDING'
+            : null,
       },
     });
 

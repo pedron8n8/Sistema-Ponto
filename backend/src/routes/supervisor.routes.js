@@ -5,6 +5,8 @@ const {
   approveEntry,
   approveEntriesBulk,
   rejectEntry,
+  approveOvertime,
+  rejectOvertime,
   requestEdit,
   getEntryDetails,
   getTeamMembers,
@@ -80,6 +82,20 @@ router.post('/approve-bulk', approveEntriesBulk);
  * Body: { comment: string } (obrigatório)
  */
 router.patch('/reject/:id', rejectEntry);
+
+/**
+ * PATCH /supervisor/overtime/:id/approve
+ * Aprova as horas extras de um registro (pré-requisito para revisar o ponto)
+ * Body: { comment?: string }
+ */
+router.patch('/overtime/:id/approve', approveOvertime);
+
+/**
+ * PATCH /supervisor/overtime/:id/reject
+ * Nega as horas extras de um registro (zera efeito e reverte banco de horas)
+ * Body: { comment: string } (obrigatório)
+ */
+router.patch('/overtime/:id/reject', rejectOvertime);
 
 /**
  * PATCH /supervisor/request-edit/:id

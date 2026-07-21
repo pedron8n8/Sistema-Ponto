@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from 'react-i18next'
+import JourneyModal from '../components/JourneyModal'
 
 type EntryStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
 type ReviewAction = 'APPROVE' | 'REJECT' | 'REQUEST_EDIT'
@@ -17,6 +18,10 @@ type TimeEntry = {
   clockIn: string
   clockOut: string | null
   notes?: string | null
+  overtimeMinutes?: number | null
+  overtimeStatus?: 'PENDING' | 'APPROVED' | 'REJECTED' | null
+  breakMinutes?: number | null
+  breaks?: { start: string; end: string }[] | null
 }
 
 type EntriesStats = {
@@ -64,6 +69,7 @@ const AdminPendingApprovalsPage = () => {
   const [entryStats, setEntryStats] = useState<EntriesStats>(defaultStats)
   const [entryActionLoadingById, setEntryActionLoadingById] = useState<Record<string, boolean>>({})
   const [entryCommentById, setEntryCommentById] = useState<Record<string, string>>({})
+  const [detailEntryId, setDetailEntryId] = useState<string | null>(null)
 
   const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([])
   const [vacationActionLoadingById, setVacationActionLoadingById] = useState<Record<string, boolean>>({})
@@ -155,6 +161,51 @@ const AdminPendingApprovalsPage = () => {
         err instanceof Error
           ? err.message
           : t('Could not review time entry.', 'Erro ao revisar registro de ponto')
+      )
+    } finally {
+      setEntryActionLoadingById((prev) => ({ ...prev, [entryId]: false }))
+    }
+  }
+
+  const handleReviewOvertime = async (entryId: string, decision: 'APPROVE' | 'REJECT') => {
+    if (!token) return
+
+    const comment = (entryCommentById[entryId] || '').trim()
+
+    if (decision === 'REJECT' && comment.length < 5) {
+      setError(
+        t(
+          'To deny overtime, provide a comment with at least 5 characters.',
+          'Para negar horas extras, informe comentario com pelo menos 5 caracteres.'
+        )
+      )
+      return
+    }
+
+    setError('')
+    setNotice('')
+    setEntryActionLoadingById((prev) => ({ ...prev, [entryId]: true }))
+
+    try {
+      await apiFetch(`/supervisor/overtime/${entryId}/${decision === 'APPROVE' ? 'approve' : 'reject'}`, {
+        token,
+        method: 'PATCH',
+        body: comment ? { comment } : {},
+      })
+
+      setNotice(
+        decision === 'APPROVE'
+          ? t('Overtime approved. You can now review the entry.', 'Horas extras aprovadas. Agora voce pode revisar o ponto.')
+          : t('Overtime denied (not paid). You can now review the entry.', 'Horas extras negadas (nao pagas). Agora voce pode revisar o ponto.')
+      )
+
+      setEntryCommentById((prev) => ({ ...prev, [entryId]: '' }))
+      await loadData()
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : t('Could not review overtime.', 'Erro ao revisar horas extras')
       )
     } finally {
       setEntryActionLoadingById((prev) => ({ ...prev, [entryId]: false }))
@@ -270,13 +321,41 @@ const AdminPendingApprovalsPage = () => {
               <div key={entry.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
                 <p className="text-sm font-semibold text-slate-900">{entry.user.name}</p>
                 <p className="text-xs text-slate-500">{entry.user.email}</p>
-                <p className="mt-2 text-xs text-slate-600">
+                <button
+                  type="button"
+                  onClick={() => setDetailEntryId(entry.id)}
+                  title={t('View journey details', 'Ver detalhes da jornada')}
+                  className="mt-2 text-left text-xs text-slate-600 underline decoration-dotted underline-offset-2 hover:text-slate-900"
+                >
                   {t('Clock-in:', 'Entrada:')} {new Date(entry.clockIn).toLocaleString(locale)}
                   {entry.clockOut
                     ? ` | ${t('Clock-out:', 'Saida:')} ${new Date(entry.clockOut).toLocaleString(locale)}`
                     : ` | ${t('Open', 'Em aberto')}`}
-                </p>
+                </button>
                 {entry.notes ? <p className="mt-1 text-xs text-slate-600">{t('Notes:', 'Notas:')} {entry.notes}</p> : null}
+
+                {(entry.overtimeMinutes ?? 0) > 0 || entry.overtimeStatus ? (
+                  <p className="mt-2 text-xs">
+                    <span
+                      className={
+                        entry.overtimeStatus === 'APPROVED'
+                          ? 'rounded-full bg-emerald-100 px-3 py-1 font-semibold text-emerald-700'
+                          : entry.overtimeStatus === 'REJECTED'
+                            ? 'rounded-full bg-rose-100 px-3 py-1 font-semibold text-rose-700'
+                            : 'rounded-full bg-amber-100 px-3 py-1 font-semibold text-amber-700'
+                      }
+                    >
+                      {t('Overtime:', 'Horas extras:')} {Math.floor((entry.overtimeMinutes || 0) / 60)}h{' '}
+                      {String((entry.overtimeMinutes || 0) % 60).padStart(2, '0')}m
+                      {' — '}
+                      {entry.overtimeStatus === 'APPROVED'
+                        ? t('approved', 'aprovadas')
+                        : entry.overtimeStatus === 'REJECTED'
+                          ? t('denied (not paid)', 'negadas (nao pagas)')
+                          : t('awaiting decision', 'aguardando decisao')}
+                    </span>
+                  </p>
+                ) : null}
 
                 <textarea
                   value={entryCommentById[entry.id] || ''}
@@ -293,10 +372,34 @@ const AdminPendingApprovalsPage = () => {
                   className="mt-3 h-20 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs"
                 />
 
+                {entry.overtimeStatus === 'PENDING' ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => handleReviewOvertime(entry.id, 'APPROVE')}
+                      disabled={Boolean(entryActionLoadingById[entry.id])}
+                      className="rounded-full bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                    >
+                      {t('Approve overtime', 'Aprovar horas extras')}
+                    </button>
+
+                    <button
+                      onClick={() => handleReviewOvertime(entry.id, 'REJECT')}
+                      disabled={Boolean(entryActionLoadingById[entry.id])}
+                      className="rounded-full border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
+                    >
+                      {t('Deny overtime', 'Negar horas extras')}
+                    </button>
+
+                    <span className="text-xs text-amber-700">
+                      {t('Decide the overtime before reviewing the entry.', 'Decida as horas extras antes de revisar o ponto.')}
+                    </span>
+                  </div>
+                ) : null}
+
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
                     onClick={() => handleReviewEntry(entry.id, 'APPROVE')}
-                    disabled={Boolean(entryActionLoadingById[entry.id])}
+                    disabled={Boolean(entryActionLoadingById[entry.id]) || entry.overtimeStatus === 'PENDING'}
                     className="rounded-full bg-teal-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
                   >
                     {t('Approve', 'Aprovar')}
@@ -312,7 +415,7 @@ const AdminPendingApprovalsPage = () => {
 
                   <button
                     onClick={() => handleReviewEntry(entry.id, 'REJECT')}
-                    disabled={Boolean(entryActionLoadingById[entry.id])}
+                    disabled={Boolean(entryActionLoadingById[entry.id]) || entry.overtimeStatus === 'PENDING'}
                     className="rounded-full border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
                   >
                     {t('Reject', 'Rejeitar')}
@@ -385,6 +488,14 @@ const AdminPendingApprovalsPage = () => {
           )}
         </div>
       </div>
+
+      {detailEntryId
+        ? (() => {
+            const de = entries.find((e) => e.id === detailEntryId)
+            if (!de) return null
+            return <JourneyModal entry={de} onClose={() => setDetailEntryId(null)} t={t} locale={locale} />
+          })()
+        : null}
     </section>
   )
 }

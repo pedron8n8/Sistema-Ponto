@@ -111,6 +111,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       })
       setProfileError(null)
     } catch (err) {
+      const status = err instanceof Error ? (err as Error & { status?: number }).status : undefined
+      if (status === 401 || status === 403) {
+        await signOut()
+        return
+      }
+
       setProfile(null)
       setProfileError(
         err instanceof Error
