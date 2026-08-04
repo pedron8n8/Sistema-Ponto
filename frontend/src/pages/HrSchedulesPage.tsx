@@ -31,6 +31,55 @@ const formatMinutesToHours = (minutes?: number) => {
   return `${hours}:${String(mins).padStart(2, '0')}`
 }
 
+const to12h = (hhmm: string) => {
+  const m = hhmm.match(/^(\d{2}):(\d{2})$/)
+  if (!m) return { hour: '', minute: '', period: 'AM' as 'AM' | 'PM' }
+  let h = Number(m[1])
+  const period: 'AM' | 'PM' = h >= 12 ? 'PM' : 'AM'
+  h = h % 12 || 12
+  return { hour: String(h), minute: m[2], period }
+}
+
+const from12h = (hour: string, minute: string, period: 'AM' | 'PM') => {
+  if (!hour) return '' // hora vazia = campo limpo
+  let h = Number(hour) % 12
+  if (period === 'PM') h += 12
+  return `${String(h).padStart(2, '0')}:${(minute || '00').padStart(2, '0')}`
+}
+
+const HOURS_12 = Array.from({ length: 12 }, (_, i) => String(i + 1))
+const MINUTES_60 = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
+const selectClass = 'rounded-full border border-slate-200 bg-white px-2 py-1 text-xs'
+
+const TimeField12h = ({ value, onChange }: { value: string; onChange: (next: string) => void }) => {
+  const { hour, minute, period } = to12h(value)
+  return (
+    <div className="flex items-center gap-1">
+      <select className={selectClass} value={hour} onChange={(e) => onChange(from12h(e.target.value, minute, period))}>
+        <option value="">--</option>
+        {HOURS_12.map((h) => (
+          <option key={h} value={h}>{h}</option>
+        ))}
+      </select>
+      <span className="text-slate-400">:</span>
+      <select className={selectClass} value={minute} onChange={(e) => onChange(from12h(hour, e.target.value, period))}>
+        <option value="">--</option>
+        {MINUTES_60.map((mm) => (
+          <option key={mm} value={mm}>{mm}</option>
+        ))}
+      </select>
+      <select
+        className={selectClass}
+        value={period}
+        onChange={(e) => onChange(from12h(hour, minute, e.target.value as 'AM' | 'PM'))}
+      >
+        <option value="AM">AM</option>
+        <option value="PM">PM</option>
+      </select>
+    </div>
+  )
+}
+
 const parseHoursToMinutes = (value: string) => {
   const normalized = value.trim()
   if (!normalized) return null
@@ -222,46 +271,63 @@ const HrSchedulesPage = () => {
                   </span>
                 </div>
 
-                <div className="mt-3 grid gap-2 text-xs text-slate-500 md:grid-cols-6 md:items-center">
-                  <input
-                    type="text"
-                    value={formByUser[member.id]?.contractDailyHours || ''}
-                    onChange={(e) => updateField(member.id, 'contractDailyHours', e.target.value)}
-                    placeholder={t('Workday hh:mm', 'Jornada hh:mm')}
-                    className="w-full rounded-full border border-slate-200 bg-white px-3 py-1 text-xs"
-                  />
-                  <input
-                    type="time"
-                    value={formByUser[member.id]?.workdayStartTime || ''}
-                    onChange={(e) => updateField(member.id, 'workdayStartTime', e.target.value)}
-                    className="w-full rounded-full border border-slate-200 bg-white px-3 py-1 text-xs"
-                  />
-                  <input
-                    type="time"
-                    value={formByUser[member.id]?.workdayEndTime || ''}
-                    onChange={(e) => updateField(member.id, 'workdayEndTime', e.target.value)}
-                    className="w-full rounded-full border border-slate-200 bg-white px-3 py-1 text-xs"
-                  />
-                  <select
-                    value={formByUser[member.id]?.timeZone || 'America/Chicago'}
-                    onChange={(e) => updateField(member.id, 'timeZone', e.target.value)}
-                    className="w-full rounded-full border border-slate-200 bg-white px-3 py-1 text-xs"
-                  >
-                    {TIME_ZONE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={formByUser[member.id]?.hourlyRate || ''}
-                    onChange={(e) => updateField(member.id, 'hourlyRate', e.target.value)}
-                    placeholder={t('Hourly rate', 'Valor/hora')}
-                    className="w-full rounded-full border border-slate-200 bg-white px-3 py-1 text-xs"
-                  />
+                <div className="mt-3 grid gap-2 text-xs text-slate-500 md:grid-cols-6 md:items-end">
+                  <label className="grid gap-1">
+                    <span className="text-[10px] uppercase tracking-wide text-slate-500">
+                      {t('Daily workday (hh:mm)', 'Jornada diária (hh:mm)')}
+                    </span>
+                    <input
+                      type="text"
+                      value={formByUser[member.id]?.contractDailyHours || ''}
+                      onChange={(e) => updateField(member.id, 'contractDailyHours', e.target.value)}
+                      placeholder={t('Workday hh:mm', 'Jornada hh:mm')}
+                      className="w-full rounded-full border border-slate-200 bg-white px-3 py-1 text-xs"
+                    />
+                  </label>
+                  <div className="grid gap-1">
+                    <span className="text-[10px] uppercase tracking-wide text-slate-500">{t('Start', 'Início')}</span>
+                    <TimeField12h
+                      value={formByUser[member.id]?.workdayStartTime || ''}
+                      onChange={(next) => updateField(member.id, 'workdayStartTime', next)}
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <span className="text-[10px] uppercase tracking-wide text-slate-500">{t('End', 'Fim')}</span>
+                    <TimeField12h
+                      value={formByUser[member.id]?.workdayEndTime || ''}
+                      onChange={(next) => updateField(member.id, 'workdayEndTime', next)}
+                    />
+                  </div>
+                  <label className="grid gap-1">
+                    <span className="text-[10px] uppercase tracking-wide text-slate-500">
+                      {t('Timezone', 'Fuso horário')}
+                    </span>
+                    <select
+                      value={formByUser[member.id]?.timeZone || 'America/Chicago'}
+                      onChange={(e) => updateField(member.id, 'timeZone', e.target.value)}
+                      className="w-full rounded-full border border-slate-200 bg-white px-3 py-1 text-xs"
+                    >
+                      {TIME_ZONE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="grid gap-1">
+                    <span className="text-[10px] uppercase tracking-wide text-slate-500">
+                      {t('Hourly rate', 'Valor/hora')}
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formByUser[member.id]?.hourlyRate || ''}
+                      onChange={(e) => updateField(member.id, 'hourlyRate', e.target.value)}
+                      placeholder={t('Hourly rate', 'Valor/hora')}
+                      className="w-full rounded-full border border-slate-200 bg-white px-3 py-1 text-xs"
+                    />
+                  </label>
                   <button
                     onClick={() => handleSave(member.id)}
                     disabled={Boolean(savingByUser[member.id])}

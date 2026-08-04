@@ -185,11 +185,11 @@ const handleSlackOAuthCallback = async (req, res) => {
       },
     });
 
-    console.log(`✅ Slack vinculado com sucesso: userId=${pending.userId}, slackUserId=${slackUserId}, name=${slackUserName}, team=${slackTeamName}`);
+    console.log(`✅ Slack linked successfully: userId=${pending.userId}, slackUserId=${slackUserId}, name=${slackUserName}, team=${slackTeamName}`);
 
     return res.redirect(`${profileUrl}?slack=success`);
   } catch (err) {
-    console.error('❌ Erro no callback do Slack OAuth:', err);
+    console.error('❌ Slack OAuth callback error:', err);
     return res.redirect(`${profileUrl}?slack=error&reason=internal`);
   }
 };

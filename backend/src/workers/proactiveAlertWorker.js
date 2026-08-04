@@ -600,7 +600,7 @@ const processDispatchJob = async (job) => {
   const { alertPayload, dedupeKey } = job.data || {};
 
   if (!alertPayload) {
-    throw new Error('Payload do alerta ausente no job de dispatch.');
+    throw new Error('Alert payload missing in dispatch job.');
   }
 
   try {
@@ -664,14 +664,14 @@ const buildShiftEndSupervisorEmail = ({ phase, memberName, expectedEndAt, timeZo
   if (phase === 'PRE_END') {
     const minutesLeft = Math.max(1, remainingMinutes);
     return {
-      subject: `[SystemaPonto] ${memberName} esta proximo do fim de turno`,
-      text: `${memberName} esta a ~${minutesLeft} min do fim do turno (previsto para ${formattedEnd}). Um lembrete foi enviado para ajudar a evitar horas extras.`,
+      subject: `[SystemaPonto] ${memberName} is approaching end of shift`,
+      text: `${memberName} is ${minutesLeft} min away from end of shift (${formattedEnd}). A heads-up was sent to help avoid overtime.`,
     };
   }
 
   return {
-    subject: `[SystemaPonto] ${memberName} nao registrou saida`,
-    text: `${memberName} atingiu o horario previsto de fim de turno (${formattedEnd}) e ainda esta com o ponto aberto. Um lembrete de saida foi enviado.`,
+    subject: `[SystemaPonto] ${memberName} has not clocked out`,
+    text: `${memberName} has reached the scheduled end of shift (${formattedEnd}) and is still clocked in. A reminder to clock out was sent.`,
   };
 };
 
@@ -864,15 +864,15 @@ const buildClockInSupervisorEmail = ({ phase, memberName, workdayStartTime, minu
   if (phase === 'PRE_START') {
     const minutesLeft = Math.max(1, -minutesFromStart);
     return {
-      subject: `[SystemaPonto] ${memberName} tem turno comecando em breve`,
-      text: `${memberName} tem inicio de turno em ~${minutesLeft} min (as ${workdayStartTime}) e ainda nao registrou entrada. Um lembrete foi enviado.`,
+      subject: `[SystemaPonto] ${memberName} has a shift starting soon`,
+      text: `${memberName} has a shift starting in ~${minutesLeft} min (at ${workdayStartTime}) and has not clocked in yet. A reminder was sent.`,
     };
   }
 
   const minutesLate = Math.max(1, minutesFromStart);
   return {
-    subject: `[SystemaPonto] ${memberName} nao registrou entrada`,
-    text: `${memberName} ainda nao registrou entrada. O turno estava previsto para iniciar as ${workdayStartTime} (~${minutesLate} min de atraso). Um lembrete foi enviado.`,
+    subject: `[SystemaPonto] ${memberName} has not clocked in`,
+    text: `${memberName} has not clocked in yet. The shift was scheduled to start at ${workdayStartTime} (~${minutesLate} min late). A reminder was sent.`,
   };
 };
 
@@ -901,11 +901,11 @@ const processClockInDispatchJob = async (job) => {
 
     const results = [{ target: 'member', ...result }];
 
-    // Notifica o supervisor por e-mail (Resend), assim como na mensagem do Slack.
+    // Notify the supervisor by email (Resend), same as the Slack message.
     if (payload.supervisor?.email) {
       const supervisorEmail = buildClockInSupervisorEmail({
         phase: payload.phase,
-        memberName: payload.member.name || 'Colaborador',
+        memberName: payload.member.name || 'Team member',
         workdayStartTime: payload.workdayStartTime,
         minutesFromStart: payload.minutesFromStart,
       });
@@ -965,11 +965,11 @@ const processShiftEndDispatchJob = async (job) => {
       results.push({ target: 'supervisor', ...supervisorResult });
     }
 
-    // Notifica o supervisor por e-mail (Resend), assim como na mensagem do Slack.
+    // Notify the supervisor by email (Resend), same as the Slack message.
     if (payload.supervisor?.email) {
       const supervisorEmail = buildShiftEndSupervisorEmail({
         phase: payload.phase,
-        memberName: payload.member.name || 'Colaborador',
+        memberName: payload.member.name || 'Team member',
         expectedEndAt: payload.expectedEndAt,
         timeZone: payload.timeZone,
         remainingMinutes: payload.remainingMinutes,
@@ -985,7 +985,7 @@ const processShiftEndDispatchJob = async (job) => {
 
     const memberDelivered = results.find((r) => r.target === 'member')?.delivered;
     if (!memberDelivered) {
-      throw new Error(`Falha ao enviar DM Slack ao membro: ${results.find((r) => r.target === 'member')?.reason || 'UNKNOWN'}`);
+      throw new Error(`Failed to send Slack DM to member: ${results.find((r) => r.target === 'member')?.reason || 'UNKNOWN'}`);
     }
 
     return {
@@ -1050,7 +1050,7 @@ const createProactiveAlertWorker = async () => {
     worker.on('completed', (job, result) => {
       if (job.name === SCAN_JOB_NAME) {
         if (result?.enqueued > 0) {
-          console.log(`🔔 Proactive scan: ${result.enqueued} alertas enfileirados`);
+          console.log(`🔔 Proactive scan: ${result.enqueued} alerts enqueued`);
         }
         return;
       }
@@ -1060,11 +1060,11 @@ const createProactiveAlertWorker = async () => {
         }
         return;
       }
-        console.log(`✅ Proactive alert job ${job.id} concluído.`);
+        console.log(`✅ Proactive alert job ${job.id} completed.`);
     });
 
   worker.on('failed', (job, err) => {
-    console.error(`❌ Proactive alert job ${job?.id} falhou:`, err.message);
+    console.error(`❌ Proactive alert job ${job?.id} failed:`, err.message);
   });
 
   return worker;
