@@ -3,7 +3,7 @@
 const mockPrisma = require('../mocks/prisma.mock');
 
 // Mock dos módulos
-jest.mock('../../src/config/database', () => mockPrisma);
+jest.mock('../../src/config/database', () => ({ prisma: mockPrisma }));
 
 const {
   getTeamPendingEntries,
@@ -11,6 +11,7 @@ const {
   rejectEntry,
   requestEdit,
   getTeamMembers,
+  getTeamPresenceSnapshot,
 } = require('../../src/controllers/supervisor.controller');
 
 describe('Supervisor Controller', () => {
@@ -158,7 +159,7 @@ describe('Supervisor Controller', () => {
       );
     });
 
-    it('should return 400 if entry is not pending', async () => {
+    it('should return 409 if entry is not pending', async () => {
       mockReq.params = { id: 'entry-123' };
       mockPrisma.timeEntry.findUnique.mockResolvedValue({
         id: 'entry-123',
@@ -172,16 +173,16 @@ describe('Supervisor Controller', () => {
 
       await approveEntry(mockReq, mockRes);
 
-      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.status).toHaveBeenCalledWith(409);
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
-          error: 'Bad Request',
-          message: expect.stringContaining('não pode ser aprovado'),
+          code: 'ENTRY_NOT_PENDING',
+          message: expect.stringContaining('já está com status'),
         })
       );
     });
 
-    it('should return 400 if entry has no clock-out', async () => {
+    it('should return 422 if entry has no clock-out', async () => {
       mockReq.params = { id: 'entry-123' };
       mockPrisma.timeEntry.findUnique.mockResolvedValue({
         id: 'entry-123',
@@ -195,10 +196,10 @@ describe('Supervisor Controller', () => {
 
       await approveEntry(mockReq, mockRes);
 
-      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.status).toHaveBeenCalledWith(422);
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
-          error: 'Bad Request',
+          code: 'ENTRY_OPEN',
           message: expect.stringContaining('sem clock-out'),
         })
       );
@@ -387,6 +388,126 @@ describe('Supervisor Controller', () => {
           totalMembers: 1,
         })
       );
+    });
+  });
+
+  describe('getTeamPresenceSnapshot', () => {
+    const member = {
+      id: 'member-1',
+      name: 'Member 1',
+      email: 'member1@test.com',
+      role: 'MEMBER',
+      timeZone: 'America/Sao_Paulo',
+      contractDailyMinutes: 480,
+      bankHoursLimitMinutes: 0,
+      workdayStartTime: '08:00',
+      workdayEndTime: '18:00',
+      supervisor: { id: 'supervisor-123', name: 'Sup', email: 'supervisor@test.com' },
+    };
+
+    // buildTeamPresenceSnapshot faz 3 timeEntry.findMany em Promise.all, nesta ordem:
+    // openEntries, todayEntries, latestEntriesWithLocation.
+    const mockEntries = ({ open = [], today = [] }) => {
+      mockPrisma.user.findMany.mockResolvedValue([member]);
+      mockPrisma.timeEntry.findMany
+        .mockResolvedValueOnce(open)
+        .mockResolvedValueOnce(today)
+        .mockResolvedValueOnce([]);
+    };
+
+    const firstMember = () => mockRes.json.mock.calls[0][0];
+
+    it('reports ON_BREAK when the open entry has breakStartedAt', async () => {
+      const clockIn = new Date(Date.now() - 3 * 60 * 60 * 1000);
+      const breakStartedAt = new Date(Date.now() - 10 * 60 * 1000);
+      const openEntry = {
+        id: 'entry-1',
+        userId: member.id,
+        clockIn,
+        breakStartedAt,
+        breakMinutes: 0,
+        location: null,
+        updatedAt: clockIn,
+      };
+
+      mockEntries({ open: [openEntry], today: [{ ...openEntry, clockOut: null, workedMinutes: 0 }] });
+
+      await getTeamPresenceSnapshot(mockReq, mockRes);
+
+      const payload = firstMember();
+      expect(payload.members[0].status).toBe('ON_BREAK');
+      expect(payload.members[0].since).toBe(breakStartedAt);
+      expect(payload.summary.onBreak).toBe(1);
+      expect(payload.summary.present).toBe(0);
+    });
+
+    it('reports PRESENT when the open entry has no active break', async () => {
+      const clockIn = new Date(Date.now() - 3 * 60 * 60 * 1000);
+      const openEntry = {
+        id: 'entry-1',
+        userId: member.id,
+        clockIn,
+        breakStartedAt: null,
+        breakMinutes: 30,
+        location: null,
+        updatedAt: clockIn,
+      };
+
+      mockEntries({ open: [openEntry], today: [{ ...openEntry, clockOut: null, workedMinutes: 0 }] });
+
+      await getTeamPresenceSnapshot(mockReq, mockRes);
+
+      const payload = firstMember();
+      expect(payload.members[0].status).toBe('PRESENT');
+      expect(payload.members[0].since).toBe(clockIn);
+      expect(payload.summary.onBreak).toBe(0);
+    });
+
+    it('reports ABSENT after a mid-workday clock-out instead of ON_BREAK', async () => {
+      const clockIn = new Date(Date.now() - 4 * 60 * 60 * 1000);
+      const clockOut = new Date(Date.now() - 30 * 60 * 1000);
+
+      mockEntries({
+        open: [],
+        today: [
+          {
+            id: 'entry-1',
+            userId: member.id,
+            clockIn,
+            clockOut,
+            workedMinutes: 210,
+            location: null,
+            updatedAt: clockOut,
+          },
+        ],
+      });
+
+      await getTeamPresenceSnapshot(mockReq, mockRes);
+
+      const payload = firstMember();
+      expect(payload.members[0].status).toBe('ABSENT');
+      expect(payload.summary.onBreak).toBe(0);
+      expect(payload.summary.absent).toBe(1);
+    });
+
+    it('excludes break minutes from the overtime check', async () => {
+      // 9h desde o clock-in, 2h de pausa => 7h líquidas < 8h de contrato.
+      const clockIn = new Date(Date.now() - 9 * 60 * 60 * 1000);
+      const openEntry = {
+        id: 'entry-1',
+        userId: member.id,
+        clockIn,
+        breakStartedAt: null,
+        breakMinutes: 120,
+        location: null,
+        updatedAt: clockIn,
+      };
+
+      mockEntries({ open: [openEntry], today: [{ ...openEntry, clockOut: null, workedMinutes: 0 }] });
+
+      await getTeamPresenceSnapshot(mockReq, mockRes);
+
+      expect(firstMember().members[0].status).toBe('PRESENT');
     });
   });
 

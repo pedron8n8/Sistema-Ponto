@@ -219,8 +219,8 @@ describe('API Routes Integration Tests', () => {
   });
 
   describe('Time Routes', () => {
-    beforeEach(() => {
-      const { hash, salt } = hashPin('1234');
+    beforeEach(async () => {
+      const { hash, salt } = await hashPin('1234');
 
       mockSupabaseAdmin.auth.getUser.mockResolvedValue({
         data: { user: { id: 'member-123', email: 'member@test.com' } },

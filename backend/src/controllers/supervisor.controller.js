@@ -3,6 +3,7 @@ const { adjustBankHours, settleBankHoursAccruals } = require('../utils/bankHours
 const { reverseEntryBankHours } = require('../utils/recalcDay');
 const { normalizeMinutes, normalizeTime, normalizeTimeZone } = require('../utils/workSettings');
 const { parseLocalDate } = require('../utils/timeCalculations');
+const { presenceBus } = require('../utils/presenceBus');
 
 const PRESENCE_REFRESH_MS = 15000;
 const DEFAULT_OVERTIME_LIMIT_MINUTES = Number(process.env.OVERTIME_DAILY_LIMIT_MINUTES || 120);
@@ -63,50 +64,6 @@ const normalizeFilterValue = (value) => {
   if (value === undefined || value === null) return null;
   const normalized = String(value).trim();
   return normalized ? normalized.toLowerCase() : null;
-};
-
-const parseTimeToMinutes = (time) => {
-  if (!time) return null;
-  const match = String(time).trim().match(/^(\d{2}):(\d{2})$/);
-  if (!match) return null;
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
-  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
-  return hours * 60 + minutes;
-};
-
-const getNowMinutesForTimeZone = (timeZone) => {
-  try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: timeZone || 'UTC',
-      hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-    }).formatToParts(new Date());
-
-    const hour = Number(parts.find((part) => part.type === 'hour')?.value || 0);
-    const minute = Number(parts.find((part) => part.type === 'minute')?.value || 0);
-    return hour * 60 + minute;
-  } catch (_error) {
-    const now = new Date();
-    return now.getHours() * 60 + now.getMinutes();
-  }
-};
-
-const isWithinConfiguredWorkday = ({ nowMinutes, startTime, endTime }) => {
-  const startMinutes = parseTimeToMinutes(startTime);
-  const endMinutes = parseTimeToMinutes(endTime);
-
-  if (startMinutes === null || endMinutes === null) {
-    return true;
-  }
-
-  if (startMinutes <= endMinutes) {
-    return nowMinutes >= startMinutes && nowMinutes <= endMinutes;
-  }
-
-  return nowMinutes >= startMinutes || nowMinutes <= endMinutes;
 };
 
 const getDateRangeFromPeriod = ({ period, startDate, endDate }) => {
@@ -322,6 +279,8 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, supervisorEmail, superv
         id: true,
         userId: true,
         clockIn: true,
+        breakStartedAt: true,
+        breakMinutes: true,
         location: true,
         updatedAt: true,
       },
@@ -401,18 +360,24 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, supervisorEmail, superv
     const labels = resolveVirtualOrgLabels(member);
     const openEntry = openEntryMap.get(member.id);
     const userTodayEntries = todayEntriesByUser[member.id] || [];
-    const nowMinutes = getNowMinutesForTimeZone(member.timeZone);
-    const withinConfiguredWorkday = isWithinConfiguredWorkday({
-      nowMinutes,
-      startTime: member.workdayStartTime,
-      endTime: member.workdayEndTime,
-    });
 
     let status = PRESENCE_STATUS.ABSENT;
     let since = null;
 
     if (openEntry) {
-      const elapsedMinutes = Math.max(0, Math.floor((now - new Date(openEntry.clockIn)) / 60000));
+      const breakStartedAt = openEntry.breakStartedAt ? new Date(openEntry.breakStartedAt) : null;
+      const onBreak = Boolean(breakStartedAt && Number.isFinite(breakStartedAt.getTime()));
+      const ongoingBreakMinutes = onBreak
+        ? Math.max(0, Math.floor((now - breakStartedAt) / 60000))
+        : 0;
+      const breakMinutesSoFar =
+        Math.max(0, Number(openEntry.breakMinutes) || 0) + ongoingBreakMinutes;
+
+      // Desconta a pausa, igual calculateDuration faz no clock-out.
+      const elapsedMinutes = Math.max(
+        0,
+        Math.floor((now - new Date(openEntry.clockIn)) / 60000) - breakMinutesSoFar
+      );
       const closedWorkedMinutesToday = userTodayEntries.reduce((sum, entry) => {
         if (!entry.clockOut) return sum;
         if (entry.id === openEntry.id) return sum;
@@ -424,11 +389,12 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, supervisorEmail, superv
       const overtimeLimitMinutes = resolveOvertimeAlertLimitMinutes(member);
       const thresholdMinutes = Math.ceil((overtimeLimitMinutes * OVERTIME_ALERT_THRESHOLD_PERCENT) / 100);
 
-      status =
-        totalWorkedMinutesToday > contractDailyMinutes
+      status = onBreak
+        ? PRESENCE_STATUS.ON_BREAK
+        : totalWorkedMinutesToday > contractDailyMinutes
           ? PRESENCE_STATUS.OVERTIME_ACTIVE
           : PRESENCE_STATUS.PRESENT;
-      since = openEntry.clockIn;
+      since = onBreak ? openEntry.breakStartedAt : openEntry.clockIn;
 
       if (overtimeMinutesSoFar >= thresholdMinutes && thresholdMinutes > 0) {
         const dateKey = new Date(now).toISOString().slice(0, 10);
@@ -456,10 +422,8 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, supervisorEmail, superv
 
         overtimeAlerts.push(alertPayload);
       }
-    } else if (userTodayEntries.length > 0 && withinConfiguredWorkday) {
-      status = PRESENCE_STATUS.ON_BREAK;
-      since = userTodayEntries[0].clockIn;
     }
+    // Sem ponto aberto = ABSENT. Pausa é lida de breakStartedAt, não inferida do clock-out.
 
     const lastLocation = latestLocationByUser.get(member.id) || null;
 
@@ -1775,6 +1739,8 @@ const streamTeamPresence = async (req, res) => {
 
   await pushSnapshot();
 
+  // Rede de segurança: transições que acontecem só pelo relógio (PRESENT -> OVERTIME_ACTIVE)
+  // e edições manuais de admin/RH não emitem evento de batida.
   const refreshInterval = setInterval(() => {
     pushSnapshot().catch(() => undefined);
   }, PRESENCE_REFRESH_MS);
@@ -1785,10 +1751,25 @@ const streamTeamPresence = async (req, res) => {
     }
   }, 25000);
 
+  // ponytail: debounce de 500ms — uma rajada de batidas gera um snapshot, não N.
+  // Sem filtro por equipe: qualquer batida acorda todas as streams abertas. Se o nº de
+  // supervisores online crescer, filtrar pelo userId do payload.
+  let pendingPush = null;
+  const onPunch = () => {
+    if (closed || pendingPush) return;
+    pendingPush = setTimeout(() => {
+      pendingPush = null;
+      pushSnapshot().catch(() => undefined);
+    }, 500);
+  };
+  presenceBus.on('punch', onPunch);
+
   req.on('close', () => {
     closed = true;
     clearInterval(refreshInterval);
     clearInterval(keepAliveInterval);
+    presenceBus.off('punch', onPunch);
+    clearTimeout(pendingPush);
     res.end();
   });
 };

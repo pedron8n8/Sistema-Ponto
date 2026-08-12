@@ -261,6 +261,11 @@ const SupervisorDashboard = () => {
   const [error, setError] = useState('')
   const previousPresenceByUserRef = useRef<Record<string, PresenceStatus>>({})
   const presenceBaselineReadyRef = useRef(false)
+  const presenceConnectedRef = useRef(false)
+
+  useEffect(() => {
+    presenceConnectedRef.current = presenceConnected
+  }, [presenceConnected])
 
   const openMinutesByUser = useMemo(() => {
     const minutesByUser: Record<string, number> = {}
@@ -602,7 +607,10 @@ const SupervisorDashboard = () => {
 
     loadPresenceSnapshot().catch(() => undefined)
 
+    // Só faz polling quando o SSE está caído: uma resposta de poll pode chegar depois de um
+    // push do SSE e reverter o painel para o estado anterior.
     const fallbackInterval = setInterval(() => {
+      if (presenceConnectedRef.current) return
       loadPresenceSnapshot().catch(() => undefined)
     }, 12000)
 

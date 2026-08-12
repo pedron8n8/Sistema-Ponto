@@ -91,7 +91,9 @@ const sendDelayedSlackResponse = async (responseUrl, text) => {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(buildSlackResponse(text, { replace_original: true })),
+      // Sem replace_original: o Slack só honra esse campo em resposta a
+      // componente interativo, não em response_url de slash command.
+      body: JSON.stringify(buildSlackResponse(text)),
     });
 
     if (!response.ok) {
@@ -101,6 +103,34 @@ const sendDelayedSlackResponse = async (responseUrl, text) => {
     console.error('Failed to send delayed Slack response:', error?.message || error);
   }
 };
+
+const COMMAND_TIMEOUT_MS = Number(process.env.SLACK_COMMAND_TIMEOUT_MS || 20000);
+
+/**
+ * O usuário sempre recebe uma resposta. Sem isso, uma query pendurada deixa o
+ * "Processing your /omni command..." eterno, que é o que os usuários relatam
+ * como "a conexão do Slack caiu".
+ */
+const withTimeout = (promise, errorId) =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      console.error(`Slack command timeout after ${COMMAND_TIMEOUT_MS}ms [${errorId}]`);
+      resolve(
+        `:warning: Still processing — your entry may have been recorded. Check omnipunt.com before retrying. (ref ${errorId})`
+      );
+    }, COMMAND_TIMEOUT_MS);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
 
 const runTimeController = async (handler, req) =>
   new Promise((resolve) => {
@@ -234,6 +264,15 @@ const toEnglishMessage = (body, fallback) => {
   return LOOKS_PORTUGUESE.test(message) ? fallback : message;
 };
 
+/**
+ * Erro vindo do time.controller. Em 5xx o motivo real vira o genérico
+ * "Something went wrong", então anexa a ref para achar o stack no log.
+ */
+const buildErrorText = (result, fallback, errorId) => {
+  const text = toEnglishMessage(result.body, fallback);
+  return result.status >= 500 ? `:x: ${text} (ref ${errorId})` : `:x: ${text}`;
+};
+
 // --- Command Parser --------------------------------------------------------
 
 const ACTIONS = {
@@ -349,7 +388,7 @@ const buildControllerReq = (originalReq, user, body) => ({
 
 // --- Action Handlers -------------------------------------------------------
 
-const handleStart = async (req, user, parsed) => {
+const handleStart = async (req, user, parsed, errorId) => {
   const controllerReq = buildControllerReq(req, user, {
     pin: parsed.pin,
     notes: parsed.notes ? `[Slack] ${parsed.notes}` : 'Slack',
@@ -361,10 +400,10 @@ const handleStart = async (req, user, parsed) => {
     return `:white_check_mark: *Workday started!*
 :clock9: Clock-in: ${clockInTime}`;
   }
-  return `:x: ${toEnglishMessage(result.body, 'Could not start the workday.')}`;
+  return buildErrorText(result, 'Could not start the workday.', errorId);
 };
 
-const handleFinish = async (req, user, parsed) => {
+const handleFinish = async (req, user, parsed, errorId) => {
   const controllerReq = buildControllerReq(req, user, {
     pin: parsed.pin,
     notes: parsed.notes ? `[Slack] ${parsed.notes}` : 'Slack',
@@ -382,26 +421,26 @@ const handleFinish = async (req, user, parsed) => {
     }
     return msg;
   }
-  return `:x: ${toEnglishMessage(result.body, 'Could not end the workday.')}`;
+  return buildErrorText(result, 'Could not end the workday.', errorId);
 };
 
-const handleBreak = async (req, user, parsed) => {
+const handleBreak = async (req, user, parsed, errorId) => {
   const controllerReq = buildControllerReq(req, user, { pin: parsed.pin });
   const result = await runTimeController(timeController.startBreak, controllerReq);
   if (result.status < 300) {
     return ':coffee: *Break started!* Enjoy your rest.';
   }
-  return `:x: ${toEnglishMessage(result.body, 'Could not start the break.')}`;
+  return buildErrorText(result, 'Could not start the break.', errorId);
 };
 
-const handleResume = async (req, user, parsed) => {
+const handleResume = async (req, user, parsed, errorId) => {
   const controllerReq = buildControllerReq(req, user, { pin: parsed.pin });
   const result = await runTimeController(timeController.resumeBreak, controllerReq);
   if (result.status < 300) {
     const breakMin = result.body?.entry?.breakMinutes || 0;
     return `:arrow_forward: *Break ended!* Total break: ${breakMin} min`;
   }
-  return `:x: ${toEnglishMessage(result.body, 'Could not end the break.')}`;
+  return buildErrorText(result, 'Could not end the break.', errorId);
 };
 
 const handleStatus = async (user) => {
@@ -525,7 +564,7 @@ const handleHelp = () => {
 
 // --- Main Handler ----------------------------------------------------------
 
-const processOmniCommand = async ({ req, payload, parsed, botToken }) => {
+const processOmniCommand = async ({ req, payload, parsed, botToken, errorId }) => {
   const slackUserId = payload.user_id;
   const user = await resolveSlackUser({ slackUserId, botToken });
 
@@ -535,13 +574,13 @@ const processOmniCommand = async ({ req, payload, parsed, botToken }) => {
 
   switch (parsed.action) {
     case 'start':
-      return handleStart(req, user, parsed);
+      return handleStart(req, user, parsed, errorId);
     case 'finish':
-      return handleFinish(req, user, parsed);
+      return handleFinish(req, user, parsed, errorId);
     case 'break':
-      return handleBreak(req, user, parsed);
+      return handleBreak(req, user, parsed, errorId);
     case 'resume':
-      return handleResume(req, user, parsed);
+      return handleResume(req, user, parsed, errorId);
     case 'status':
       return handleStatus(user);
     case 'info': {
@@ -590,17 +629,22 @@ const handleSlackCommand = async (req, res) => {
 
   const responseUrl = payload.response_url;
 
+  // Casa o relato do usuário ("deu erro") com a linha exata do log.
+  const errorId = crypto.randomBytes(3).toString('hex');
+
   if (responseUrl) {
     res.status(200).json(buildSlackResponse(':hourglass_flowing_sand: Processing your /omni command...'));
 
-    Promise.resolve()
-      .then(() => processOmniCommand({ req, payload, parsed, botToken }))
+    withTimeout(
+      Promise.resolve().then(() => processOmniCommand({ req, payload, parsed, botToken, errorId })),
+      errorId
+    )
       .then((message) => sendDelayedSlackResponse(responseUrl, message))
       .catch((error) => {
-        console.error('Slack command error:', error?.message || error);
+        console.error(`Slack command error [${errorId}] ${parsed.action}:`, error);
         return sendDelayedSlackResponse(
           responseUrl,
-          'Could not process the command. Please try again shortly.'
+          `Could not process the command. Please try again shortly. (ref ${errorId})`
         );
       });
 
@@ -608,12 +652,12 @@ const handleSlackCommand = async (req, res) => {
   }
 
   try {
-    const message = await processOmniCommand({ req, payload, parsed, botToken });
+    const message = await processOmniCommand({ req, payload, parsed, botToken, errorId });
     return res.status(200).json(buildSlackResponse(message));
   } catch (error) {
-    console.error('Slack command error:', error?.message || error);
+    console.error(`Slack command error [${errorId}] ${parsed.action}:`, error);
     return res.status(200).json(
-      buildSlackResponse('Could not process the command. Please try again shortly.')
+      buildSlackResponse(`Could not process the command. Please try again shortly. (ref ${errorId})`)
     );
   }
 };

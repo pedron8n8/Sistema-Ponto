@@ -25,6 +25,7 @@ const {
   PIN_MAX_ATTEMPTS,
   PIN_LOCK_MINUTES,
 } = require('../utils/pinAuth');
+const { emitPunch } = require('../utils/presenceBus');
 
 const buildLocationPayload = ({ existingLocation, currentLocation, eventType, geofenceResult }) => {
   const isStructuredLocation =
@@ -234,7 +235,7 @@ const validateClockAuthFactors = async ({ userId, faceDescriptor, livenessData, 
     const pinCurrentlyLocked = isPinLocked(userAuthData.pinLockedUntil);
 
     if (pin && !pinCurrentlyLocked) {
-      const pinMatched = verifyPin({
+      const pinMatched = await verifyPin({
         pin,
         hash: userAuthData.pinHash,
         salt: userAuthData.pinSalt,
@@ -626,6 +627,8 @@ const clockIn = async (req, res) => {
 
     console.log(`✅ Clock-in registrado: ${req.user.email} às ${timeEntry.clockIn}`);
 
+    emitPunch(userId);
+
     res.status(201).json({
       message: 'Clock-in registrado com sucesso',
       timeEntry: {
@@ -763,36 +766,13 @@ const clockOut = async (req, res) => {
       };
     }
 
-    // Atualiza o registro com clock-out
-    const updatedEntry = await prisma.timeEntry.update({
-      where: { id: openEntry.id },
-      data: {
-        clockOut: clockOutTime,
-        notes: notes || openEntry.notes,
-        location: locationPayload,
-        breakMinutes: breakSummary.totalMinutes,
-        breakStartedAt: null,
-        // Fecha a pausa que estava aberta no clock-out (se houver).
-        ...(openEntry.breakStartedAt && {
-          breaks: [...(Array.isArray(openEntry.breaks) ? openEntry.breaks : []), { start: openEntry.breakStartedAt, end: clockOutTime }],
-        }),
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-          },
-        },
-      },
-    });
-
-    // Calcula duração
+    // Tudo abaixo depende só de openEntry + clockOutTime, então é calculado
+    // ANTES de gravar: o clock-out vira um único update completo. Antes eram
+    // dois updates e uma falha no meio deixava o ponto fechado sem hora extra,
+    // fazendo o retry do usuário responder "não há ponto aberto".
     const duration = calculateDuration(
-      updatedEntry.clockIn,
-      updatedEntry.clockOut,
+      openEntry.clockIn,
+      clockOutTime,
       breakSummary.totalMinutes
     );
 
@@ -813,7 +793,7 @@ const clockOut = async (req, res) => {
         clockIn: {
           gte: dayStart,
           lte: dayEnd,
-          lt: updatedEntry.clockIn,
+          lt: openEntry.clockIn,
         },
         clockOut: {
           not: null,
@@ -834,17 +814,11 @@ const clockOut = async (req, res) => {
     );
 
     const overtime = calculateIncrementalOvertimeSummary({
-      clockIn: updatedEntry.clockIn,
-      clockOut: updatedEntry.clockOut,
+      clockIn: openEntry.clockIn,
+      clockOut: clockOutTime,
       contractDailyMinutes: userConfig?.contractDailyMinutes,
       workedMinutesBeforeEntry,
       breakMinutes: breakSummary.totalMinutes,
-    });
-
-    const bankHoursResult = await accrueBankHours({
-      userId,
-      overtimeMinutes: overtime.overtimeMinutes,
-      timeEntryId: updatedEntry.id,
     });
 
     const financial = calculateFinancialSummary({
@@ -854,15 +828,24 @@ const clockOut = async (req, res) => {
       hourlyRate: userConfig?.hourlyRate,
     });
 
-    const enrichedEntry = await prisma.timeEntry.update({
-      where: { id: updatedEntry.id },
+    // Único write que fecha o ponto — atômico e já com hora extra calculada.
+    let enrichedEntry = await prisma.timeEntry.update({
+      where: { id: openEntry.id },
       data: {
+        clockOut: clockOutTime,
+        notes: notes || openEntry.notes,
+        location: locationPayload,
+        breakMinutes: breakSummary.totalMinutes,
+        breakStartedAt: null,
+        // Fecha a pausa que estava aberta no clock-out (se houver).
+        ...(openEntry.breakStartedAt && {
+          breaks: [...(Array.isArray(openEntry.breaks) ? openEntry.breaks : []), { start: openEntry.breakStartedAt, end: clockOutTime }],
+        }),
         workedMinutes: overtime.workedMinutes,
         overtimeMinutes: overtime.overtimeMinutes,
         overtimeMinutes50: overtime.overtimeMinutes50,
         overtimeMinutes100: overtime.overtimeMinutes100,
         overtimePercent: overtime.overtimePercent,
-        bankHoursAccruedMinutes: bankHoursResult.accruedMinutes,
         overtimeStatus: overtime.overtimeMinutes > 0 ? 'PENDING' : null,
       },
       include: {
@@ -877,14 +860,55 @@ const clockOut = async (req, res) => {
       },
     });
 
+    // Banco de horas depois do ponto já estar fechado: crédito de HE é
+    // recalculável, um clock-out perdido não. Falha aqui não derruba o registro.
+    let bankHoursResult = {
+      accruedMinutes: 0,
+      discardedMinutes: 0,
+      balanceMinutes: null,
+      expiredMinutes: 0,
+    };
+
+    try {
+      bankHoursResult = await accrueBankHours({
+        userId,
+        overtimeMinutes: overtime.overtimeMinutes,
+        timeEntryId: enrichedEntry.id,
+      });
+
+      if (bankHoursResult.accruedMinutes > 0) {
+        enrichedEntry = await prisma.timeEntry.update({
+          where: { id: enrichedEntry.id },
+          data: { bankHoursAccruedMinutes: bankHoursResult.accruedMinutes },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                role: true,
+              },
+            },
+          },
+        });
+      }
+    } catch (bankHoursError) {
+      console.error(
+        `⚠️ Clock-out gravado mas banco de horas falhou (entry ${enrichedEntry.id}):`,
+        bankHoursError
+      );
+    }
+
     console.log(
-      `✅ Clock-out registrado: ${req.user.email} às ${clockOutTime} (Duração: ${duration.formatted})`
+      `✅ Clock-out registrado: ${req.user.email} às ${clockOutTime} (Duração: ${duration?.formatted || '—'})`
     );
+
+    emitPunch(userId);
 
     res.json({
       message: 'Clock-out registrado com sucesso',
       timeEntry: {
-        id: updatedEntry.id,
+        id: enrichedEntry.id,
         userId: enrichedEntry.userId,
         clockIn: enrichedEntry.clockIn,
         clockOut: enrichedEntry.clockOut,
@@ -965,6 +989,8 @@ const startBreak = async (req, res) => {
       },
     });
 
+    emitPunch(userId);
+
     res.json({
       message: 'Pausa iniciada com sucesso',
       entry: {
@@ -1027,6 +1053,8 @@ const resumeBreak = async (req, res) => {
         breaks: [...(Array.isArray(openEntry.breaks) ? openEntry.breaks : []), { start: openEntry.breakStartedAt, end: now }],
       },
     });
+
+    emitPunch(userId);
 
     res.json({
       message: 'Pausa encerrada com sucesso',

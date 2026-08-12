@@ -549,7 +549,7 @@ const setUserPin = async (req, res) => {
       });
     }
 
-    const { hash, salt } = hashPin(pin);
+    const { hash, salt } = await hashPin(pin);
 
     await prisma.user.update({
       where: { id: userId },

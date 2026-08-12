@@ -5,7 +5,7 @@ const { captureRequestMetadata } = require('../../src/utils/requestMetadata');
 const { evaluateGeofence } = require('../../src/utils/geofence');
 
 // Mock dos módulos
-jest.mock('../../src/config/database', () => mockPrisma);
+jest.mock('../../src/config/database', () => ({ prisma: mockPrisma }));
 jest.mock('../../src/utils/requestMetadata', () => ({
   captureRequestMetadata: jest.fn(() => ({
     ip: '127.0.0.1',
@@ -244,6 +244,64 @@ describe('Time Controller', () => {
 
       // Verifica que update foi chamado
       expect(mockPrisma.timeEntry.update).toHaveBeenCalled();
+    });
+
+    // Regressão: o clock-out fazia dois updates sem transação. Uma falha entre
+    // eles deixava o ponto fechado sem hora extra e o retry do usuário
+    // respondia "não há ponto aberto".
+    it('should record the punch even if bank hours accrual fails', async () => {
+      const clockInAt = new Date(Date.now() - 10 * 60 * 60 * 1000);
+      const openEntry = { id: 'entry-123', userId: 'user-123', clockIn: clockInAt, clockOut: null };
+
+      mockPrisma.timeEntry.findFirst.mockResolvedValue(openEntry);
+      mockPrisma.timeEntry.findMany.mockResolvedValue([]);
+      mockPrisma.timeEntry.update.mockResolvedValue({ ...openEntry, clockOut: new Date() });
+      // 10h trabalhadas => 120min de HE => entra no caminho de banco de horas.
+      mockPrisma.bankHoursEntry.create.mockRejectedValue(new Error('too many clients already'));
+
+      mockReq.body = {
+        faceDescriptor: FACE_VECTOR,
+        livenessData: { ...LIVENESS_DATA, capturedAt: new Date().toISOString() },
+      };
+
+      await clockOut(mockReq, mockRes);
+
+      expect(mockRes.status).not.toHaveBeenCalledWith(500);
+      expect(mockPrisma.timeEntry.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'entry-123' },
+          data: expect.objectContaining({
+            clockOut: expect.any(Date),
+            workedMinutes: expect.any(Number),
+            overtimeMinutes: expect.any(Number),
+          }),
+        })
+      );
+    });
+
+    it('should not throw when duration is null (clockOut before clockIn)', async () => {
+      const { calculateDuration } = require('../../src/utils/timeCalculations');
+      calculateDuration.mockReturnValueOnce(null);
+
+      const openEntry = {
+        id: 'entry-123',
+        userId: 'user-123',
+        clockIn: new Date(Date.now() + 60 * 1000),
+        clockOut: null,
+      };
+
+      mockPrisma.timeEntry.findFirst.mockResolvedValue(openEntry);
+      mockPrisma.timeEntry.findMany.mockResolvedValue([]);
+      mockPrisma.timeEntry.update.mockResolvedValue({ ...openEntry, clockOut: new Date() });
+
+      mockReq.body = {
+        faceDescriptor: FACE_VECTOR,
+        livenessData: { ...LIVENESS_DATA, capturedAt: new Date().toISOString() },
+      };
+
+      await clockOut(mockReq, mockRes);
+
+      expect(mockRes.status).not.toHaveBeenCalledWith(500);
     });
   });
 
