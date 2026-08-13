@@ -2,6 +2,7 @@ const { prisma } = require('../config/database');
 const { recalculateUserDay, reverseEntryBankHours } = require('../utils/recalcDay');
 const { sendResendEmail } = require('../utils/resendNotifier');
 const { parseLocalDate } = require('../utils/timeCalculations');
+const { resolveVisibleUserIds, canViewUser } = require('../utils/visibleUsers');
 
 const TEAM_MEMBER_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];
 
@@ -16,14 +17,16 @@ const getOrgOwnerId = (actor) => {
   return null;
 };
 
-/** Filtro Prisma para listar os colaboradores gerenciáveis pelo ator. */
-const buildOrgTeamWhere = (actor) => {
-  if (actor.role === 'SUPERADMIN') {
-    return { role: { in: TEAM_MEMBER_ROLES }, isActive: true };
-  }
-  const ownerId = getOrgOwnerId(actor);
-  if (!ownerId) return null;
-  return { role: { in: TEAM_MEMBER_ROLES }, organizationAdminId: ownerId, isActive: true };
+/**
+ * Filtro Prisma para listar os colaboradores visíveis pelo ator.
+ * Escopo hierárquico: HR/SUPERVISOR veem seus descendentes; quem tem canViewAllUsers
+ * (ou é ADMIN) vê o tenant inteiro. Ver utils/visibleUsers.js.
+ */
+const buildOrgTeamWhere = async (actor) => {
+  const visibleIds = await resolveVisibleUserIds(actor);
+  if (visibleIds === null) return { isActive: true }; // SUPERADMIN
+  if (visibleIds.length === 0) return null;
+  return { id: { in: visibleIds }, isActive: true };
 };
 
 /** Verifica se o ator pode gerenciar (ver/editar) o colaborador alvo. */
@@ -116,7 +119,7 @@ const notifyEmployee = async ({ employee, actor, action, entry }) => {
  */
 const getHrTeam = async (req, res) => {
   try {
-    const where = buildOrgTeamWhere(req.user);
+    const where = await buildOrgTeamWhere(req.user);
     if (!where) {
       return res.status(403).json({
         error: 'Forbidden',
@@ -155,7 +158,7 @@ const getHrTeam = async (req, res) => {
  */
 const getHrDaily = async (req, res) => {
   try {
-    const where = buildOrgTeamWhere(req.user);
+    const where = await buildOrgTeamWhere(req.user);
     if (!where) {
       return res.status(403).json({ error: 'Forbidden', message: 'Sua conta não está vinculada a uma organização.' });
     }
@@ -228,7 +231,8 @@ const getHrUserDaily = async (req, res) => {
     if (!target) {
       return res.status(404).json({ error: 'Not Found', message: 'Colaborador não encontrado.' });
     }
-    if (!canManageTarget(req.user, target)) {
+    // Leitura do extrato usa o escopo hierárquico; a escrita continua em canManageTarget.
+    if (!(await canViewUser(req.user, userId))) {
       return res.status(403).json({ error: 'Forbidden', message: 'Você não pode acessar este colaborador.' });
     }
 

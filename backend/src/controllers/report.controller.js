@@ -3,57 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const { prisma } = require('../config/database');
 const { getUtcDateRangeForDateOnly, resolveTimeZone } = require('../utils/dateFilters');
+const { resolveVisibleUserIds } = require('../utils/visibleUsers');
 
 const SUPPORTED_EXPORT_FORMATS = ['csv', 'xlsx'];
-
-const resolveTenantOwnerId = (user) => {
-  if (!user) return null;
-  if (user.role === 'ADMIN') return user.id;
-  return user.organizationAdminId || null;
-};
-
-const resolveActorTenantOwnerId = async (actor) => {
-  if (!actor?.id) return null;
-
-  const fromToken = resolveTenantOwnerId(actor);
-  if (fromToken) {
-    return fromToken;
-  }
-
-  const actorFromDb = await prisma.user.findUnique({
-    where: { id: actor.id },
-    select: {
-      id: true,
-      role: true,
-      organizationAdminId: true,
-    },
-  });
-
-  return resolveTenantOwnerId(actorFromDb);
-};
-
-const canAccessBreakdownUserWithinTenant = ({ actor, actorTenantOwnerId, targetUser }) => {
-  if (!actor || !targetUser) return false;
-
-  if (actor.role === 'SUPERADMIN') {
-    return true;
-  }
-
-  if (actor.role === 'ADMIN') {
-    return targetUser.id === actor.id || targetUser.organizationAdminId === actor.id;
-  }
-
-  if (actor.role === 'HR') {
-    const targetTenantOwnerId = resolveTenantOwnerId(targetUser);
-    return Boolean(
-      actorTenantOwnerId &&
-      targetTenantOwnerId &&
-      actorTenantOwnerId === targetTenantOwnerId
-    );
-  }
-
-  return false;
-};
 
 /**
  * Controller para geração de relatórios
@@ -129,30 +81,25 @@ const createExportJob = async (req, res) => {
       });
     }
 
-    // Supervisor só pode exportar dados de seus subordinados
-    if (user.role === 'SUPERVISOR' && userId) {
-      const { prisma } = require('../config/database');
-      const targetUser = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { supervisorId: true },
-      });
+    // O escopo é sempre derivado do papel do ator no servidor; o cliente não escolhe quem exportar.
+    const visibleUserIds = await resolveVisibleUserIds(user);
 
-      if (!targetUser || targetUser.supervisorId !== user.id) {
-        return res.status(403).json({
-          error: 'Forbidden',
-          message: 'Você só pode exportar dados de seus subordinados',
-        });
-      }
+    if (userId && visibleUserIds !== null && !visibleUserIds.includes(userId)) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você não tem acesso ao ponto deste colaborador',
+      });
     }
 
-    // Member só pode exportar seus próprios dados
-    if (user.role === 'MEMBER') {
-      if (userId && userId !== user.id) {
-        return res.status(403).json({
-          error: 'Forbidden',
-          message: 'Você só pode exportar seus próprios dados',
-        });
-      }
+    // Sem userId: `teamId` vale só como toggle "incluir equipe" — presente = escopo do ator,
+    // ausente = apenas os próprios registros.
+    let scopedUserIds = null;
+    if (userId) {
+      scopedUserIds = [userId];
+    } else if (teamId) {
+      scopedUserIds = visibleUserIds;
+    } else {
+      scopedUserIds = [user.id];
     }
 
     // Cria o job na fila
@@ -163,8 +110,7 @@ const createExportJob = async (req, res) => {
           startDate,
           endDate,
           status: status || 'ALL',
-          userId: user.role === 'MEMBER' ? user.id : userId || null,
-          teamId: teamId || null,
+          userIds: scopedUserIds,
           timeZone: reportTimeZone,
         },
         requestedBy: {
@@ -417,123 +363,36 @@ const getDailyBreakdown = async (req, res) => {
       });
     }
 
-    let allowedUserIds = null;
-    let actorTenantOwnerId = null;
+    // null = irrestrito (SUPERADMIN); array = lista exaustiva de ids permitidos.
+    const visibleUserIds = await resolveVisibleUserIds(requester);
 
-    if (requester.role === 'MEMBER') {
-      allowedUserIds = [requester.id];
-      if (userId && userId !== requester.id) {
-        return res.status(403).json({
-          error: 'Forbidden',
-          message: 'Você só pode consultar seus próprios dados.',
-        });
-      }
-    } else if (requester.role === 'SUPERVISOR') {
-      const teamMembers = await prisma.user.findMany({
-        where: { supervisorId: requester.id },
+    if (userId && visibleUserIds !== null && !visibleUserIds.includes(userId)) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você não tem permissão para consultar dados desse usuário.',
+      });
+    }
+
+    if (teamId && visibleUserIds !== null && !visibleUserIds.includes(teamId)) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você não tem permissão para consultar este time.',
+      });
+    }
+
+    let allowedUserIds = visibleUserIds;
+
+    if (userId) {
+      allowedUserIds = [userId];
+    } else if (teamId) {
+      // Drill-down num sub-time: subordinados diretos do supervisor escolhido, sempre
+      // intersectado com o que o ator já pode ver.
+      const members = await prisma.user.findMany({
+        where: { supervisorId: teamId },
         select: { id: true },
       });
-      allowedUserIds = teamMembers.map((member) => member.id);
-
-      if (userId && !allowedUserIds.includes(userId)) {
-        return res.status(403).json({
-          error: 'Forbidden',
-          message: 'Você só pode consultar dados de seus subordinados.',
-        });
-      }
-    } else if (['ADMIN', 'HR'].includes(requester.role)) {
-      actorTenantOwnerId = await resolveActorTenantOwnerId(requester);
-
-      if (!actorTenantOwnerId) {
-        return res.status(403).json({
-          error: 'Forbidden',
-          message: 'Não foi possível resolver o escopo de tenant do usuário atual.',
-        });
-      }
-
-      if (userId) {
-        const targetUser = await prisma.user.findUnique({
-          where: { id: userId },
-          select: {
-            id: true,
-            role: true,
-            organizationAdminId: true,
-          },
-        });
-
-        if (!targetUser) {
-          return res.status(404).json({
-            error: 'Not Found',
-            message: 'Usuário não encontrado.',
-          });
-        }
-
-        if (
-          !canAccessBreakdownUserWithinTenant({
-            actor: requester,
-            actorTenantOwnerId,
-            targetUser,
-          })
-        ) {
-          return res.status(403).json({
-            error: 'Forbidden',
-            message: 'Você não tem permissão para consultar dados desse usuário.',
-          });
-        }
-
-        allowedUserIds = [targetUser.id];
-      } else if (teamId) {
-        const targetTeamSupervisor = await prisma.user.findUnique({
-          where: { id: teamId },
-          select: {
-            id: true,
-            role: true,
-            organizationAdminId: true,
-          },
-        });
-
-        if (!targetTeamSupervisor) {
-          return res.status(404).json({
-            error: 'Not Found',
-            message: 'Supervisor do time não encontrado.',
-          });
-        }
-
-        if (
-          !canAccessBreakdownUserWithinTenant({
-            actor: requester,
-            actorTenantOwnerId,
-            targetUser: targetTeamSupervisor,
-          })
-        ) {
-          return res.status(403).json({
-            error: 'Forbidden',
-            message: 'Você não tem permissão para consultar este time.',
-          });
-        }
-
-        const teamMembers = await prisma.user.findMany({
-          where: {
-            supervisorId: teamId,
-            organizationAdminId: actorTenantOwnerId,
-          },
-          select: { id: true },
-        });
-
-        allowedUserIds = [teamId, ...teamMembers.map((member) => member.id)];
-      } else {
-        const tenantUsers = await prisma.user.findMany({
-          where: {
-            OR: [
-              { id: actorTenantOwnerId },
-              { organizationAdminId: actorTenantOwnerId },
-            ],
-          },
-          select: { id: true },
-        });
-
-        allowedUserIds = tenantUsers.map((user) => user.id);
-      }
+      const teamIds = [teamId, ...members.map((m) => m.id)];
+      allowedUserIds = visibleUserIds === null ? teamIds : teamIds.filter((id) => visibleUserIds.includes(id));
     }
 
     const where = {
@@ -543,16 +402,8 @@ const getDailyBreakdown = async (req, res) => {
       },
     };
 
-    if (userId) {
-      where.userId = userId;
-    } else if (Array.isArray(allowedUserIds)) {
+    if (Array.isArray(allowedUserIds)) {
       where.userId = { in: allowedUserIds };
-    } else if (teamId) {
-      const members = await prisma.user.findMany({
-        where: { supervisorId: teamId },
-        select: { id: true },
-      });
-      where.userId = { in: [teamId, ...members.map((m) => m.id)] };
     }
 
     const entries = await prisma.timeEntry.findMany({

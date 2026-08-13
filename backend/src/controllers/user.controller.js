@@ -912,6 +912,7 @@ const updateUser = async (req, res) => {
       adminPlanName,
       adminPlanMonthlyPrice,
       adminPlanStatus,
+      canViewAllUsers,
     } = req.body;
 
     // Validar se usuário existe
@@ -1019,6 +1020,14 @@ const updateUser = async (req, res) => {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Apenas SUPERADMIN pode atribuir papel ADMIN',
+      });
+    }
+
+    // canViewAllUsers expande a leitura do ponto para todo o tenant, ignorando a hierarquia.
+    if (canViewAllUsers !== undefined && !actorIsSuperAdmin) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Apenas SUPERADMIN pode conceder visão de todos os usuários',
       });
     }
 
@@ -1278,6 +1287,7 @@ const updateUser = async (req, res) => {
         role: nextRole,
         ...(nextIsActive !== existingUser.isActive && { isActive: nextIsActive }),
         ...(supervisorId !== undefined && { supervisorId }),
+        ...(canViewAllUsers !== undefined && { canViewAllUsers: Boolean(canViewAllUsers) }),
         organizationAdminId: nextOrganizationAdminId,
         ...adminSeatConfigData,
         ...adminPlanConfigData,

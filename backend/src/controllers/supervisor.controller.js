@@ -4,6 +4,7 @@ const { reverseEntryBankHours } = require('../utils/recalcDay');
 const { normalizeMinutes, normalizeTime, normalizeTimeZone } = require('../utils/workSettings');
 const { parseLocalDate } = require('../utils/timeCalculations');
 const { presenceBus } = require('../utils/presenceBus');
+const { resolveVisibleUserIds, canViewUser } = require('../utils/visibleUsers');
 
 const PRESENCE_REFRESH_MS = 15000;
 const DEFAULT_OVERTIME_LIMIT_MINUTES = Number(process.env.OVERTIME_DAILY_LIMIT_MINUTES || 120);
@@ -35,24 +36,20 @@ const getActorTeamOwnerId = (actor) => {
   return null;
 };
 
-const buildManagedTeamWhere = (actor) => {
-  const ownerId = getActorTeamOwnerId(actor);
-  if (ownerId) {
-    return { role: { in: TEAM_MEMBER_ROLES }, organizationAdminId: ownerId, isActive: true };
-  }
-
-  return { supervisorId: actor.id, isActive: true };
+/**
+ * Escopo hierárquico: cada ator enxerga (e gerencia) toda a sua cadeia abaixo.
+ * Ver utils/visibleUsers.js.
+ */
+const buildManagedTeamWhere = async (actor) => {
+  const visibleIds = await resolveVisibleUserIds(actor);
+  if (visibleIds === null) return { isActive: true }; // SUPERADMIN
+  return { id: { in: visibleIds }, isActive: true };
 };
 
-const canManageTeamUser = ({ actor, targetUser }) => {
+// Mesmo conjunto usado na listagem: quem o ator vê na equipe é quem ele pode aprovar/editar.
+const canManageTeamUser = async ({ actor, targetUser }) => {
   if (!actor || !targetUser) return false;
-
-  const ownerId = getActorTeamOwnerId(actor);
-  if (ownerId) {
-    return targetUser.organizationAdminId === ownerId;
-  }
-
-  return targetUser.supervisorId === actor.id;
+  return canViewUser(actor, targetUser.id);
 };
 
 const buildSupervisorScopeWhere = ({ supervisorId, isAdmin }) =>
@@ -699,7 +696,7 @@ const getTeamPendingEntries = async (req, res) => {
     // Se for ADMIN, pode visualizar todos os usuários não-admin
     // Se for SUPERVISOR, visualiza apenas os subordinados
     const subordinates = await prisma.user.findMany({
-      where: buildManagedTeamWhere(req.user),
+      where: await buildManagedTeamWhere(req.user),
       select: {
         id: true,
         name: true,
@@ -907,7 +904,7 @@ const approveEntry = async (req, res) => {
     }
 
     // Verifica se o registro é de um subordinado do supervisor
-    if (!canManageTeamUser({ actor: req.user, targetUser: entry.user })) {
+    if (!(await canManageTeamUser({ actor: req.user, targetUser: entry.user }))) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode aprovar registros de seus subordinados',
@@ -1047,7 +1044,7 @@ const approveEntriesBulk = async (req, res) => {
     const validIds = [];
 
     for (const entry of entries) {
-      if (!canManageTeamUser({ actor: req.user, targetUser: entry.user })) {
+      if (!(await canManageTeamUser({ actor: req.user, targetUser: entry.user }))) {
         skipped.push({ id: entry.id, reason: 'FORBIDDEN' });
       } else if (req.user.role === 'ADMIN' && entry.user.organizationAdminId !== supervisorId) {
         skipped.push({ id: entry.id, reason: 'FORBIDDEN' });
@@ -1146,7 +1143,7 @@ const rejectEntry = async (req, res) => {
     }
 
     // Verifica se o registro é de um subordinado
-    if (!canManageTeamUser({ actor: req.user, targetUser: entry.user })) {
+    if (!(await canManageTeamUser({ actor: req.user, targetUser: entry.user }))) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode rejeitar registros de seus subordinados',
@@ -1262,7 +1259,7 @@ const loadEntryForOvertimeDecision = async (req, res) => {
     return null;
   }
 
-  if (!canManageTeamUser({ actor: req.user, targetUser: entry.user })) {
+  if (!(await canManageTeamUser({ actor: req.user, targetUser: entry.user }))) {
     res.status(403).json({
       error: 'Forbidden',
       message: 'Você só pode revisar horas extras de seus subordinados',
@@ -1481,7 +1478,7 @@ const requestEdit = async (req, res) => {
     }
 
     // Verifica se é subordinado
-    if (!canManageTeamUser({ actor: req.user, targetUser: entry.user })) {
+    if (!(await canManageTeamUser({ actor: req.user, targetUser: entry.user }))) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode solicitar edição de registros de seus subordinados',
@@ -1583,7 +1580,7 @@ const getEntryDetails = async (req, res) => {
     }
 
     // Verifica se é subordinado do supervisor
-    if (!canManageTeamUser({ actor: req.user, targetUser: entry.user })) {
+    if (!(await canManageTeamUser({ actor: req.user, targetUser: entry.user }))) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode visualizar registros de seus subordinados',
@@ -1622,7 +1619,7 @@ const getEntryDetails = async (req, res) => {
 const getTeamMembers = async (req, res) => {
   try {
     const subordinates = await prisma.user.findMany({
-      where: buildManagedTeamWhere(req.user),
+      where: await buildManagedTeamWhere(req.user),
       select: {
         id: true,
         name: true,
@@ -1844,7 +1841,7 @@ const adjustTeamMemberBankHours = async (req, res) => {
       });
     }
 
-    if (!canManageTeamUser({ actor: req.user, targetUser: member })) {
+    if (!(await canManageTeamUser({ actor: req.user, targetUser: member }))) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode ajustar banco de horas de seus subordinados',
@@ -1912,7 +1909,7 @@ const updateTeamMemberWorkSettings = async (req, res) => {
       });
     }
 
-    if (!canManageTeamUser({ actor: req.user, targetUser: member })) {
+    if (!(await canManageTeamUser({ actor: req.user, targetUser: member }))) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode ajustar jornada de seus subordinados',
@@ -2008,7 +2005,7 @@ const updateTeamMemberWorkSettings = async (req, res) => {
 const getTeamBankHoursOverview = async (req, res) => {
   try {
     const team = await prisma.user.findMany({
-      where: buildManagedTeamWhere(req.user),
+      where: await buildManagedTeamWhere(req.user),
       select: {
         id: true,
         name: true,
@@ -2111,7 +2108,7 @@ const payTeamMemberBankHours = async (req, res) => {
       });
     }
 
-    if (!canManageTeamUser({ actor: req.user, targetUser: member })) {
+    if (!(await canManageTeamUser({ actor: req.user, targetUser: member }))) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Você só pode dar baixa no banco de horas de seus subordinados',

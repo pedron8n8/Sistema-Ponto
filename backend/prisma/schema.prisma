@@ -54,6 +54,7 @@ model User {
   phone           String?
   role            Role          @default(MEMBER)
   isActive        Boolean       @default(true)
+  canViewAllUsers Boolean       @default(false)
   facialEmbedding Json?
   facialEmbeddingUpdatedAt DateTime?
   facialThreshold Float     @default(0.45)

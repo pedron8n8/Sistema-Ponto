@@ -204,31 +204,20 @@ const buildSummary = (entries) => {
 };
 
 const getReportData = async (filters) => {
-  const { userId, teamId, startDate, endDate, status, supervisorId, timeZone } = filters;
+  const { userIds, startDate, endDate, status, timeZone } = filters;
 
   console.log('[reportWorker] getReportData filters:', JSON.stringify(filters));
 
   const where = {};
 
-  if (userId) {
-    where.userId = userId;
-    console.log('[reportWorker] branch=userId, target:', userId);
-  } else if (supervisorId) {
-    const subordinates = await prisma.user.findMany({
-      where: { supervisorId },
-      select: { id: true },
-    });
-    where.userId = { in: [supervisorId, ...subordinates.map((s) => s.id)] };
-    console.log('[reportWorker] branch=supervisorId, ids:', where.userId.in);
-  } else if (teamId) {
-    const teamMembers = await prisma.user.findMany({
-      where: { supervisorId: teamId },
-      select: { id: true },
-    });
-    where.userId = { in: [teamId, ...teamMembers.map((m) => m.id)] };
-    console.log('[reportWorker] branch=teamId, ids:', where.userId.in);
+  // userIds já vem resolvido e validado pelo controller. null só acontece para SUPERADMIN.
+  // Não existe branch "sem filtro" para os demais papéis: ausência de escopo nunca pode
+  // significar "todo o banco".
+  if (Array.isArray(userIds)) {
+    where.userId = { in: userIds };
+    console.log('[reportWorker] scope: %d usuário(s)', userIds.length);
   } else {
-    console.log('[reportWorker] no user filter (returns all entries in tenant)');
+    console.log('[reportWorker] scope: irrestrito (SUPERADMIN)');
   }
 
   if (status && status !== 'ALL') {
@@ -382,7 +371,7 @@ const createReportWorker = () => {
     async (job) => {
       console.log(`📊 Processando job de relatório: ${job.id}`);
 
-      const { filters, requestedBy, format = 'xlsx' } = job.data;
+      const { filters, format = 'xlsx' } = job.data;
 
       try {
         // Atualiza progresso
@@ -393,10 +382,8 @@ const createReportWorker = () => {
 
         // Gera o conteúdo do relatório no formato solicitado
         const generator = outputFormat === 'csv' ? generateTimeEntriesCSV : generateTimeEntriesXLSX;
-        const { content, totalRecords } = await generator({
-          ...filters,
-          supervisorId: requestedBy.role === 'SUPERVISOR' ? requestedBy.id : null,
-        });
+        // O escopo (filters.userIds) já vem resolvido pelo controller — o worker não deriva mais nada do papel.
+        const { content, totalRecords } = await generator(filters);
 
         await job.updateProgress(70);
 
