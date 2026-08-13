@@ -3,17 +3,18 @@ const { recalculateUserDay, reverseEntryBankHours } = require('../utils/recalcDa
 const { sendResendEmail } = require('../utils/resendNotifier');
 const { parseLocalDate } = require('../utils/timeCalculations');
 const { resolveVisibleUserIds, canViewUser } = require('../utils/visibleUsers');
+const { isHrLevel } = require('../utils/roles');
 
-const TEAM_MEMBER_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];
+const TEAM_MEMBER_ROLES = ['INTEGRATOR', 'HR', 'SUPERVISOR', 'MEMBER'];
 
 /**
  * Resolve o "dono" da organização (tenant) para o ator.
- * ADMIN é dono de si mesmo; HR pertence ao admin da sua organização.
+ * ADMIN é dono de si mesmo; HR/INTEGRATOR pertencem ao admin da sua organização.
  */
 const getOrgOwnerId = (actor) => {
   if (!actor) return null;
   if (actor.role === 'ADMIN') return actor.id;
-  if (actor.role === 'HR') return actor.organizationAdminId || null;
+  if (isHrLevel(actor.role)) return actor.organizationAdminId || null;
   return null;
 };
 

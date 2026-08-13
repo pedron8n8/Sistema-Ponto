@@ -5,6 +5,7 @@ const { normalizeMinutes, normalizeTime, normalizeTimeZone } = require('../utils
 const { parseLocalDate } = require('../utils/timeCalculations');
 const { presenceBus } = require('../utils/presenceBus');
 const { resolveVisibleUserIds, canViewUser } = require('../utils/visibleUsers');
+const { isHrLevel } = require('../utils/roles');
 
 const PRESENCE_REFRESH_MS = 15000;
 const DEFAULT_OVERTIME_LIMIT_MINUTES = Number(process.env.OVERTIME_DAILY_LIMIT_MINUTES || 120);
@@ -25,14 +26,14 @@ const PRESENCE_STATUS = {
 };
 
 const KPI_PERIODS = new Set(['daily', 'weekly', 'monthly']);
-const TEAM_MEMBER_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];
+const TEAM_MEMBER_ROLES = ['INTEGRATOR', 'HR', 'SUPERVISOR', 'MEMBER'];
 
 const isElevatedRole = (role) => ['SUPERADMIN', 'ADMIN'].includes(role);
 
 const getActorTeamOwnerId = (actor) => {
   if (!actor) return null;
   if (actor.role === 'ADMIN' || actor.role === 'SUPERADMIN') return actor.id;
-  if (actor.role === 'HR') return actor.organizationAdminId;
+  if (isHrLevel(actor.role)) return actor.organizationAdminId;
   return null;
 };
 

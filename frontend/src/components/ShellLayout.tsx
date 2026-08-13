@@ -100,9 +100,11 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
   const isSuperAdmin = profile?.role === 'SUPERADMIN'
   const isAdmin = profile?.role === 'ADMIN' || profile?.role === 'SUPERADMIN'
   const isOnlyAdmin = profile?.role === 'ADMIN'
-  const canManageProSettings = profile?.role === 'ADMIN' || profile?.role === 'HR'
-  const isSupervisor = profile?.role === 'SUPERVISOR' || profile?.role === 'HR' || isAdmin
-  const isHrOrAdmin = profile?.role === 'HR' || isAdmin
+  // INTEGRATOR é HR com um degrau a mais: alcança tudo que o HR alcança.
+  const isHrLevel = profile?.role === 'HR' || profile?.role === 'INTEGRATOR'
+  const canManageProSettings = profile?.role === 'ADMIN' || isHrLevel
+  const isSupervisor = profile?.role === 'SUPERVISOR' || isHrLevel || isAdmin
+  const isHrOrAdmin = isHrLevel || isAdmin
   const navSections: NavSection[] = [
     {
       title: t('General', 'Geral'),

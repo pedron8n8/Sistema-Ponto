@@ -4,7 +4,7 @@ const {
   getSubscriptionSnapshot,
 } = require('../utils/seatBilling');
 
-const TEAM_MEMBER_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];
+const TEAM_MEMBER_ROLES = ['INTEGRATOR', 'HR', 'SUPERVISOR', 'MEMBER'];
 const PAID_PAYMENT_STATUSES = new Set(['paid', 'no_payment_required']);
 const FINANCE_SOURCE_TYPES = {
   BASE_PLAN: 'BASE_PLAN',

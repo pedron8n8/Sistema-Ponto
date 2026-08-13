@@ -7,7 +7,7 @@ import LoadingScreen from './LoadingScreen'
 
 type Props = {
   children: React.ReactNode
-  allowedRoles?: Array<'SUPERADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'>
+  allowedRoles?: Array<'SUPERADMIN' | 'ADMIN' | 'INTEGRATOR' | 'HR' | 'SUPERVISOR' | 'MEMBER'>
   allowedPlans?: PlanCode | PlanCode[]
   allowInactivePlan?: boolean
 }
@@ -53,7 +53,13 @@ const ProtectedRoute = ({ children, allowedRoles, allowedPlans, allowInactivePla
     return <Navigate to="/app" replace />
   }
 
-  if (allowedRoles && (!profile || !allowedRoles.includes(profile.role))) {
+  // INTEGRATOR alcança tudo que HR alcança. Espelha roleCheck.middleware.js no backend
+  // e evita repetir 'INTEGRATOR' em cada guard do App.tsx.
+  const allowed = allowedRoles?.includes('HR')
+    ? [...allowedRoles, 'INTEGRATOR' as const]
+    : allowedRoles
+
+  if (allowed && (!profile || !allowed.includes(profile.role))) {
     return <Navigate to="/app" replace />
   }
 

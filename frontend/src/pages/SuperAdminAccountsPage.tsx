@@ -98,7 +98,7 @@ type LinkedAccountUser = {
   email: string
   name: string
   phone?: string | null
-  role: 'SUPERADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'
+  role: 'SUPERADMIN' | 'ADMIN' | 'INTEGRATOR' | 'HR' | 'SUPERVISOR' | 'MEMBER'
   organizationAdminId?: string | null
   createdAt?: string
   workdayStartTime?: string | null
@@ -110,7 +110,7 @@ type LinkedAccountUser = {
     id: string
     name: string
     email: string
-    role: 'SUPERADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'
+    role: 'SUPERADMIN' | 'ADMIN' | 'INTEGRATOR' | 'HR' | 'SUPERVISOR' | 'MEMBER'
   } | null
 }
 
@@ -568,10 +568,11 @@ const SuperAdminAccountsPage = () => {
 
       const roleOrder: Record<LinkedAccountUser['role'], number> = {
         ADMIN: 0,
-        HR: 1,
-        SUPERVISOR: 2,
-        MEMBER: 3,
-        SUPERADMIN: 4,
+        INTEGRATOR: 1,
+        HR: 2,
+        SUPERVISOR: 3,
+        MEMBER: 4,
+        SUPERADMIN: 5,
       }
 
       const sorted = [...(response.users || [])].sort((a, b) => {

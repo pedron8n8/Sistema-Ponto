@@ -64,7 +64,7 @@ const VacationSupervisorPage = () => {
   const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
   const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
   const token = session?.access_token
-  const isHrFlow = profile?.role === 'HR' || profile?.role === 'ADMIN'
+  const isHrFlow = profile?.role === 'HR' || profile?.role === 'INTEGRATOR' || profile?.role === 'ADMIN'
   const getRequestTypeLabel = (requestType: 'VACATION' | 'DAY_OFF') =>
     requestType === 'DAY_OFF' ? t('Day off', 'Folga') : t('Vacation', 'Férias')
 

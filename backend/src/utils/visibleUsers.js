@@ -60,6 +60,7 @@ const listDescendantIds = async (rootId, tenantOwnerId) => {
  *  - SUPERADMIN       -> null (todos os tenants)
  *  - canViewAllUsers  -> todos os usuários ativos do tenant do ator
  *  - ADMIN            -> todos os usuários ativos do tenant (ele é o dono)
+ *  - INTEGRATOR       -> todos os usuários ativos do tenant (o cargo já embute a visão total)
  *  - HR / SUPERVISOR  -> descendentes ativos via supervisorId, recursivo, + ele mesmo
  *  - MEMBER           -> apenas ele mesmo
  */
@@ -68,7 +69,7 @@ const compute = async (actor) => {
 
   const tenantOwnerId = resolveTenantOwnerId(actor);
 
-  if (actor.canViewAllUsers || actor.role === 'ADMIN') {
+  if (actor.canViewAllUsers || actor.role === 'ADMIN' || actor.role === 'INTEGRATOR') {
     return listTenantUserIds(tenantOwnerId);
   }
 

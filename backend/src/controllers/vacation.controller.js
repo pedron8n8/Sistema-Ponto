@@ -1,9 +1,11 @@
 const { prisma } = require('../config/database');
 const { buildUserPhotoUrl } = require('../utils/userPhoto');
 const { sendResendEmail } = require('../utils/resendNotifier');
+const { isHrLevel } = require('../utils/roles');
 
 const ACTIVE_VACATION_STATUSES = ['REQUESTED', 'SUPERVISOR_APPROVED', 'HR_CONFIRMED'];
-const isElevatedVacationViewer = (role) => ['SUPERADMIN', 'ADMIN', 'HR'].includes(role);
+const isElevatedVacationViewer = (role) =>
+  ['SUPERADMIN', 'ADMIN', 'INTEGRATOR', 'HR'].includes(role);
 const VACATION_REQUEST_TYPES = ['VACATION', 'DAY_OFF'];
 const DAY_OFF_REASON_PREFIX = '[DAY_OFF]';
 
@@ -633,7 +635,7 @@ const getTeamVacationRequests = async (req, res) => {
 
     const members = await prisma.user.findMany({
       where: isAdmin
-        ? { role: { notIn: ['ADMIN', 'HR'] }, isActive: true }
+        ? { role: { notIn: ['ADMIN', 'INTEGRATOR', 'HR'] }, isActive: true }
         : { supervisorId: req.user.id, isActive: true },
       select: { id: true },
     });
@@ -805,7 +807,7 @@ const getTeamVacationCalendar = async (req, res) => {
       });
     }
 
-    const visibleStatuses = req.user.role === 'HR'
+    const visibleStatuses = isHrLevel(req.user.role)
       ? ['SUPERVISOR_APPROVED', 'HR_CONFIRMED']
       : ['REQUESTED', 'SUPERVISOR_APPROVED', 'HR_CONFIRMED'];
 

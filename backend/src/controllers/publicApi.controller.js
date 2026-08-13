@@ -1,7 +1,7 @@
 const { prisma } = require('../config/database');
 
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
-const PAYROLL_USER_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];
+const PAYROLL_USER_ROLES = ['INTEGRATOR', 'HR', 'SUPERVISOR', 'MEMBER'];
 
 const parseDateFilter = (value, endOfDay = false) => {
   if (!value) return null;

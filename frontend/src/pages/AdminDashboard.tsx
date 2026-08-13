@@ -12,9 +12,9 @@ import { TIME_ZONE_OPTIONS } from '../lib/timezone'
 import UserAvatar from '../components/UserAvatar'
 import { useTranslation } from 'react-i18next'
 
-type Role = 'SUPERADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'
+type Role = 'SUPERADMIN' | 'ADMIN' | 'INTEGRATOR' | 'HR' | 'SUPERVISOR' | 'MEMBER'
 type AdminPlanStatus = 'ACTIVE' | 'INACTIVE'
-type InvitableRole = 'HR' | 'SUPERVISOR' | 'MEMBER'
+type InvitableRole = 'INTEGRATOR' | 'HR' | 'SUPERVISOR' | 'MEMBER'
 
 type User = {
   id: string
@@ -179,8 +179,8 @@ type UserUpdatePayload = Partial<User> & {
   organizationAdminId?: string | null
 }
 
-const TEAM_ROLE_OPTIONS: Role[] = ['HR', 'SUPERVISOR', 'MEMBER']
-const SUPERADMIN_ROLE_OPTIONS: Role[] = ['SUPERADMIN', 'ADMIN', 'HR', 'SUPERVISOR', 'MEMBER']
+const TEAM_ROLE_OPTIONS: Role[] = ['INTEGRATOR', 'HR', 'SUPERVISOR', 'MEMBER']
+const SUPERADMIN_ROLE_OPTIONS: Role[] = ['SUPERADMIN', 'ADMIN', 'INTEGRATOR', 'HR', 'SUPERVISOR', 'MEMBER']
 
 const formatMinutesToHours = (minutes?: number) => {
   if (!minutes || minutes <= 0) return ''
@@ -1654,6 +1654,7 @@ const AdminDashboard = () => {
                     <option value="MEMBER">{t('Member', 'Colaborador')}</option>
                     <option value="SUPERVISOR">{t('Supervisor', 'Supervisor')}</option>
                     <option value="HR">HR</option>
+                    <option value="INTEGRATOR">Integrator</option>
                   </select>
 
                   <input

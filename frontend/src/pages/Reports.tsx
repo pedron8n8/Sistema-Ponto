@@ -75,7 +75,7 @@ const Reports = () => {
     return formatDateInput(d)
   })
   const [endDate, setEndDate] = useState(() => formatDateInput(new Date()))
-  const canExportTeam = profile?.role === 'SUPERVISOR' || profile?.role === 'HR' || profile?.role === 'ADMIN' || profile?.role === 'SUPERADMIN'
+  const canExportTeam = profile?.role === 'SUPERVISOR' || profile?.role === 'HR' || profile?.role === 'INTEGRATOR' || profile?.role === 'ADMIN' || profile?.role === 'SUPERADMIN'
   const [includeTeam, setIncludeTeam] = useState(canExportTeam)
   const [message, setMessage] = useState('')
   const [isExporting, setIsExporting] = useState(false)

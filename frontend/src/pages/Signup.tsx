@@ -9,7 +9,7 @@ import { apiFetch } from '../lib/api'
 import { splitMessageLink } from '../lib/errorMessage'
 
 type InvitePreview = {
-  role: 'HR' | 'SUPERVISOR' | 'MEMBER'
+  role: 'INTEGRATOR' | 'HR' | 'SUPERVISOR' | 'MEMBER'
   expiresAt: string
   admin: {
     id: string
@@ -45,6 +45,7 @@ const Signup = () => {
   const invitedRoleLabel = useMemo(() => {
     if (!invitePreview) return ''
 
+    if (invitePreview.role === 'INTEGRATOR') return 'Integrator'
     if (invitePreview.role === 'HR') return 'HR'
     if (invitePreview.role === 'SUPERVISOR') return t('signup.inviteRoleSupervisor')
     return t('signup.inviteRoleMember')

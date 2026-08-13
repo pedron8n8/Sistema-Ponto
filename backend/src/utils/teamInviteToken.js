@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 
-const INVITABLE_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];
+const INVITABLE_ROLES = ['INTEGRATOR', 'HR', 'SUPERVISOR', 'MEMBER'];
 const DEFAULT_TTL_HOURS = Math.max(1, Number(process.env.TEAM_INVITE_DEFAULT_TTL_HOURS || 72));
 const MAX_TTL_HOURS = Math.max(DEFAULT_TTL_HOURS, Number(process.env.TEAM_INVITE_MAX_TTL_HOURS || 720));
 

@@ -10,7 +10,9 @@ const {
   GEOFENCE_SETTING_KEY,
 } = require('../utils/geofence');
 
-const TEAM_MEMBER_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];
+const { isHrLevel } = require('../utils/roles');
+
+const TEAM_MEMBER_ROLES = ['INTEGRATOR', 'HR', 'SUPERVISOR', 'MEMBER'];
 
 const resolveTenantOwnerId = (user) => {
   if (!user) return null;
@@ -29,7 +31,7 @@ const canManageUserWithinTenant = ({ actor, targetUser }) => {
     return targetUser.id === actor.id || targetUser.organizationAdminId === actor.id;
   }
 
-  if (actor.role === 'HR') {
+  if (isHrLevel(actor.role)) {
     const actorTenantOwnerId = resolveTenantOwnerId(actor);
     const targetTenantOwnerId = resolveTenantOwnerId(targetUser);
     return Boolean(
@@ -444,11 +446,12 @@ const changeUserSupervisor = async (req, res) => {
       }
     }
 
-    // Verifica se pode ser supervisor
-    if (!['ADMIN', 'SUPERVISOR'].includes(newSupervisor.role)) {
+    // Verifica se pode ser supervisor. Mesma lista de user.controller.js (updateUser):
+    // qualquer papel acima de MEMBER supervisiona, inclusive HR/INTEGRATOR.
+    if (!['SUPERADMIN', 'ADMIN', 'INTEGRATOR', 'HR', 'SUPERVISOR'].includes(newSupervisor.role)) {
       return res.status(400).json({
         error: 'Bad Request',
-        message: 'Apenas Admin ou Supervisor podem ser atribuídos como supervisores',
+        message: 'Membros não podem ser atribuídos como supervisores',
       });
     }
 
@@ -1108,7 +1111,7 @@ const getBankHoursOverview = async (req, res) => {
       where.organizationAdminId = req.user.id;
     }
 
-    if (req.user.role === 'HR') {
+    if (isHrLevel(req.user.role)) {
       const currentUser = await prisma.user.findUnique({
         where: { id: req.user.id },
         select: { organizationAdminId: true },

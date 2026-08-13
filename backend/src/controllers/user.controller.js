@@ -13,6 +13,7 @@ const {
   verifyBasePlanCheckoutSession,
 } = require('../utils/seatBilling');
 const { INVITABLE_ROLES, issueTeamInviteToken } = require('../utils/teamInviteToken');
+const { isHrLevel, manageableRolesFor } = require('../utils/roles');
 
 const withPhotoUrl = (req, user) => {
   if (!user) return user;
@@ -33,9 +34,9 @@ const removePhotoFileIfExists = (photoPath) => {
   }
 };
 
-const ALL_ROLES = ['SUPERADMIN', 'ADMIN', 'HR', 'SUPERVISOR', 'MEMBER'];
-const TEAM_MEMBER_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];
-const HR_MANAGEABLE_ROLES = ['SUPERVISOR', 'MEMBER'];
+const ALL_ROLES = ['SUPERADMIN', 'ADMIN', 'INTEGRATOR', 'HR', 'SUPERVISOR', 'MEMBER'];
+const TEAM_MEMBER_ROLES = ['INTEGRATOR', 'HR', 'SUPERVISOR', 'MEMBER'];
+const SUPERVISOR_CAPABLE_ROLES = ['SUPERADMIN', 'ADMIN', 'INTEGRATOR', 'HR', 'SUPERVISOR'];
 const ADMIN_PLAN_STATUSES = ['ACTIVE', 'INACTIVE'];
 const parsedExtraAdminSeatMonthlyUsd = Number(process.env.EXTRA_ADMIN_SEAT_MONTHLY_USD);
 const EXTRA_ADMIN_SEAT_MONTHLY_USD = Number(
@@ -477,10 +478,10 @@ const createUser = async (req, res) => {
       });
     }
 
-    if (req.user.role === 'HR' && !HR_MANAGEABLE_ROLES.includes(requestedRole)) {
+    if (isHrLevel(req.user.role) && !manageableRolesFor(req.user.role).includes(requestedRole)) {
       return res.status(403).json({
         error: 'Forbidden',
-        message: 'HR só pode criar usuários Supervisor ou Membro',
+        message: `Você só pode criar usuários com papel: ${manageableRolesFor(req.user.role).join(', ')}`,
       });
     }
 
@@ -509,7 +510,7 @@ const createUser = async (req, res) => {
       organizationAdmin = req.user;
     }
 
-    if (req.user.role === 'HR') {
+    if (isHrLevel(req.user.role)) {
       if (!req.user.organizationAdminId) {
         return res.status(400).json({
           error: 'Bad Request',
@@ -589,7 +590,7 @@ const createUser = async (req, res) => {
         });
       }
 
-      if (!['SUPERADMIN', 'ADMIN', 'HR', 'SUPERVISOR'].includes(supervisor.role)) {
+      if (!SUPERVISOR_CAPABLE_ROLES.includes(supervisor.role)) {
         return res.status(400).json({
           error: 'Bad Request',
           message: 'Apenas Admin ou Supervisor podem ser atribuídos como supervisores',
@@ -608,7 +609,7 @@ const createUser = async (req, res) => {
       }
 
       if (
-        req.user.role === 'HR' &&
+        isHrLevel(req.user.role) &&
         supervisor.id !== req.user.id &&
         supervisor.organizationAdminId !== req.user.organizationAdminId
       ) {
@@ -962,7 +963,7 @@ const updateUser = async (req, res) => {
     }
 
     if (
-      req.user.role === 'HR' &&
+      isHrLevel(req.user.role) &&
       existingUser.organizationAdminId !== req.user.organizationAdminId
     ) {
       return res.status(403).json({
@@ -971,10 +972,13 @@ const updateUser = async (req, res) => {
       });
     }
 
-    if (req.user.role === 'HR' && !HR_MANAGEABLE_ROLES.includes(existingUser.role)) {
+    if (
+      isHrLevel(req.user.role) &&
+      !manageableRolesFor(req.user.role).includes(existingUser.role)
+    ) {
       return res.status(403).json({
         error: 'Forbidden',
-        message: 'HR só pode editar usuários Supervisor ou Membro',
+        message: `Você só pode editar usuários com papel: ${manageableRolesFor(req.user.role).join(', ')}`,
       });
     }
 
@@ -985,10 +989,10 @@ const updateUser = async (req, res) => {
       });
     }
 
-    if (req.user.role === 'HR' && role && !HR_MANAGEABLE_ROLES.includes(role)) {
+    if (isHrLevel(req.user.role) && role && !manageableRolesFor(req.user.role).includes(role)) {
       return res.status(403).json({
         error: 'Forbidden',
-        message: 'HR só pode definir papéis Supervisor ou Membro',
+        message: `Você só pode definir os papéis: ${manageableRolesFor(req.user.role).join(', ')}`,
       });
     }
 
@@ -1051,7 +1055,7 @@ const updateUser = async (req, res) => {
         });
       }
 
-      if (!['SUPERADMIN', 'ADMIN', 'HR', 'SUPERVISOR'].includes(supervisor.role)) {
+      if (!SUPERVISOR_CAPABLE_ROLES.includes(supervisor.role)) {
         return res.status(400).json({
           error: 'Bad Request',
           message: 'Apenas Admin ou Supervisor podem ser atribuídos como supervisores',
@@ -1070,7 +1074,7 @@ const updateUser = async (req, res) => {
       }
 
       if (
-        req.user.role === 'HR' &&
+        isHrLevel(req.user.role) &&
         supervisor.id !== req.user.id &&
         supervisor.organizationAdminId !== req.user.organizationAdminId
       ) {
@@ -1485,8 +1489,8 @@ const listUsers = async (req, res) => {
       accessFilters.push({ OR: [{ id: req.user.id }, { organizationAdminId: req.user.id }] });
     }
 
-    // HR visualiza apenas membros da sua organização
-    if (req.user.role === 'HR') {
+    // HR/INTEGRATOR visualizam apenas membros da sua organização
+    if (isHrLevel(req.user.role)) {
       const currentUser = await prisma.user.findUnique({
         where: { id: req.user.id },
         select: { organizationAdminId: true },
@@ -1727,7 +1731,7 @@ const listAdminSeatAssignments = async (req, res) => {
       baseAdminWhere.id = req.user.id;
     }
 
-    if (req.user.role === 'HR' || req.user.role === 'SUPERVISOR' || req.user.role === 'MEMBER') {
+    if (TEAM_MEMBER_ROLES.includes(req.user.role)) {
       const currentUser = await prisma.user.findUnique({
         where: { id: req.user.id },
         select: { organizationAdminId: true },

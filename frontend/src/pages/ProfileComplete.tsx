@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import UserAvatar from '../components/UserAvatar'
 import { useTranslation } from 'react-i18next'
 
-type Role = 'SUPERADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'
+type Role = 'SUPERADMIN' | 'ADMIN' | 'INTEGRATOR' | 'HR' | 'SUPERVISOR' | 'MEMBER'
 
 type CompleteProfile = {
   id: string

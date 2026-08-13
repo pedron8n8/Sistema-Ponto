@@ -3,8 +3,8 @@ import { apiFetch } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from 'react-i18next'
 
-type Role = 'SUPERADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'
-type ManageableRole = 'SUPERVISOR' | 'MEMBER'
+type Role = 'SUPERADMIN' | 'ADMIN' | 'INTEGRATOR' | 'HR' | 'SUPERVISOR' | 'MEMBER'
+type ManageableRole = 'HR' | 'SUPERVISOR' | 'MEMBER'
 
 type User = {
   id: string
@@ -20,8 +20,10 @@ type User = {
   } | null
 }
 
-const MANAGEABLE_ROLES: ManageableRole[] = ['SUPERVISOR', 'MEMBER']
-const isManageableRole = (role: Role): role is ManageableRole => MANAGEABLE_ROLES.includes(role as ManageableRole)
+// Espelha manageableRolesFor em backend/src/utils/roles.js: o INTEGRATOR esta um degrau
+// acima e tambem gerencia HRs. Se divergir, o backend rejeita com 403 na hora de salvar.
+const manageableRolesFor = (actorRole?: Role): ManageableRole[] =>
+  actorRole === 'INTEGRATOR' ? ['HR', 'SUPERVISOR', 'MEMBER'] : ['SUPERVISOR', 'MEMBER']
 
 // ponytail: HR nao convida/cria usuarios por essa tela ainda, so gerencia os existentes.
 // Criacao pode ser adicionada depois reaproveitando POST /users (backend ja aceita HR).
@@ -46,6 +48,10 @@ const HrGroupsPage = () => {
   })
   const [editSaving, setEditSaving] = useState(false)
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
+
+  const manageableRoles = useMemo(() => manageableRolesFor(profile?.role), [profile?.role])
+  const isManageableRole = (role: Role): role is ManageableRole =>
+    manageableRoles.includes(role as ManageableRole)
 
   const loadUsers = async () => {
     if (!token) return
@@ -73,7 +79,7 @@ const HrGroupsPage = () => {
   const supervisorOptions = useMemo(() => {
     return users
       .filter((user) => user.isActive !== false)
-      .filter((user) => ['ADMIN', 'HR', 'SUPERVISOR'].includes(user.role))
+      .filter((user) => ['ADMIN', 'INTEGRATOR', 'HR', 'SUPERVISOR'].includes(user.role))
       .sort((a, b) => a.name.localeCompare(b.name, locale))
   }, [users, locale])
 
@@ -281,8 +287,11 @@ const HrGroupsPage = () => {
                 onChange={(event) => setEditDraft((prev) => ({ ...prev, role: event.target.value as ManageableRole }))}
                 className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm"
               >
-                <option value="MEMBER">MEMBER</option>
-                <option value="SUPERVISOR">SUPERVISOR</option>
+                {manageableRoles.map((role) => (
+                  <option key={role} value={role}>
+                    {role}
+                  </option>
+                ))}
               </select>
 
               <select

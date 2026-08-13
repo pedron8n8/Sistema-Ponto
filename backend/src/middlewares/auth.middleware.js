@@ -2,7 +2,7 @@ const { supabase } = require('../config/supabase');
 const { prisma } = require('../config/database');
 const { verifyTeamInviteToken } = require('../utils/teamInviteToken');
 
-const TEAM_MEMBER_ROLES = ['HR', 'SUPERVISOR', 'MEMBER'];
+const TEAM_MEMBER_ROLES = ['INTEGRATOR', 'HR', 'SUPERVISOR', 'MEMBER'];
 
 const USER_INCLUDE = {
   supervisor: {

@@ -3,8 +3,8 @@ import { API_BASE, apiFetch, buildIdempotencyHeaders, translateApiMessage } from
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from 'react-i18next'
 
-type Role = 'SUPERADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'
-type InvitableRole = 'HR' | 'SUPERVISOR' | 'MEMBER'
+type Role = 'SUPERADMIN' | 'ADMIN' | 'INTEGRATOR' | 'HR' | 'SUPERVISOR' | 'MEMBER'
+type InvitableRole = 'INTEGRATOR' | 'HR' | 'SUPERVISOR' | 'MEMBER'
 
 type User = {
   id: string
@@ -74,7 +74,7 @@ type TeamInviteLinkResponse = {
   }
 }
 
-const TEAM_ROLES: Role[] = ['HR', 'SUPERVISOR', 'MEMBER']
+const TEAM_ROLES: Role[] = ['INTEGRATOR', 'HR', 'SUPERVISOR', 'MEMBER']
 const PIN_REGEX = /^\d{4,8}$/
 
 const AdminUsersPage = () => {
@@ -235,7 +235,7 @@ const AdminUsersPage = () => {
   const supervisorOptions = useMemo(() => {
     return users
       .filter((user) => user.isActive !== false)
-      .filter((user) => ['ADMIN', 'HR', 'SUPERVISOR'].includes(user.role))
+      .filter((user) => ['ADMIN', 'INTEGRATOR', 'HR', 'SUPERVISOR'].includes(user.role))
       .sort((a, b) => a.name.localeCompare(b.name, locale))
   }, [users, locale])
 
@@ -768,6 +768,7 @@ const AdminUsersPage = () => {
                   <option value="MEMBER">MEMBER</option>
                   <option value="SUPERVISOR">SUPERVISOR</option>
                   <option value="HR">HR</option>
+                  <option value="INTEGRATOR">Integrator</option>
                 </select>
 
                 <select
@@ -810,6 +811,7 @@ const AdminUsersPage = () => {
                   <option value="MEMBER">MEMBER</option>
                   <option value="SUPERVISOR">SUPERVISOR</option>
                   <option value="HR">HR</option>
+                  <option value="INTEGRATOR">Integrator</option>
                 </select>
 
                 <input
@@ -942,6 +944,7 @@ const AdminUsersPage = () => {
                         <option value="MEMBER">MEMBER</option>
                         <option value="SUPERVISOR">SUPERVISOR</option>
                         <option value="HR">HR</option>
+                        <option value="INTEGRATOR">Integrator</option>
                       </select>
 
                       <select
@@ -1076,6 +1079,7 @@ const AdminUsersPage = () => {
                         <option value="MEMBER">MEMBER</option>
                         <option value="SUPERVISOR">SUPERVISOR</option>
                         <option value="HR">HR</option>
+                        <option value="INTEGRATOR">Integrator</option>
                       </select>
 
                       <select

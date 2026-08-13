@@ -10,7 +10,7 @@ import {
 } from '../lib/supabase'
 import { apiFetch, resolveApiAssetUrl } from '../lib/api'
 
-type Role = 'SUPERADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR' | 'MEMBER'
+type Role = 'SUPERADMIN' | 'ADMIN' | 'INTEGRATOR' | 'HR' | 'SUPERVISOR' | 'MEMBER'
 
 type UserProfile = {
   id: string

@@ -19,8 +19,14 @@ const roleCheck = (allowedRoles) => {
       return next();
     }
 
+    // INTEGRATOR alcança tudo que HR alcança. Expandir aqui evita repetir
+    // 'INTEGRATOR' em cada guard de rota do sistema.
+    const allowed = allowedRoles.includes('HR')
+      ? [...allowedRoles, 'INTEGRATOR']
+      : allowedRoles;
+
     // Verifica se o usuário tem uma das roles permitidas
-    if (!allowedRoles.includes(req.user.role)) {
+    if (!allowed.includes(req.user.role)) {
       return res.status(403).json({
         error: 'Forbidden',
         message: `Acesso negado. Requer uma das seguintes permissões: ${allowedRoles.join(', ')}`,
