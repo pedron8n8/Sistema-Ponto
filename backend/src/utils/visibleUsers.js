@@ -63,8 +63,7 @@ const listDescendantIds = async (rootId, tenantOwnerId) => {
  *  - HR / SUPERVISOR  -> descendentes ativos via supervisorId, recursivo, + ele mesmo
  *  - MEMBER           -> apenas ele mesmo
  */
-const resolveVisibleUserIds = async (actor) => {
-  if (!actor?.id) return [];
+const compute = async (actor) => {
   if (actor.role === 'SUPERADMIN') return null;
 
   const tenantOwnerId = resolveTenantOwnerId(actor);
@@ -78,6 +77,21 @@ const resolveVisibleUserIds = async (actor) => {
   }
 
   return [actor.id];
+};
+
+// Memoiza no próprio ator. req.user é recriado a cada request pelo auth middleware,
+// então o cache morre com o request. Sem isso, chamadas em laço (ex.: aprovação em
+// lote) refazem a travessia por item.
+// ponytail: se algum dia um handler alterar a hierarquia e reconsultar o escopo no
+// mesmo request, invalide apagando actor[CACHE].
+const CACHE = Symbol.for('visibleUserIds');
+
+const resolveVisibleUserIds = async (actor) => {
+  if (!actor?.id) return [];
+  if (!actor[CACHE]) {
+    Object.defineProperty(actor, CACHE, { value: compute(actor), configurable: true });
+  }
+  return actor[CACHE];
 };
 
 /** true se o ator pode ler o ponto de `targetId`. */

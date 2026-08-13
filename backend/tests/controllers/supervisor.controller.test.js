@@ -34,6 +34,11 @@ describe('Supervisor Controller', () => {
       json: jest.fn().mockReturnThis(),
     };
     jest.clearAllMocks();
+
+    // O escopo virou hierárquico (utils/visibleUsers.js): resolver "quem está abaixo do ator"
+    // consulta o banco. Sem este default, a travessia recebe undefined e o controller
+    // devolve 500. member-123 é o subordinado direto usado na maioria dos casos.
+    mockPrisma.user.findMany.mockResolvedValue([{ id: 'member-123', isActive: true }]);
   });
 
   describe('getTeamPendingEntries', () => {

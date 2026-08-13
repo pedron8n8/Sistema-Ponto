@@ -50,6 +50,10 @@ describe('Report Controller', () => {
       download: jest.fn(),
       setHeader: jest.fn(),
     };
+
+    // O escopo do extrato agora é resolvido no servidor (utils/visibleUsers.js) e consulta
+    // o banco. Sem este default a resolução recebe undefined e o export devolve 500.
+    mockPrisma.user.findMany.mockResolvedValue([{ id: 'admin-123', isActive: true }]);
   });
 
   describe('createExportJob', () => {
