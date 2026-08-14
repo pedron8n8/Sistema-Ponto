@@ -1341,7 +1341,9 @@ const getCurrentEntry = async (req, res) => {
       hasOpenEntry: true,
       entry: {
         ...openEntry,
-        breakMinutes: breakSummary.totalMinutes,
+        // Coluna crua: quem consome soma a pausa em andamento a partir de breakStartedAt.
+        // Mesma convenção de getTodayEntries, supervisor.controller e proactiveAlertWorker.
+        breakMinutes: breakSummary.storedMinutes,
         breakStartedAt: breakSummary.startedAt,
         isOnBreak: breakSummary.isOnBreak,
         elapsed,

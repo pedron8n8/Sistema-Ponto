@@ -78,6 +78,34 @@ const resolvePaymentSettled = (entry) => {
   return accrual.paymentStatus === 'PAID' ? 'Yes' : 'No';
 };
 
+const resolveHourlyRate = (user) => {
+  const rate = Number(user?.hourlyRate || 0);
+  return Number.isFinite(rate) && rate > 0 ? rate : 0;
+};
+
+// ponytail: mesma fórmula de time.controller.calculateFinancialSummary (que não é exportada).
+// Se um dia for exportada de um util compartilhado, trocar as duas por uma só.
+const resolveEntryPayment = (entry) => {
+  const rate = resolveHourlyRate(entry.user);
+  if (rate <= 0) {
+    return 0;
+  }
+
+  const workedMinutes = resolveWorkedMinutes(entry);
+  const overtime50 = Math.max(0, Number(entry.overtimeMinutes50) || 0);
+  const overtime100 = Math.max(0, Number(entry.overtimeMinutes100) || 0);
+  const regularMinutes = Math.max(0, workedMinutes - overtime50 - overtime100);
+
+  return (
+    (regularMinutes / 60) * rate +
+    (overtime50 / 60) * rate * 1.5 +
+    (overtime100 / 60) * rate * 2
+  );
+};
+
+// Número (não string) para que a planilha permita somar/filtrar os valores.
+const toMoney = (value) => (Number.isFinite(value) ? Number(value.toFixed(2)) : 0);
+
 const buildDailyLogs = (entries) => {
   const headers = [
     'Entry ID',
@@ -97,6 +125,10 @@ const buildDailyLogs = (entries) => {
     'Device',
     'Last Action',
     'Reviewer',
+    'Hourly Rate',
+    'Pending Payment',
+    'Approved Payment',
+    'Total Payment',
     'Payment Settled',
   ];
 
@@ -105,6 +137,9 @@ const buildDailyLogs = (entries) => {
     const workedHours = workedMinutes > 0 ? (workedMinutes / 60).toFixed(2) : '';
     const breakMinutes = resolveBreakMinutes(entry.breakMinutes);
     const lastLog = entry.logs[0];
+    const payment = resolveEntryPayment(entry);
+    const pendingPayment = entry.status === 'PENDING' ? payment : 0;
+    const approvedPayment = entry.status === 'APPROVED' ? payment : 0;
 
     return [
       entry.id,
@@ -124,6 +159,10 @@ const buildDailyLogs = (entries) => {
       entry.device || '',
       lastLog ? resolveActionLabel(lastLog.action) : '',
       lastLog?.reviewer?.name || '',
+      toMoney(resolveHourlyRate(entry.user)),
+      toMoney(pendingPayment),
+      toMoney(approvedPayment),
+      toMoney(pendingPayment + approvedPayment),
       resolvePaymentSettled(entry),
     ];
   });
@@ -135,67 +174,86 @@ const buildSummary = (entries) => {
   const headers = [
     'User',
     'Email',
-    'Open Entries',
-    'Total Worked Hours',
-    'Total Worked Minutes',
+    'Hourly Rate',
+    'Pending Entries',
+    'Approved Entries',
+    'Pending Hours',
+    'Approved Hours',
+    'Total Hours',
     'Total Break Minutes',
+    'Pending Payment',
+    'Approved Payment',
+    'Total Payment',
     'Payment Settled',
   ];
 
   const grouped = new Map();
 
+  // ponytail: REJECTED não entra em nenhum bucket — hora rejeitada não é hora a pagar.
   entries
-    .filter((entry) => entry.status === 'PENDING')
+    .filter((entry) => entry.status === 'PENDING' || entry.status === 'APPROVED')
     .forEach((entry) => {
       const userKey = entry.user.id;
       if (!grouped.has(userKey)) {
         grouped.set(userKey, {
           user: entry.user,
-          totalWorkedMinutes: 0,
+          pendingEntries: 0,
+          approvedEntries: 0,
+          pendingMinutes: 0,
+          approvedMinutes: 0,
           totalBreakMinutes: 0,
-          openEntries: 0,
+          pendingPayment: 0,
+          approvedPayment: 0,
           hasAccrual: false,
           hasPending: false,
-          hasPaid: false,
         });
       }
 
       const summary = grouped.get(userKey);
       const workedMinutes = resolveWorkedMinutes(entry);
-      const breakMinutes = resolveBreakMinutes(entry.breakMinutes);
+      const payment = resolveEntryPayment(entry);
       const accrual = entry.bankHoursEntries?.[0];
 
-      summary.totalWorkedMinutes += workedMinutes;
-      summary.totalBreakMinutes += breakMinutes;
-      summary.openEntries += 1;
+      if (entry.status === 'PENDING') {
+        summary.pendingEntries += 1;
+        summary.pendingMinutes += workedMinutes;
+        summary.pendingPayment += payment;
+      } else {
+        summary.approvedEntries += 1;
+        summary.approvedMinutes += workedMinutes;
+        summary.approvedPayment += payment;
+      }
+
+      summary.totalBreakMinutes += resolveBreakMinutes(entry.breakMinutes);
 
       if (accrual) {
         summary.hasAccrual = true;
         if (accrual.paymentStatus === 'PENDING') {
           summary.hasPending = true;
         }
-        if (accrual.paymentStatus === 'PAID') {
-          summary.hasPaid = true;
-        }
       }
     });
+
+  const toHours = (minutes) => (minutes > 0 ? (minutes / 60).toFixed(2) : '0.00');
 
   const rows = Array.from(grouped.values())
     .sort((a, b) => (a.user.name || '').localeCompare(b.user.name || '', 'en-US'))
     .map((summary) => {
-      const paymentSettled = summary.hasAccrual
-        ? summary.hasPending
-          ? 'No'
-          : 'Yes'
-        : 'N/A';
+      const paymentSettled = summary.hasAccrual ? (summary.hasPending ? 'No' : 'Yes') : 'N/A';
 
       return [
         summary.user.name || summary.user.email,
         summary.user.email,
-        summary.openEntries,
-        summary.totalWorkedMinutes > 0 ? (summary.totalWorkedMinutes / 60).toFixed(2) : '0.00',
-        summary.totalWorkedMinutes,
+        toMoney(resolveHourlyRate(summary.user)),
+        summary.pendingEntries,
+        summary.approvedEntries,
+        toHours(summary.pendingMinutes),
+        toHours(summary.approvedMinutes),
+        toHours(summary.pendingMinutes + summary.approvedMinutes),
         summary.totalBreakMinutes,
+        toMoney(summary.pendingPayment),
+        toMoney(summary.approvedPayment),
+        toMoney(summary.pendingPayment + summary.approvedPayment),
         paymentSettled,
       ];
     });
@@ -253,6 +311,7 @@ const getReportData = async (filters) => {
           name: true,
           email: true,
           role: true,
+          hourlyRate: true,
           supervisor: {
             select: {
               name: true,
@@ -341,7 +400,7 @@ const generateTimeEntriesXLSX = async (filters) => {
   const workbook = xlsx.utils.book_new();
   xlsx.utils.book_append_sheet(workbook, worksheet, 'Daily Logs');
   xlsx.utils.book_append_sheet(workbook, pendingWorksheet, 'Pending Approval');
-  xlsx.utils.book_append_sheet(workbook, summaryWorksheet, 'Summary & Pending');
+  xlsx.utils.book_append_sheet(workbook, summaryWorksheet, 'Summary & Payments');
   const content = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
   return {
@@ -354,7 +413,8 @@ const generateTimeEntriesXLSX = async (filters) => {
  * Escapa valores para CSV
  */
 const escapeCSV = (value) => {
-  if (!value) return '';
+  // 0 é um valor válido (pagamento/minutos zerados) — só nulo/vazio vira célula vazia.
+  if (value === null || value === undefined || value === '') return '';
   const str = String(value);
   if (str.includes(';') || str.includes('"') || str.includes('\n')) {
     return `"${str.replace(/"/g, '""')}"`;
@@ -389,7 +449,7 @@ const createReportWorker = () => {
 
         // Gera nome único para o arquivo
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `relatorio_ponto_${timestamp}.${outputFormat}`;
+        const filename = `time_report_${timestamp}.${outputFormat}`;
         const filepath = path.join(REPORTS_DIR, filename);
 
         // Salva o arquivo
@@ -445,6 +505,8 @@ module.exports = {
   createReportWorker,
   generateTimeEntriesCSV,
   generateTimeEntriesXLSX,
+  buildDailyLogs,
+  buildSummary,
   REPORTS_DIR,
   QUEUE_NAME,
 };
