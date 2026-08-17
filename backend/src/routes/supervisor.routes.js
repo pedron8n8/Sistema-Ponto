@@ -5,6 +5,7 @@ const {
   approveEntry,
   approveEntriesBulk,
   rejectEntry,
+  rejectEntriesBulk,
   approveOvertime,
   rejectOvertime,
   requestEdit,
@@ -71,7 +72,7 @@ router.patch('/approve/:id', approveEntry);
 
 /**
  * POST /supervisor/approve-bulk
- * Aprova vários registros de uma vez
+ * Aprova vários registros de uma vez (aprova junto a HE pendente do lote)
  * Body: { entryIds: string[], comment?: string }
  */
 router.post('/approve-bulk', approveEntriesBulk);
@@ -82,6 +83,13 @@ router.post('/approve-bulk', approveEntriesBulk);
  * Body: { comment: string } (obrigatório)
  */
 router.patch('/reject/:id', rejectEntry);
+
+/**
+ * POST /supervisor/reject-bulk
+ * Rejeita vários registros de uma vez (nega junto a HE pendente do lote)
+ * Body: { entryIds: string[], comment: string } (comentário obrigatório)
+ */
+router.post('/reject-bulk', rejectEntriesBulk);
 
 /**
  * PATCH /supervisor/overtime/:id/approve

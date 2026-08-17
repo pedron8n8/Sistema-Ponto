@@ -1007,69 +1007,113 @@ const approveEntry = async (req, res) => {
 };
 
 /**
+ * Carrega, autoriza e classifica um lote de registros.
+ * Reaproveitado por approve-bulk e reject-bulk.
+ *
+ * Diferente das rotas de um registro só, o lote NÃO recusa registros com HE pendente:
+ * as duas ações em lote decidem a HE junto (aprovar tudo / negar tudo), que é o
+ * ponto de aprovar ou negar uma semana inteira em um clique.
+ *
+ * Retorna { eligible, skipped } ou null (resposta de erro já enviada).
+ */
+const loadEntriesForBulk = async (req, res) => {
+  const supervisorId = req.user.id;
+  const { entryIds } = req.body || {};
+
+  if (!Array.isArray(entryIds) || entryIds.length === 0 || entryIds.length > 200) {
+    res.status(400).json({
+      error: 'Bad Request',
+      message: 'Informe entryIds como um array com 1 a 200 registros.',
+    });
+    return null;
+  }
+
+  const entries = await prisma.timeEntry.findMany({
+    where: { id: { in: entryIds } },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          supervisorId: true,
+          organizationAdminId: true,
+        },
+      },
+    },
+  });
+
+  const foundIds = new Set(entries.map((entry) => entry.id));
+  const skipped = entryIds
+    .filter((id) => !foundIds.has(id))
+    .map((id) => ({ id, reason: 'NOT_FOUND' }));
+  const eligible = [];
+
+  for (const entry of entries) {
+    if (!(await canManageTeamUser({ actor: req.user, targetUser: entry.user }))) {
+      skipped.push({ id: entry.id, reason: 'FORBIDDEN' });
+    } else if (req.user.role === 'ADMIN' && entry.user.organizationAdminId !== supervisorId) {
+      skipped.push({ id: entry.id, reason: 'FORBIDDEN' });
+    } else if (entry.status !== 'PENDING') {
+      skipped.push({ id: entry.id, reason: 'ENTRY_NOT_PENDING' });
+    } else if (!entry.clockOut) {
+      skipped.push({ id: entry.id, reason: 'ENTRY_OPEN' });
+    } else {
+      eligible.push(entry);
+    }
+  }
+
+  return { eligible, skipped };
+};
+
+/**
  * POST /supervisor/approve-bulk
- * Aprova vários registros de ponto de uma vez (aprovação em lote por período/colaborador)
+ * Aprova vários registros de ponto de uma vez (aprovação em lote por período/colaborador).
+ * HE ainda pendente no lote é aprovada junto.
  * Body: { entryIds: string[], comment?: string }
  */
 const approveEntriesBulk = async (req, res) => {
   try {
     const supervisorId = req.user.id;
-    const { entryIds, comment } = req.body || {};
+    const { comment } = req.body || {};
 
-    if (!Array.isArray(entryIds) || entryIds.length === 0 || entryIds.length > 200) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Informe entryIds como um array com 1 a 200 registros.',
-      });
-    }
+    const loaded = await loadEntriesForBulk(req, res);
+    if (!loaded) return;
+    const { eligible, skipped } = loaded;
 
-    const entries = await prisma.timeEntry.findMany({
-      where: { id: { in: entryIds } },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            supervisorId: true,
-            organizationAdminId: true,
-          },
-        },
-      },
-    });
-
-    const foundIds = new Set(entries.map((entry) => entry.id));
-    const skipped = entryIds
-      .filter((id) => !foundIds.has(id))
-      .map((id) => ({ id, reason: 'NOT_FOUND' }));
-    const validIds = [];
-
-    for (const entry of entries) {
-      if (!(await canManageTeamUser({ actor: req.user, targetUser: entry.user }))) {
-        skipped.push({ id: entry.id, reason: 'FORBIDDEN' });
-      } else if (req.user.role === 'ADMIN' && entry.user.organizationAdminId !== supervisorId) {
-        skipped.push({ id: entry.id, reason: 'FORBIDDEN' });
-      } else if (entry.status !== 'PENDING') {
-        skipped.push({ id: entry.id, reason: 'ENTRY_NOT_PENDING' });
-      } else if (!entry.clockOut) {
-        skipped.push({ id: entry.id, reason: 'ENTRY_OPEN' });
-      } else if (entry.overtimeStatus === 'PENDING') {
-        skipped.push({ id: entry.id, reason: 'OVERTIME_PENDING' });
-      } else {
-        validIds.push(entry.id);
-      }
-    }
+    const validIds = eligible.map((entry) => entry.id);
+    const overtimeIds = eligible
+      .filter((entry) => entry.overtimeStatus === 'PENDING')
+      .map((entry) => entry.id);
 
     if (validIds.length === 0) {
       return res.status(409).json({
         error: 'Conflict',
         message: 'Nenhum registro elegível para aprovação. Atualize a lista.',
         approvedCount: 0,
+        overtimeApprovedCount: 0,
         skipped,
       });
     }
 
+    // HE aprovada não mexe em banco de horas: o crédito já foi lançado no clock-out.
     await prisma.$transaction([
+      ...(overtimeIds.length
+        ? [
+            prisma.timeEntry.updateMany({
+              where: { id: { in: overtimeIds } },
+              data: { overtimeStatus: 'APPROVED' },
+            }),
+            prisma.approvalLog.createMany({
+              data: overtimeIds.map((timeEntryId) => ({
+                timeEntryId,
+                reviewerId: supervisorId,
+                action: 'OVERTIME_APPROVED',
+                comment: comment || null,
+              })),
+            }),
+          ]
+        : []),
       prisma.timeEntry.updateMany({
         where: { id: { in: validIds }, status: 'PENDING' },
         data: { status: 'APPROVED' },
@@ -1084,11 +1128,14 @@ const approveEntriesBulk = async (req, res) => {
       }),
     ]);
 
-    console.log(`✅ ${validIds.length} registros aprovados em lote por ${req.user.email}`);
+    console.log(
+      `✅ ${validIds.length} registros aprovados em lote (${overtimeIds.length} com HE) por ${req.user.email}`
+    );
 
     res.json({
       message: `${validIds.length} registro(s) aprovado(s) com sucesso`,
       approvedCount: validIds.length,
+      overtimeApprovedCount: overtimeIds.length,
       skipped,
     });
   } catch (error) {
@@ -1224,6 +1271,109 @@ const rejectEntry = async (req, res) => {
     res.status(500).json({
       error: 'Internal Server Error',
       message: 'Erro ao rejeitar registro',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
+/**
+ * POST /supervisor/reject-bulk
+ * Rejeita vários registros de ponto de uma vez (negação em lote por período/colaborador).
+ * HE ainda pendente no lote é negada junto (zera o efeito e reverte o banco de horas).
+ * Body: { entryIds: string[], comment: string }
+ */
+const rejectEntriesBulk = async (req, res) => {
+  try {
+    const supervisorId = req.user.id;
+    const { comment } = req.body || {};
+
+    // Mesma exigência do rejectEntry: negar sempre precisa de justificativa.
+    if (!comment || comment.trim().length < 5) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Comentário obrigatório para rejeição (mínimo 5 caracteres)',
+      });
+    }
+
+    const loaded = await loadEntriesForBulk(req, res);
+    if (!loaded) return;
+    const { eligible, skipped } = loaded;
+
+    const validIds = eligible.map((entry) => entry.id);
+    const overtimeEntries = eligible.filter((entry) => entry.overtimeStatus === 'PENDING');
+    const overtimeIds = overtimeEntries.map((entry) => entry.id);
+
+    if (validIds.length === 0) {
+      return res.status(409).json({
+        error: 'Conflict',
+        message: 'Nenhum registro elegível para rejeição. Atualize a lista.',
+        rejectedCount: 0,
+        overtimeRejectedCount: 0,
+        skipped,
+      });
+    }
+
+    const trimmedComment = comment.trim();
+
+    // Reverte o crédito de banco de horas antes da transação, igual ao rejectOvertime.
+    // ponytail: sequencial; o lote é limitado a 200 registros.
+    for (const id of overtimeIds) {
+      await reverseEntryBankHours(id);
+    }
+
+    await prisma.$transaction([
+      ...(overtimeIds.length
+        ? [
+            prisma.timeEntry.updateMany({
+              where: { id: { in: overtimeIds } },
+              data: {
+                overtimeStatus: 'REJECTED',
+                overtimeMinutes: 0,
+                overtimeMinutes50: 0,
+                overtimeMinutes100: 0,
+                overtimePercent: 0,
+                bankHoursAccruedMinutes: 0,
+              },
+            }),
+            prisma.approvalLog.createMany({
+              data: overtimeEntries.map((entry) => ({
+                timeEntryId: entry.id,
+                reviewerId: supervisorId,
+                action: 'OVERTIME_REJECTED',
+                comment: `${trimmedComment} [HE original: ${entry.overtimeMinutes}min (50%: ${entry.overtimeMinutes50}min, 100%: ${entry.overtimeMinutes100}min), banco: ${entry.bankHoursAccruedMinutes}min]`,
+              })),
+            }),
+          ]
+        : []),
+      prisma.timeEntry.updateMany({
+        where: { id: { in: validIds }, status: 'PENDING' },
+        data: { status: 'REJECTED' },
+      }),
+      prisma.approvalLog.createMany({
+        data: validIds.map((timeEntryId) => ({
+          timeEntryId,
+          reviewerId: supervisorId,
+          action: 'REJECTED',
+          comment: trimmedComment,
+        })),
+      }),
+    ]);
+
+    console.log(
+      `❌ ${validIds.length} registros rejeitados em lote (${overtimeIds.length} com HE) por ${req.user.email}`
+    );
+
+    res.json({
+      message: `${validIds.length} registro(s) rejeitado(s)`,
+      rejectedCount: validIds.length,
+      overtimeRejectedCount: overtimeIds.length,
+      skipped,
+    });
+  } catch (error) {
+    console.error('❌ Erro ao rejeitar registros em lote:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao rejeitar registros em lote',
       ...(process.env.NODE_ENV === 'development' && { details: error.message }),
     });
   }
@@ -2153,6 +2303,7 @@ module.exports = {
   approveEntry,
   approveEntriesBulk,
   rejectEntry,
+  rejectEntriesBulk,
   approveOvertime,
   rejectOvertime,
   requestEdit,

@@ -83,6 +83,23 @@ const resolveHourlyRate = (user) => {
   return Number.isFinite(rate) && rate > 0 ? rate : 0;
 };
 
+const resolveOvertimeMinutes = (entry) => ({
+  ot50: Math.max(0, Number(entry.overtimeMinutes50) || 0),
+  ot100: Math.max(0, Number(entry.overtimeMinutes100) || 0),
+});
+
+// HE só conta (horas e adicional) depois de aprovada. overtimeStatus null ⇒ registro sem HE
+// a decidir (recalcDay.js:132), então o gate nunca descarta hora extra legítima.
+const resolveApprovedOvertime = (entry) =>
+  entry.overtimeStatus === 'APPROVED' ? resolveOvertimeMinutes(entry) : { ot50: 0, ot100: 0 };
+
+// Normais = trabalhado menos TODA a HE (inclusive a pendente), para que HE aguardando
+// decisão não seja promovida a hora normal.
+const resolveRegularMinutes = (entry) => {
+  const { ot50, ot100 } = resolveOvertimeMinutes(entry);
+  return Math.max(0, resolveWorkedMinutes(entry) - ot50 - ot100);
+};
+
 // ponytail: mesma fórmula de time.controller.calculateFinancialSummary (que não é exportada).
 // Se um dia for exportada de um util compartilhado, trocar as duas por uma só.
 const resolveEntryPayment = (entry) => {
@@ -91,15 +108,12 @@ const resolveEntryPayment = (entry) => {
     return 0;
   }
 
-  const workedMinutes = resolveWorkedMinutes(entry);
-  const overtime50 = Math.max(0, Number(entry.overtimeMinutes50) || 0);
-  const overtime100 = Math.max(0, Number(entry.overtimeMinutes100) || 0);
-  const regularMinutes = Math.max(0, workedMinutes - overtime50 - overtime100);
+  const { ot50, ot100 } = resolveApprovedOvertime(entry);
 
   return (
-    (regularMinutes / 60) * rate +
-    (overtime50 / 60) * rate * 1.5 +
-    (overtime100 / 60) * rate * 2
+    (resolveRegularMinutes(entry) / 60) * rate +
+    (ot50 / 60) * rate * 1.5 +
+    (ot100 / 60) * rate * 2
   );
 };
 
@@ -177,6 +191,8 @@ const buildSummary = (entries) => {
     'Hourly Rate',
     'Pending Entries',
     'Approved Entries',
+    'Normal Hours',
+    'Approved OT Hours',
     'Pending Hours',
     'Approved Hours',
     'Total Hours',
@@ -199,6 +215,8 @@ const buildSummary = (entries) => {
           user: entry.user,
           pendingEntries: 0,
           approvedEntries: 0,
+          normalMinutes: 0,
+          approvedOtMinutes: 0,
           pendingMinutes: 0,
           approvedMinutes: 0,
           totalBreakMinutes: 0,
@@ -210,17 +228,24 @@ const buildSummary = (entries) => {
       }
 
       const summary = grouped.get(userKey);
-      const workedMinutes = resolveWorkedMinutes(entry);
+      const regularMinutes = resolveRegularMinutes(entry);
+      const { ot50, ot100 } = resolveApprovedOvertime(entry);
+      // Horas faturáveis: só tempo normal + HE aprovada. HE pendente fica fora do resumo
+      // até ser decidida, por isso não é a mesma coisa que workedMinutes.
+      const billableMinutes = regularMinutes + ot50 + ot100;
       const payment = resolveEntryPayment(entry);
       const accrual = entry.bankHoursEntries?.[0];
 
+      summary.normalMinutes += regularMinutes;
+      summary.approvedOtMinutes += ot50 + ot100;
+
       if (entry.status === 'PENDING') {
         summary.pendingEntries += 1;
-        summary.pendingMinutes += workedMinutes;
+        summary.pendingMinutes += billableMinutes;
         summary.pendingPayment += payment;
       } else {
         summary.approvedEntries += 1;
-        summary.approvedMinutes += workedMinutes;
+        summary.approvedMinutes += billableMinutes;
         summary.approvedPayment += payment;
       }
 
@@ -247,6 +272,8 @@ const buildSummary = (entries) => {
         toMoney(resolveHourlyRate(summary.user)),
         summary.pendingEntries,
         summary.approvedEntries,
+        toHours(summary.normalMinutes),
+        toHours(summary.approvedOtMinutes),
         toHours(summary.pendingMinutes),
         toHours(summary.approvedMinutes),
         toHours(summary.pendingMinutes + summary.approvedMinutes),

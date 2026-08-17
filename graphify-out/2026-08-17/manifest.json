@@ -55,17 +55,17 @@
     "semantic_hash": ""
   },
   "backend/src/controllers/admin.controller.js": {
-    "mtime": 1786631761.481253,
+    "mtime": 1786628712.3613083,
     "ast_hash": "dd94c0c73e079b061cb201fe85a98b13",
     "semantic_hash": ""
   },
   "backend/src/controllers/finance.controller.js": {
-    "mtime": 1786631761.4830594,
+    "mtime": 1786628722.6297328,
     "ast_hash": "bc128493a25ee3f408c979993fb02198",
     "semantic_hash": ""
   },
   "backend/src/controllers/hr.controller.js": {
-    "mtime": 1786631761.4835813,
+    "mtime": 1786628699.7033415,
     "ast_hash": "777c61c1f0b5d7e0fe1a09d77970ebfa",
     "semantic_hash": ""
   },
@@ -75,7 +75,7 @@
     "semantic_hash": ""
   },
   "backend/src/controllers/publicApi.controller.js": {
-    "mtime": 1786631761.484591,
+    "mtime": 1786628724.763752,
     "ast_hash": "cc961b0844ea39c4ad14c9e9de80041d",
     "semantic_hash": ""
   },
@@ -95,22 +95,22 @@
     "semantic_hash": ""
   },
   "backend/src/controllers/supervisor.controller.js": {
-    "mtime": 1786968478.3138323,
-    "ast_hash": "72ace4cbe8d2c3e46d20bcadbbabd06a",
+    "mtime": 1786628720.5093443,
+    "ast_hash": "afdcf7e5826b05ead1ab5e965ac12648",
     "semantic_hash": ""
   },
   "backend/src/controllers/time.controller.js": {
-    "mtime": 1786671701.3232834,
-    "ast_hash": "fecd5d8f82208d7730afe05749d1b357",
+    "mtime": 1786542085.5389476,
+    "ast_hash": "d8d59a2e8797b09686b5d69fae4aa9f9",
     "semantic_hash": ""
   },
   "backend/src/controllers/user.controller.js": {
-    "mtime": 1786631761.4881706,
+    "mtime": 1786629027.909064,
     "ast_hash": "f7719bafb7b8a8bd8a3c9cf09237d079",
     "semantic_hash": ""
   },
   "backend/src/controllers/vacation.controller.js": {
-    "mtime": 1786631761.49018,
+    "mtime": 1786628745.0724704,
     "ast_hash": "24da1400780b6dc681b25f74161564cd",
     "semantic_hash": ""
   },
@@ -140,7 +140,7 @@
     "semantic_hash": ""
   },
   "backend/src/middlewares/auth.middleware.js": {
-    "mtime": 1786631761.4911797,
+    "mtime": 1786628736.2068176,
     "ast_hash": "34427cca30769cec019e7e0fffc00301",
     "semantic_hash": ""
   },
@@ -170,7 +170,7 @@
     "semantic_hash": ""
   },
   "backend/src/middlewares/roleCheck.middleware.js": {
-    "mtime": 1786631761.492179,
+    "mtime": 1786628675.8778088,
     "ast_hash": "1d8cb8b0ff1db4e00466ceb733da1684",
     "semantic_hash": ""
   },
@@ -215,8 +215,8 @@
     "semantic_hash": ""
   },
   "backend/src/routes/supervisor.routes.js": {
-    "mtime": 1786968478.3138323,
-    "ast_hash": "dd6a9d01531ce89cc2416e08f4c15c08",
+    "mtime": 1784252634.0624292,
+    "ast_hash": "8fe4826f410359cd5b508e4d72195f33",
     "semantic_hash": ""
   },
   "backend/src/routes/time.routes.js": {
@@ -315,7 +315,7 @@
     "semantic_hash": ""
   },
   "backend/src/utils/teamInviteToken.js": {
-    "mtime": 1786631761.4952402,
+    "mtime": 1786628725.9229815,
     "ast_hash": "f7be11ae08f96ded5fbe9368f41dd1be",
     "semantic_hash": ""
   },
@@ -350,8 +350,8 @@
     "semantic_hash": ""
   },
   "backend/src/workers/reportWorker.js": {
-    "mtime": 1786968478.3212624,
-    "ast_hash": "bdcb26a116f5db293acc0a2742b8591e",
+    "mtime": 1786589406.0810204,
+    "ast_hash": "38694870dbd73fa8ea69e10b225a4a72",
     "semantic_hash": ""
   },
   "frontend/package.json": {
@@ -410,12 +410,12 @@
     "semantic_hash": ""
   },
   "frontend/src/components/ProtectedRoute.tsx": {
-    "mtime": 1786631761.4977744,
+    "mtime": 1786628805.4787183,
     "ast_hash": "e2723b7b15f219ad952a193e9e199ca5",
     "semantic_hash": ""
   },
   "frontend/src/components/ShellLayout.tsx": {
-    "mtime": 1786631761.4992123,
+    "mtime": 1786628837.040838,
     "ast_hash": "5e2fb82cc36293f202cd10e5b88c9af8",
     "semantic_hash": ""
   },
@@ -430,8 +430,8 @@
     "semantic_hash": ""
   },
   "frontend/src/context/AuthContext.tsx": {
-    "mtime": 1786631761.5001853,
-    "ast_hash": "a942a13e133eda1a9d3f4f99d05f6f76",
+    "mtime": 1786628822.118804,
+    "ast_hash": "6a817fe01f30d751c9e8e154c3ad2fee",
     "semantic_hash": ""
   },
   "frontend/src/context/LanguageContext.tsx": {
@@ -520,8 +520,8 @@
     "semantic_hash": ""
   },
   "frontend/src/pages/AdminDashboard.tsx": {
-    "mtime": 1786631761.5027566,
-    "ast_hash": "3c06567234b3e85adc4aff18ddba5161",
+    "mtime": 1786628873.791734,
+    "ast_hash": "2b24baf9df1f1795f96346fcabe83dcf",
     "semantic_hash": ""
   },
   "frontend/src/pages/AdminFinancePage.tsx": {
@@ -550,8 +550,8 @@
     "semantic_hash": ""
   },
   "frontend/src/pages/AdminUsersPage.tsx": {
-    "mtime": 1786631761.509473,
-    "ast_hash": "8560c9c72444db01c3cc6bd13144eeac",
+    "mtime": 1786628873.8711238,
+    "ast_hash": "7b1e96669d3d0ae14d59bb9dcfca3d03",
     "semantic_hash": ""
   },
   "frontend/src/pages/ColaboradorDashboard.tsx": {
@@ -575,8 +575,8 @@
     "semantic_hash": ""
   },
   "frontend/src/pages/HrGroupsPage.tsx": {
-    "mtime": 1786631761.5137107,
-    "ast_hash": "386175280564942d708ffc50a6a022cf",
+    "mtime": 1786629105.298745,
+    "ast_hash": "843dcbea6e9f776ffb79287439bb37ee",
     "semantic_hash": ""
   },
   "frontend/src/pages/HrSchedulesPage.tsx": {
@@ -620,23 +620,23 @@
     "semantic_hash": ""
   },
   "frontend/src/pages/ProfileComplete.tsx": {
-    "mtime": 1786631761.5148833,
-    "ast_hash": "1e92149a8ddb6caad6476eaca22ad0f8",
+    "mtime": 1786628822.2949548,
+    "ast_hash": "2264f9b3150a24c0c0a28d73d31db163",
     "semantic_hash": ""
   },
   "frontend/src/pages/Reports.tsx": {
-    "mtime": 1786631761.515893,
-    "ast_hash": "c361bb65b701195a0e650ee8caaf97e4",
+    "mtime": 1786628873.9102771,
+    "ast_hash": "39b779f8b6072d4b4fcfe47e17ecc906",
     "semantic_hash": ""
   },
   "frontend/src/pages/Signup.tsx": {
-    "mtime": 1786631761.5168924,
-    "ast_hash": "55829c1bd4055d1c01c7c5ee83f0648f",
+    "mtime": 1786628838.445193,
+    "ast_hash": "9d265508d923b9f000d624094f6427b0",
     "semantic_hash": ""
   },
   "frontend/src/pages/SuperAdminAccountsPage.tsx": {
-    "mtime": 1786631761.5200653,
-    "ast_hash": "039d1ebc436f6227f87102e3b3ddb51d",
+    "mtime": 1786628900.8270955,
+    "ast_hash": "d60eb10e4b3654d922a8e5399226ca6c",
     "semantic_hash": ""
   },
   "frontend/src/pages/SupervisorDashboard.tsx": {
@@ -655,8 +655,8 @@
     "semantic_hash": ""
   },
   "frontend/src/pages/SupervisorPendingItemsPage.tsx": {
-    "mtime": 1786968478.3230011,
-    "ast_hash": "94b4686b8a67cdf9efba019540a1c981",
+    "mtime": 1784636726.7618406,
+    "ast_hash": "bc69888a1b6a68a91b42533b74d1d85d",
     "semantic_hash": ""
   },
   "frontend/src/pages/TermsPage.tsx": {
@@ -670,8 +670,8 @@
     "semantic_hash": ""
   },
   "frontend/src/pages/VacationSupervisorPage.tsx": {
-    "mtime": 1786631761.5220826,
-    "ast_hash": "cc53df446f0f115d0a526c831a749911",
+    "mtime": 1786628873.9474492,
+    "ast_hash": "83062a2c599629edfb67082f659e0a1c",
     "semantic_hash": ""
   },
   "frontend/tailwind.config.cjs": {
@@ -760,12 +760,12 @@
     "semantic_hash": ""
   },
   "backend/src/utils/roles.js": {
-    "mtime": 1786631761.4936874,
-    "ast_hash": "c0c627b200165459c4edd6fbf1e75d74",
+    "mtime": 1786629019.8162954,
+    "ast_hash": "c315be9812add73b53690a482e7485c9",
     "semantic_hash": ""
   },
   "backend/src/utils/visibleUsers.js": {
-    "mtime": 1786631761.4967632,
+    "mtime": 1786628684.6974435,
     "ast_hash": "853ba9bca51f760be39ea33bab81b0e6",
     "semantic_hash": ""
   }

@@ -4,11 +4,18 @@ const mockPrisma = require('../mocks/prisma.mock');
 
 // Mock dos módulos
 jest.mock('../../src/config/database', () => ({ prisma: mockPrisma }));
+jest.mock('../../src/utils/recalcDay', () => ({
+  recalculateUserDay: jest.fn(),
+  reverseEntryBankHours: jest.fn().mockResolvedValue(undefined),
+}));
 
+const { reverseEntryBankHours } = require('../../src/utils/recalcDay');
 const {
   getTeamPendingEntries,
   approveEntry,
+  approveEntriesBulk,
   rejectEntry,
+  rejectEntriesBulk,
   requestEdit,
   getTeamMembers,
   getTeamPresenceSnapshot,
@@ -317,6 +324,175 @@ describe('Supervisor Controller', () => {
           message: 'Registro rejeitado',
         })
       );
+    });
+  });
+
+  describe('bulk approve/deny', () => {
+    // Lote típico de uma semana: um dia sem HE, um dia com HE aguardando decisão
+    // e um dia que já saiu do estado PENDING.
+    const bulkEntries = [
+      {
+        id: 'entry-plain',
+        status: 'PENDING',
+        clockOut: new Date(),
+        overtimeStatus: null,
+        overtimeMinutes: 0,
+        overtimeMinutes50: 0,
+        overtimeMinutes100: 0,
+        bankHoursAccruedMinutes: 0,
+        user: { id: 'member-123', supervisorId: 'supervisor-123' },
+      },
+      {
+        id: 'entry-ot',
+        status: 'PENDING',
+        clockOut: new Date(),
+        overtimeStatus: 'PENDING',
+        overtimeMinutes: 90,
+        overtimeMinutes50: 90,
+        overtimeMinutes100: 0,
+        bankHoursAccruedMinutes: 90,
+        user: { id: 'member-123', supervisorId: 'supervisor-123' },
+      },
+      {
+        id: 'entry-done',
+        status: 'APPROVED',
+        clockOut: new Date(),
+        overtimeStatus: null,
+        user: { id: 'member-123', supervisorId: 'supervisor-123' },
+      },
+    ];
+
+    const allIds = ['entry-plain', 'entry-ot', 'entry-done'];
+
+    // O $transaction do mock resolve um array de promises, então instrumentamos as
+    // chamadas do Prisma para inspecionar o que cada operação do lote recebeu.
+    const captureOps = () => {
+      const ops = [];
+      const record = (model, method) => (args) => {
+        ops.push({ __model: model, __method: method, ...args });
+        return Promise.resolve({ count: 0 });
+      };
+      mockPrisma.timeEntry.updateMany.mockImplementation(record('timeEntry', 'updateMany'));
+      mockPrisma.approvalLog.createMany.mockImplementation(record('approvalLog', 'createMany'));
+      return ops;
+    };
+
+    beforeEach(() => {
+      mockPrisma.timeEntry.findMany.mockResolvedValue(bulkEntries);
+    });
+
+    it('aprova o lote e decide a HE pendente junto', async () => {
+      mockReq.body = { entryIds: allIds };
+      const ops = captureOps();
+
+      await approveEntriesBulk(mockReq, mockRes);
+
+      // entry-done já não estava PENDING: fica de fora com motivo.
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          approvedCount: 2,
+          overtimeApprovedCount: 1,
+          skipped: [{ id: 'entry-done', reason: 'ENTRY_NOT_PENDING' }],
+        })
+      );
+
+      const otUpdate = ops.find((op) => op.data?.overtimeStatus === 'APPROVED');
+      expect(otUpdate.where.id.in).toEqual(['entry-ot']);
+
+      const logs = ops.filter((op) => op.__method === 'createMany').flatMap((op) => op.data);
+      expect(logs.filter((log) => log.action === 'OVERTIME_APPROVED').map((log) => log.timeEntryId)).toEqual([
+        'entry-ot',
+      ]);
+      expect(logs.filter((log) => log.action === 'APPROVED').map((log) => log.timeEntryId)).toEqual([
+        'entry-plain',
+        'entry-ot',
+      ]);
+    });
+
+    it('nega o lote, zera a HE e reverte o banco de horas', async () => {
+      mockReq.body = { entryIds: allIds, comment: 'Semana fora do combinado' };
+      const ops = captureOps();
+
+      await rejectEntriesBulk(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          rejectedCount: 2,
+          overtimeRejectedCount: 1,
+          skipped: [{ id: 'entry-done', reason: 'ENTRY_NOT_PENDING' }],
+        })
+      );
+
+      expect(reverseEntryBankHours).toHaveBeenCalledWith('entry-ot');
+      expect(reverseEntryBankHours).toHaveBeenCalledTimes(1);
+
+      const otUpdate = ops.find((op) => op.data?.overtimeStatus === 'REJECTED');
+      expect(otUpdate.where.id.in).toEqual(['entry-ot']);
+      expect(otUpdate.data).toMatchObject({
+        overtimeMinutes: 0,
+        overtimeMinutes50: 0,
+        overtimeMinutes100: 0,
+        overtimePercent: 0,
+        bankHoursAccruedMinutes: 0,
+      });
+
+      const logs = ops.filter((op) => op.__method === 'createMany').flatMap((op) => op.data);
+      // A justificativa da HE guarda os minutos originais, como no rejectOvertime.
+      expect(logs.find((log) => log.action === 'OVERTIME_REJECTED').comment).toContain('HE original: 90min');
+      expect(logs.filter((log) => log.action === 'REJECTED')).toHaveLength(2);
+    });
+
+    it('exige comentário de pelo menos 5 caracteres para negar em lote', async () => {
+      mockReq.body = { entryIds: allIds, comment: 'nao' };
+
+      await rejectEntriesBulk(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(reverseEntryBankHours).not.toHaveBeenCalled();
+    });
+
+    it('ignora registro em aberto e de fora da equipe', async () => {
+      mockPrisma.timeEntry.findMany.mockResolvedValue([
+        {
+          id: 'entry-open',
+          status: 'PENDING',
+          clockOut: null,
+          overtimeStatus: null,
+          user: { id: 'member-123', supervisorId: 'supervisor-123' },
+        },
+        {
+          id: 'entry-alheio',
+          status: 'PENDING',
+          clockOut: new Date(),
+          overtimeStatus: null,
+          user: { id: 'estranho-999', supervisorId: 'outro-supervisor' },
+        },
+      ]);
+      mockReq.body = { entryIds: ['entry-open', 'entry-alheio', 'entry-sumiu'] };
+
+      await approveEntriesBulk(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(409);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          approvedCount: 0,
+          skipped: expect.arrayContaining([
+            { id: 'entry-sumiu', reason: 'NOT_FOUND' },
+            { id: 'entry-open', reason: 'ENTRY_OPEN' },
+            { id: 'entry-alheio', reason: 'FORBIDDEN' },
+          ]),
+        })
+      );
+    });
+
+    it('recusa lote vazio ou acima de 200 registros', async () => {
+      mockReq.body = { entryIds: [] };
+      await approveEntriesBulk(mockReq, mockRes);
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+
+      mockReq.body = { entryIds: Array.from({ length: 201 }, (_, i) => `e-${i}`) };
+      await approveEntriesBulk(mockReq, mockRes);
+      expect(mockRes.status).toHaveBeenCalledWith(400);
     });
   });
 

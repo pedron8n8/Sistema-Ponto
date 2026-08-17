@@ -1,23 +1,23 @@
-# Graph Report - SystemaPonto  (2026-08-17)
+# Graph Report - SystemaPonto  (2026-08-13)
 
 ## Corpus Check
-- 153 files · ~147,625 words
+- 153 files · ~146,129 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1511 nodes · 2911 edges · 84 communities (77 shown, 7 thin omitted)
-- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 194 edges (avg confidence: 0.5)
+- 1503 nodes · 2886 edges · 83 communities (76 shown, 7 thin omitted)
+- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 191 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `591fa630`
+- Built from commit: `31582796`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - pro.controller.js
 - reportWorker.js
-- auth.middleware.js
+- SuperAdminAccountsPage.tsx
 - database.js
 - Manual do Usuário — OmniPunt
 - App.tsx
@@ -53,18 +53,18 @@
 - SupervisorHoursPage.tsx
 - publicApi.controller.js
 - createUser
-- SuperAdminAccountsPage.tsx
+- consent.ts
 - seed.js
-- processShiftEndDispatchJob
+- sendResendEmail
 - geofence.js
 - recalcDay.js
 - src/index.js
-- teamInviteToken.js
-- sendResendEmail
+- idempotency.middleware.js
+- DualClock.tsx
 - routes/index.js
 - HrSchedulesPage.tsx
 - HrDailyTimePage.tsx
-- resolveStoredBreakMinutes
+- clockOut
 - notifications.js
 - workers/index.js
 - AdminFinancePage.tsx
@@ -73,16 +73,16 @@
 - backend/package.json
 - frontend/package.json
 - loading.ts
-- consent.ts
-- VacationSupervisorPage.tsx
+- LanguageContext.tsx
+- ProfileComplete.tsx
 - faceRecognition.js
 - user.routes.js
 - timeCalculations.js
-- evaluateClockInReminder
+- updateUserWorkSettings
 - rateLimit.middleware.js
 - buildUserPhotoUrl
 - dependencies
-- clockOut
+- captureRequestMetadata
 - roles.js
 - react-leaflet
 - sonner
@@ -91,7 +91,6 @@
 - vite-plugin-pwa
 - MATRIZ_AUTORIZACAO_API_2026-03-26.md
 - adjustBankHours
-- integrations.routes.js
 
 ## God Nodes (most connected - your core abstractions)
 1. `useAuth()` - 65 edges
@@ -106,7 +105,7 @@
 10. `SuperAdminAccountsPage()` - 14 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `setUserPin()` --calls--> `hashPin()`  [EXTRACTED]
+- `setUserPin()` --calls--> `isValidPinFormat()`  [EXTRACTED]
   backend/src/controllers/admin.controller.js → backend/src/utils/pinAuth.js
 - `payUserBankHours()` --calls--> `settleBankHoursAccruals()`  [EXTRACTED]
   backend/src/controllers/admin.controller.js → backend/src/utils/bankHours.js
@@ -120,7 +119,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (84 total, 7 thin omitted)
+## Communities (83 total, 7 thin omitted)
 
 ### Community 0 - "pro.controller.js"
 Cohesion: 0.05
@@ -134,39 +133,39 @@ Nodes (56): createPrismaAdminRepository(), createPublicApiTokenService(), {
 
 ### Community 1 - "reportWorker.js"
 Cohesion: 0.07
-Nodes (54): createExportJob(), deleteReport(), downloadReport(), fs, getDailyBreakdown(), getJobStatus(), { getUtcDateRangeForDateOnly, resolveTimeZone }, listReports() (+46 more)
+Nodes (48): createExportJob(), deleteReport(), downloadReport(), fs, getDailyBreakdown(), getJobStatus(), { getUtcDateRangeForDateOnly, resolveTimeZone }, listReports() (+40 more)
 
-### Community 2 - "auth.middleware.js"
-Cohesion: 0.24
-Nodes (13): authMiddleware(), buildAdminSeatPurchaseUrl(), normalizeLegacyPlanCode(), { prisma }, provisionBuyerAdminIfMissing(), provisionInvitedTeamMemberIfMissing(), resolveInviteTokenFromMetadata(), resolveProvisionedName() (+5 more)
+### Community 2 - "SuperAdminAccountsPage.tsx"
+Cohesion: 0.12
+Nodes (22): AdminConfigForm, AdminPlanStatus, formatDateTime(), formatUsd(), formatWorkday(), LinkedAccountsResponse, LinkedAccountUser, MARKETING_PLAN_CODE_BY_ID (+14 more)
 
 ### Community 3 - "database.js"
-Cohesion: 0.13
-Nodes (15): adapter, { Pool }, prisma, { PrismaClient }, { PrismaPg }, { createClient }, supabase, supabaseAdmin (+7 more)
+Cohesion: 0.06
+Nodes (45): adapter, { Pool }, prisma, { PrismaClient }, { PrismaPg }, { createClient }, supabase, supabaseAdmin (+37 more)
 
 ### Community 4 - "Manual do Usuário — OmniPunt"
 Cohesion: 0.04
 Nodes (46): 10.1. Usuários e assentos, 10.2. Banco de horas, 10.3. Aprovações pendentes, 10.4. QR Code do terminal, 10.5. Configurações PRO, 10. Área do Admin, 11. Conceitos importantes, 12. Perguntas frequentes e problemas comuns (+38 more)
 
 ### Community 5 - "App.tsx"
-Cohesion: 0.09
-Nodes (31): LoadingScreen(), LoadingScreenProps, Props, ProtectedRoute(), ShellLayout(), useAuth(), PLAN_LEVELS, PlanCode (+23 more)
+Cohesion: 0.08
+Nodes (32): LoadingScreen(), LoadingScreenProps, Props, ProtectedRoute(), useAuth(), PLAN_LEVELS, PlanCode, usePlan() (+24 more)
 
 ### Community 6 - "proactiveAlertWorker.js"
-Cohesion: 0.09
-Nodes (29): buildDispatchKey(), CLOCK_IN_LATE_MINUTES, CLOCK_IN_PRE_MINUTES, CLOCK_IN_SCAN_INTERVAL_MS, DEFAULT_OVERTIME_LIMIT_MINUTES, evaluateOvertimeThreshold(), evaluateShiftEndReminder(), EXPLICIT_ALERT_CHANNELS (+21 more)
+Cohesion: 0.08
+Nodes (35): buildDispatchKey(), CLOCK_IN_LATE_MINUTES, CLOCK_IN_PRE_MINUTES, CLOCK_IN_SCAN_INTERVAL_MS, DEFAULT_OVERTIME_LIMIT_MINUTES, evaluateClockInReminder(), evaluateOvertimeThreshold(), evaluateShiftEndReminder() (+27 more)
 
 ### Community 7 - "apiFetch"
-Cohesion: 0.09
-Nodes (37): API_BASE, apiFetch(), apiFetchFormData(), buildIdempotencyHeaders(), FormDataRequestOptions, IDEMPOTENCY_METHODS, isPlainObject(), isPortugueseLanguage() (+29 more)
+Cohesion: 0.10
+Nodes (36): API_BASE, apiFetch(), apiFetchFormData(), buildIdempotencyHeaders(), FormDataRequestOptions, IDEMPOTENCY_METHODS, isPlainObject(), isPortugueseLanguage() (+28 more)
 
 ### Community 8 - "Reports.tsx"
-Cohesion: 0.11
-Nodes (30): getInitialTimeZone(), TimezoneContext, TimezoneProvider(), TimezoneState, useTimeZone(), DEFAULT_VIEW_TIME_ZONE, formatDateTimeWithTimeZone(), formatDateWithTimeZone() (+22 more)
+Cohesion: 0.10
+Nodes (34): getInitialTimeZone(), TimezoneContext, TimezoneProvider(), TimezoneState, useTimeZone(), DEFAULT_VIEW_TIME_ZONE, formatDateTimeWithTimeZone(), formatDateWithTimeZone() (+26 more)
 
 ### Community 9 - "slack.controller.js"
-Cohesion: 0.11
-Nodes (35): setUserPin(), ACTIONS, buildControllerReq(), buildErrorText(), buildInfoForDate(), buildSlackResponse(), COMMAND_TIMEOUT_MS, crypto (+27 more)
+Cohesion: 0.12
+Nodes (34): ACTIONS, buildControllerReq(), buildErrorText(), buildInfoForDate(), buildSlackResponse(), COMMAND_TIMEOUT_MS, crypto, fetchSlackUserEmail() (+26 more)
 
 ### Community 10 - "scripts"
 Cohesion: 0.06
@@ -191,13 +190,13 @@ Cohesion: 0.09
 Nodes (27): fmtHM(), JourneyModal(), ModalEntry, Props, buildTimeline(), JourneyEntry, Segment, defaultStats (+19 more)
 
 ### Community 14 - "admin.controller.js"
-Cohesion: 0.10
-Nodes (33): { adjustBankHours, settleBankHoursAccruals }, canManageUserWithinTenant(), changeUserSupervisor(), getBankHoursOverview(), {
+Cohesion: 0.11
+Nodes (29): { adjustBankHours, settleBankHoursAccruals }, canManageUserWithinTenant(), changeUserSupervisor(), getBankHoursOverview(), {
   getGeofencePublicConfig,
   updateGeofenceConfig,
   LOCATION_VALIDATION_SOURCES,
   GEOFENCE_SETTING_KEY,
-}, getSystemStats(), getTeamOverview(), getTimeEntryAuditLog() (+25 more)
+}, getSystemStats(), getTeamOverview(), getTimeEntryAuditLog() (+21 more)
 
 ### Community 15 - "dependencies"
 Cohesion: 0.07
@@ -221,7 +220,7 @@ Nodes (13): authMiddleware, requirePlan, roleCheck, { authMiddleware, roleCheck 
 
 ### Community 20 - "ShellLayout.tsx"
 Cohesion: 0.11
-Nodes (14): BrandWordmark(), BrandWordmarkProps, joinClassNames(), LanguageSwitcher(), LanguageSwitcherProps, normalizeLanguage(), PublicLayoutProps, NavItem (+6 more)
+Nodes (14): BrandWordmark(), BrandWordmarkProps, joinClassNames(), LanguageSwitcher(), LanguageSwitcherProps, normalizeLanguage(), NavItem, NavSection (+6 more)
 
 ### Community 21 - "upload.middleware.js"
 Cohesion: 0.19
@@ -232,28 +231,23 @@ Cohesion: 0.08
 Nodes (25): compilerOptions, allowImportingTsExtensions, erasableSyntaxOnly, jsx, lib, module, moduleDetection, moduleResolution (+17 more)
 
 ### Community 23 - "time.controller.js"
-Cohesion: 0.11
-Nodes (24): { accrueBankHours, expireBankHoursIfNeeded }, buildDefaultFaceAuth(), buildDefaultPinAuth(), { calculateDuration, getStartOfDay, getEndOfDay }, {
+Cohesion: 0.10
+Nodes (26): getLocationSettings(), { accrueBankHours, expireBankHoursIfNeeded }, buildDefaultFaceAuth(), buildDefaultPinAuth(), { calculateDuration, getStartOfDay, getEndOfDay }, {
   calculateIncrementalOvertimeSummary,
   calculateCurrentDailyProgress,
-}, { captureRequestMetadata }, { emitPunch }, {
-  evaluateGeofence,
-  getGeofencePublicConfig,
-  getGeofenceConfig,
-  LOCATION_VALIDATION_SOURCES,
-} (+16 more)
+}, { captureRequestMetadata }, { emitPunch } (+18 more)
 
 ### Community 24 - "SupervisorDashboard.tsx"
 Cohesion: 0.11
 Nodes (21): Entry, EntryDetailState, formatMinutesLabel(), formatShortDuration(), getElapsedMinutes(), getTodayBucket(), HoursKpiItem, HoursKpiResponse (+13 more)
 
 ### Community 25 - "supervisor.routes.js"
-Cohesion: 0.15
-Nodes (21): approveEntriesBulk(), approveEntry(), approveOvertime(), buildManagedTeamWhere(), canManageTeamUser(), getEntryDetails(), getTeamBankHoursOverview(), getTeamMembers() (+13 more)
+Cohesion: 0.16
+Nodes (19): approveEntriesBulk(), approveEntry(), approveOvertime(), buildManagedTeamWhere(), canManageTeamUser(), getEntryDetails(), getTeamBankHoursOverview(), getTeamMembers() (+11 more)
 
 ### Community 26 - "ColaboradorDashboard.tsx"
-Cohesion: 0.12
-Nodes (19): DualClock(), DualClockProps, formatTime(), getBrowserTimeZone(), getZoneShortLabel(), BarcodeDetectorCode, BarcodeDetectorInstance, BarcodeDetectorStatic (+11 more)
+Cohesion: 0.15
+Nodes (14): BarcodeDetectorCode, BarcodeDetectorInstance, BarcodeDetectorStatic, ColaboradorDashboard(), CurrentEntryResponse, FACE_MODEL_SOURCES, FaceStatusResponse, GeofenceConfig (+6 more)
 
 ### Community 27 - "AdminDashboard.tsx"
 Cohesion: 0.12
@@ -265,7 +259,7 @@ Nodes (19): buildBasePlanLineItem(), createAdditionalSeatsCheckoutSession(), cre
 
 ### Community 29 - "AuthContext.tsx"
 Cohesion: 0.16
-Nodes (18): AuthContext, AuthProvider(), AuthState, isPortugueseLanguage(), localizeMessage(), Role, SignUpPayload, UserProfile (+10 more)
+Nodes (19): AuthContext, AuthProvider(), AuthState, isPortugueseLanguage(), localizeMessage(), Role, SignUpPayload, UserProfile (+11 more)
 
 ### Community 30 - "devDependencies"
 Cohesion: 0.11
@@ -284,8 +278,8 @@ Cohesion: 0.12
 Nodes (17): env, es2021, node, extends, parserOptions, ecmaVersion, sourceType, plugins (+9 more)
 
 ### Community 34 - "terminalQr.js"
-Cohesion: 0.09
-Nodes (30): Redis, issueTerminalQr(), attachFinalizeHandler(), buildActorScope(), buildPayloadHash(), buildStorageKey(), crypto, IDEMPOTENCY_METHODS (+22 more)
+Cohesion: 0.16
+Nodes (16): issueTerminalQr(), consumedFallback, consumeReplayKey(), consumeTerminalQrToken(), crypto, findTerminal(), fromBase64Url(), issueTerminalQrToken() (+8 more)
 
 ### Community 35 - "SupervisorHoursPage.tsx"
 Cohesion: 0.31
@@ -299,21 +293,21 @@ Nodes (15): buildPayrollFilters(), calculateFinancialSummary(), getPayrollSummar
 Cohesion: 0.14
 Nodes (22): buildPersistedAdminSeatSnapshot(), chooseMyPlan(), confirmAdditionalSeatsCheckout(), createUser(), deleteUser(), ensureAdminPlanRecord(), getMyCompleteProfile(), getUserById() (+14 more)
 
-### Community 38 - "SuperAdminAccountsPage.tsx"
-Cohesion: 0.06
-Nodes (44): ensureDescriptionMeta(), normalizeHtmlLanguage(), PageMeta(), PageMetaProps, PublicLayout(), getMarketingPlans(), getPlanFeatures(), MarketingPlan (+36 more)
+### Community 38 - "consent.ts"
+Cohesion: 0.07
+Nodes (47): App(), CookieConsentBanner(), ensureDescriptionMeta(), normalizeHtmlLanguage(), PageMeta(), PageMetaProps, PublicLayout(), PublicLayoutProps (+39 more)
 
 ### Community 39 - "seed.js"
 Cohesion: 0.18
 Nodes (14): adapter, ADMIN_PLAN_CATALOG, buildSeedPaidInvoices(), EXTRA_ADMIN_SEAT_MONTHLY_USD, main(), normalizeEmail(), normalizeText(), parsedExtraAdminSeatMonthlyUsd (+6 more)
 
-### Community 40 - "processShiftEndDispatchJob"
-Cohesion: 0.32
-Nodes (6): sendSlackDM(), buildShiftEndSupervisorEmail(), buildShiftEndSupervisorMessage(), buildShiftEndUserMessage(), formatShiftEndTime(), processShiftEndDispatchJob()
+### Community 40 - "sendResendEmail"
+Cohesion: 0.17
+Nodes (11): resolveFromAddress(), sendResendEmail(), sendSlackDM(), buildClockInMessage(), buildClockInSupervisorEmail(), buildShiftEndSupervisorEmail(), buildShiftEndSupervisorMessage(), buildShiftEndUserMessage() (+3 more)
 
 ### Community 41 - "geofence.js"
-Cohesion: 0.23
-Nodes (14): getLocationSettings(), getGeofenceSettings(), evaluateGeofence(), getGeofenceConfig(), getGeofencePublicConfig(), haversineDistanceMeters(), initGeofenceConfig(), LOCATION_VALIDATION_SOURCES (+6 more)
+Cohesion: 0.30
+Nodes (11): evaluateGeofence(), getGeofenceConfig(), haversineDistanceMeters(), initGeofenceConfig(), LOCATION_VALIDATION_SOURCES, readEnvGeofenceConfig(), resolveLocationValidationSource(), runtimeGeofenceConfig (+3 more)
 
 ### Community 42 - "recalcDay.js"
 Cohesion: 0.22
@@ -323,13 +317,13 @@ Nodes (11): getMyBankHours(), accrueBankHours(), addMonths(), clampPositiveInteg
 Cohesion: 0.14
 Nodes (13): allowedOrigins, app, cors, corsOptions, defaultAllowedOrigins, { ensureUserPhotoDir }, express, helmet (+5 more)
 
-### Community 44 - "teamInviteToken.js"
-Cohesion: 0.25
-Nodes (13): crypto, decodePayload(), DEFAULT_TTL_HOURS, encodePayload(), ensureInviteSecret(), INVITABLE_ROLES, issueTeamInviteToken(), MAX_TTL_HOURS (+5 more)
+### Community 44 - "idempotency.middleware.js"
+Cohesion: 0.24
+Nodes (13): attachFinalizeHandler(), buildActorScope(), buildPayloadHash(), buildStorageKey(), crypto, IDEMPOTENCY_METHODS, idempotencyMiddleware(), isPlainObject() (+5 more)
 
-### Community 45 - "sendResendEmail"
-Cohesion: 0.33
-Nodes (5): resolveFromAddress(), sendResendEmail(), buildClockInMessage(), buildClockInSupervisorEmail(), processClockInDispatchJob()
+### Community 45 - "DualClock.tsx"
+Cohesion: 0.53
+Nodes (5): DualClock(), DualClockProps, formatTime(), getBrowserTimeZone(), getZoneShortLabel()
 
 ### Community 46 - "routes/index.js"
 Cohesion: 0.15
@@ -340,20 +334,20 @@ Cohesion: 0.23
 Nodes (11): emptyForm, formatMinutesToHours(), from12h(), HOURS_12, HrMember, HrSchedulesPage(), MINUTES_60, parseHoursToMinutes() (+3 more)
 
 ### Community 48 - "HrDailyTimePage.tsx"
-Cohesion: 0.26
-Nodes (12): AddEntryForm(), DateRow, EntryEditor(), formatMinutes(), fromLocalInput(), HrDailyTimePage(), HrEntry, HrMember (+4 more)
-
-### Community 49 - "resolveStoredBreakMinutes"
 Cohesion: 0.27
-Nodes (13): getCurrentEntry(), getMyTimeEntries(), getTimeEntryById(), getTodayEntries(), resolveBreakMinutes(), resolveStoredBreakMinutes(), resolveWorkedMinutes(), resumeBreak() (+5 more)
+Nodes (11): AddEntryForm(), DateRow, EntryEditor(), formatMinutes(), fromLocalInput(), HrEntry, HrMember, pad() (+3 more)
+
+### Community 49 - "clockOut"
+Cohesion: 0.19
+Nodes (20): buildLocationPayload(), calculateFinancialSummary(), clockIn(), clockOut(), getCurrentEntry(), getGeofenceErrorMessage(), getMyTimeEntries(), getQrErrorMessage() (+12 more)
 
 ### Community 50 - "notifications.js"
 Cohesion: 0.35
 Nodes (11): createEmailTransporter(), getEnabledOvertimeChannels(), isEmailConfigured(), isEmailEnabled(), isPushConfigured(), isPushEnabled(), nodemailer, parseBoolean() (+3 more)
 
 ### Community 51 - "workers/index.js"
-Cohesion: 0.32
-Nodes (7): { createProactiveAlertWorker }, { createReportWorker }, redis, startWorkers(), createProactiveAlertWorker(), processDispatchJob(), createReportWorker()
+Cohesion: 0.22
+Nodes (9): Redis, { createProactiveAlertWorker }, { createReportWorker }, redis, startWorkers(), createProactiveAlertWorker(), processClockInScanJob(), processDispatchJob() (+1 more)
 
 ### Community 52 - "AdminFinancePage.tsx"
 Cohesion: 0.25
@@ -379,13 +373,13 @@ Nodes (8): name, private, scripts, build, dev, preview, type, version
 Cohesion: 0.33
 Nodes (7): GlobalLoadingOverlay(), listeners, LoadingListener, notifyListeners(), startGlobalLoading(), stopGlobalLoading(), subscribeGlobalLoading()
 
-### Community 58 - "consent.ts"
-Cohesion: 0.09
-Nodes (31): App(), CookieConsentBanner(), Language, LanguageContext, LanguageContextState, LanguageProvider(), normalizeLanguage(), toI18nLanguage() (+23 more)
+### Community 58 - "LanguageContext.tsx"
+Cohesion: 0.22
+Nodes (7): Language, LanguageContext, LanguageContextState, LanguageProvider(), normalizeLanguage(), toI18nLanguage(), root
 
-### Community 59 - "VacationSupervisorPage.tsx"
-Cohesion: 0.18
-Nodes (13): pickInitial(), sizeByVariant, UserAvatar(), UserAvatarProps, resolveApiAssetUrl(), CompleteProfile, formatDateTime(), ProfileComplete() (+5 more)
+### Community 59 - "ProfileComplete.tsx"
+Cohesion: 0.27
+Nodes (8): pickInitial(), sizeByVariant, UserAvatar(), UserAvatarProps, CompleteProfile, formatDateTime(), ProfileComplete(), Role
 
 ### Community 60 - "faceRecognition.js"
 Cohesion: 0.32
@@ -395,9 +389,9 @@ Nodes (5): enrollMyFace(), DEFAULT_THRESHOLD, euclideanDistance(), normalizeEmbe
 Cohesion: 0.22
 Nodes (7): { authMiddleware, roleCheck, requirePlan }, express, financeController, multer, { photoUpload, MAX_PHOTO_SIZE_BYTES }, router, userController
 
-### Community 63 - "evaluateClockInReminder"
-Cohesion: 0.33
-Nodes (7): evaluateClockInReminder(), getLocalDayBoundsUtc(), getNowMinutesForTimeZone(), getWeekdayForTimeZone(), parseTimeToMinutes(), processClockInScanJob(), shouldAlertNearShiftEnd()
+### Community 63 - "updateUserWorkSettings"
+Cohesion: 0.52
+Nodes (6): updateUserWorkSettings(), updateTeamMemberWorkSettings(), normalizeHourlyRate(), normalizeMinutes(), normalizeTime(), normalizeTimeZone()
 
 ### Community 64 - "rateLimit.middleware.js"
 Cohesion: 0.32
@@ -411,9 +405,9 @@ Nodes (5): deleteMyPhoto(), removePhotoFileIfExists(), uploadMyPhoto(), buildUse
 Cohesion: 0.33
 Nodes (5): dependencies, pg, @prisma/adapter-pg, pg, @prisma/adapter-pg
 
-### Community 67 - "clockOut"
-Cohesion: 0.27
-Nodes (11): buildLocationPayload(), calculateFinancialSummary(), clockIn(), clockOut(), getGeofenceErrorMessage(), getQrErrorMessage(), resolveLocationValidationSource(), captureRequestMetadata() (+3 more)
+### Community 67 - "captureRequestMetadata"
+Cohesion: 0.70
+Nodes (4): captureRequestMetadata(), getClientIP(), getDeviceInfo(), getLocation()
 
 ### Community 68 - "roles.js"
 Cohesion: 0.50
@@ -423,10 +417,6 @@ Nodes (3): HR_LEVEL_ROLES, HR_MANAGEABLE_ROLES, INTEGRATOR_MANAGEABLE_ROLES
 Cohesion: 0.67
 Nodes (3): adjustUserBankHours(), adjustTeamMemberBankHours(), adjustBankHours()
 
-### Community 83 - "integrations.routes.js"
-Cohesion: 0.40
-Nodes (4): express, router, slackController, slackOAuthController
-
 ## Knowledge Gaps
 - **631 isolated node(s):** `node`, `es2021`, `eslint:recommended`, `ecmaVersion`, `sourceType` (+626 more)
   These have ≤1 connection - possible missing edges or undocumented components.
@@ -435,17 +425,17 @@ Nodes (4): express, router, slackController, slackOAuthController
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `prisma` connect `database.js` to `pro.controller.js`, `reportWorker.js`, `auth.middleware.js`, `publicApi.controller.js`, `proactiveAlertWorker.js`, `slack.controller.js`, `recalcDay.js`, `supervisor.controller.js`, `user.controller.js`, `admin.controller.js`, `hr.controller.js`, `vacation.controller.js`, `finance.controller.js`, `auth.routes.js`, `time.controller.js`?**
-  _High betweenness centrality (0.078) - this node is a cross-community bridge._
+- **Why does `prisma` connect `database.js` to `pro.controller.js`, `reportWorker.js`, `publicApi.controller.js`, `proactiveAlertWorker.js`, `slack.controller.js`, `recalcDay.js`, `supervisor.controller.js`, `user.controller.js`, `admin.controller.js`, `hr.controller.js`, `vacation.controller.js`, `finance.controller.js`, `auth.routes.js`, `time.controller.js`?**
+  _High betweenness centrality (0.075) - this node is a cross-community bridge._
+- **Why does `useAuth()` connect `App.tsx` to `SuperAdminAccountsPage.tsx`, `SupervisorHoursPage.tsx`, `consent.ts`, `apiFetch`, `Reports.tsx`, `ProfileComplete.tsx`, `SupervisorPendingItemsPage.tsx`, `HrSchedulesPage.tsx`, `HrDailyTimePage.tsx`, `ShellLayout.tsx`, `AdminFinancePage.tsx`, `SupervisorDashboard.tsx`, `ColaboradorDashboard.tsx`, `AdminDashboard.tsx`, `AuthContext.tsx`?**
+  _High betweenness centrality (0.012) - this node is a cross-community bridge._
 - **Why does `isHrLevel()` connect `admin.controller.js` to `roles.js`, `createUser`, `supervisor.controller.js`, `user.controller.js`, `hr.controller.js`, `vacation.controller.js`?**
-  _High betweenness centrality (0.010) - this node is a cross-community bridge._
-- **Why does `useAuth()` connect `App.tsx` to `SupervisorHoursPage.tsx`, `SuperAdminAccountsPage.tsx`, `apiFetch`, `Reports.tsx`, `VacationSupervisorPage.tsx`, `SupervisorPendingItemsPage.tsx`, `HrSchedulesPage.tsx`, `HrDailyTimePage.tsx`, `ShellLayout.tsx`, `AdminFinancePage.tsx`, `SupervisorDashboard.tsx`, `ColaboradorDashboard.tsx`, `AdminDashboard.tsx`, `AuthContext.tsx`?**
-  _High betweenness centrality (0.010) - this node is a cross-community bridge._
+  _High betweenness centrality (0.009) - this node is a cross-community bridge._
 - **What connects `node`, `es2021`, `eslint:recommended` to the rest of the system?**
   _631 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `pro.controller.js` be split into smaller, more focused modules?**
   _Cohesion score 0.05217391304347826 - nodes in this community are weakly interconnected._
 - **Should `reportWorker.js` be split into smaller, more focused modules?**
-  _Cohesion score 0.06533575317604355 - nodes in this community are weakly interconnected._
-- **Should `database.js` be split into smaller, more focused modules?**
-  _Cohesion score 0.1286549707602339 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06711915535444947 - nodes in this community are weakly interconnected._
+- **Should `SuperAdminAccountsPage.tsx` be split into smaller, more focused modules?**
+  _Cohesion score 0.1225296442687747 - nodes in this community are weakly interconnected._
