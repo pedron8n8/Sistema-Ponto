@@ -74,6 +74,8 @@ router.patch('/approve/:id', approveEntry);
  * POST /supervisor/approve-bulk
  * Aprova vários registros de uma vez (aprova junto a HE pendente do lote)
  * Body: { entryIds: string[], comment?: string }
+ *    ou { scope: { startDate, endDate, userId?, groupId? }, comment?: string }
+ *       -> todos os pendentes do período dentro do escopo do ator (máx. 500)
  */
 router.post('/approve-bulk', approveEntriesBulk);
 
@@ -88,6 +90,7 @@ router.patch('/reject/:id', rejectEntry);
  * POST /supervisor/reject-bulk
  * Rejeita vários registros de uma vez (nega junto a HE pendente do lote)
  * Body: { entryIds: string[], comment: string } (comentário obrigatório)
+ *    ou { scope: { startDate, endDate, userId?, groupId? }, comment: string }
  */
 router.post('/reject-bulk', rejectEntriesBulk);
 

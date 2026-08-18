@@ -1,4 +1,5 @@
 const { prisma } = require('../config/database');
+const { isHrLevel } = require('./roles');
 
 /**
  * Resolve o tenant (organização) ao qual um usuário pertence.
@@ -60,20 +61,25 @@ const listDescendantIds = async (rootId, tenantOwnerId) => {
  *  - SUPERADMIN       -> null (todos os tenants)
  *  - canViewAllUsers  -> todos os usuários ativos do tenant do ator
  *  - ADMIN            -> todos os usuários ativos do tenant (ele é o dono)
- *  - INTEGRATOR       -> todos os usuários ativos do tenant (o cargo já embute a visão total)
- *  - HR / SUPERVISOR  -> descendentes ativos via supervisorId, recursivo, + ele mesmo
+ *  - HR / INTEGRATOR  -> todos os usuários ativos do tenant (o cargo é transversal)
+ *  - SUPERVISOR       -> descendentes ativos via supervisorId, recursivo, + ele mesmo
  *  - MEMBER           -> apenas ele mesmo
+ *
+ * RH é transversal, não hierárquico: nada no modelo aponta supervisorId para um RH
+ * (não existe hrId, e o convite grava supervisorId null — auth.middleware.js:147),
+ * então tratá-lo como supervisor devolvia só ele mesmo. É também o escopo que o RH já
+ * tem para escrever (hr.controller.js:34) e para listar usuários (user.controller.js:1493).
  */
 const compute = async (actor) => {
   if (actor.role === 'SUPERADMIN') return null;
 
   const tenantOwnerId = resolveTenantOwnerId(actor);
 
-  if (actor.canViewAllUsers || actor.role === 'ADMIN' || actor.role === 'INTEGRATOR') {
+  if (actor.canViewAllUsers || actor.role === 'ADMIN' || isHrLevel(actor.role)) {
     return listTenantUserIds(tenantOwnerId);
   }
 
-  if (actor.role === 'HR' || actor.role === 'SUPERVISOR') {
+  if (actor.role === 'SUPERVISOR') {
     return listDescendantIds(actor.id, tenantOwnerId);
   }
 

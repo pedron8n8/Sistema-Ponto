@@ -98,6 +98,26 @@ describe('Supervisor Controller', () => {
       );
     });
 
+    it('filtra o grupo pela cadeia inteira abaixo do responsável, não só os diretos', async () => {
+      // Hierarquia real: ADMIN -> RH -> colaborador. Filtrar pelo grupo do RH tem que
+      // trazer os netos, senão a tela fica vazia em quem tem três níveis.
+      mockPrisma.user.findMany.mockResolvedValue([
+        { id: 'rh-1', name: 'RH', role: 'HR', supervisorId: 'admin-1' },
+        { id: 'lider-1', name: 'Lider', role: 'MEMBER', supervisorId: 'rh-1' },
+        { id: 'neto-1', name: 'Neto', role: 'MEMBER', supervisorId: 'lider-1' },
+        { id: 'fora-1', name: 'Outro time', role: 'MEMBER', supervisorId: 'admin-1' },
+      ]);
+      mockPrisma.timeEntry.findMany.mockResolvedValue([]);
+      mockPrisma.timeEntry.count.mockResolvedValue(0);
+      mockPrisma.timeEntry.groupBy.mockResolvedValue([]);
+      mockReq.query = { groupId: 'rh-1' };
+
+      await getTeamPendingEntries(mockReq, mockRes);
+
+      const where = mockPrisma.timeEntry.findMany.mock.calls[0][0].where;
+      expect(where.userId.in.sort()).toEqual(['lider-1', 'neto-1']);
+    });
+
     it('should return 403 if userId is not a subordinate', async () => {
       const subordinates = [
         { id: 'member-1', name: 'Member 1', email: 'member1@test.com' },
@@ -493,6 +513,79 @@ describe('Supervisor Controller', () => {
       mockReq.body = { entryIds: Array.from({ length: 201 }, (_, i) => `e-${i}`) };
       await approveEntriesBulk(mockReq, mockRes);
       expect(mockRes.status).toHaveBeenCalledWith(400);
+    });
+
+    // Modo por período: o cliente manda o filtro da tela, o servidor resolve os ids.
+    // É o que permite aprovar a semana de todos os colaboradores em um clique.
+    describe('scope (período inteiro)', () => {
+      it('resolve os pendentes do período e aprova todos', async () => {
+        mockPrisma.timeEntry.count.mockResolvedValue(bulkEntries.length);
+        mockReq.body = { scope: { startDate: '2026-08-10', endDate: '2026-08-16' } };
+        const ops = captureOps();
+
+        await approveEntriesBulk(mockReq, mockRes);
+
+        // Mesmo filtro da listagem: equipe visível, pendente e fechado, dentro do range.
+        const where = mockPrisma.timeEntry.findMany.mock.calls.at(-1)[0].where;
+        expect(where).toMatchObject({
+          userId: { in: ['member-123'] },
+          status: 'PENDING',
+          clockOut: { not: null },
+        });
+        // Datas locais: o range cobre o dia 10 inteiro até o fim do dia 16.
+        expect(where.clockIn.gte.getDate()).toBe(10);
+        expect(where.clockIn.lte.getDate()).toBe(16);
+        expect(where.clockIn.lte.getHours()).toBe(23);
+
+        expect(mockRes.json).toHaveBeenCalledWith(
+          expect.objectContaining({ approvedCount: 2, overtimeApprovedCount: 1 })
+        );
+        expect(ops.find((op) => op.data?.overtimeStatus === 'APPROVED').where.id.in).toEqual(['entry-ot']);
+      });
+
+      it('recusa scope sem intervalo de datas', async () => {
+        mockReq.body = { scope: { userId: 'member-123' } };
+
+        await approveEntriesBulk(mockReq, mockRes);
+
+        expect(mockRes.status).toHaveBeenCalledWith(400);
+        expect(mockPrisma.timeEntry.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('recusa período acima do teto e não escreve nada', async () => {
+        mockPrisma.timeEntry.count.mockResolvedValue(501);
+        mockReq.body = { scope: { startDate: '2026-08-01', endDate: '2026-08-31' }, comment: 'Mes inteiro errado' };
+
+        await rejectEntriesBulk(mockReq, mockRes);
+
+        expect(mockRes.status).toHaveBeenCalledWith(400);
+        expect(mockPrisma.timeEntry.updateMany).not.toHaveBeenCalled();
+        expect(reverseEntryBankHours).not.toHaveBeenCalled();
+      });
+
+      it('nega o período pedido e reverte o banco de horas da HE', async () => {
+        mockPrisma.timeEntry.count.mockResolvedValue(bulkEntries.length);
+        mockReq.body = {
+          scope: { startDate: '2026-08-10', endDate: '2026-08-16' },
+          comment: 'Semana inteira fora do combinado',
+        };
+
+        await rejectEntriesBulk(mockReq, mockRes);
+
+        expect(mockRes.json).toHaveBeenCalledWith(
+          expect.objectContaining({ rejectedCount: 2, overtimeRejectedCount: 1 })
+        );
+        expect(reverseEntryBankHours).toHaveBeenCalledWith('entry-ot');
+      });
+
+      it('recusa colaborador fora do escopo do ator', async () => {
+        mockReq.body = { scope: { startDate: '2026-08-10', endDate: '2026-08-16', userId: 'estranho-999' } };
+
+        await approveEntriesBulk(mockReq, mockRes);
+
+        expect(mockRes.status).toHaveBeenCalledWith(403);
+        expect(mockPrisma.timeEntry.updateMany).not.toHaveBeenCalled();
+      });
     });
   });
 

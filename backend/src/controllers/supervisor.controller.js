@@ -686,6 +686,81 @@ const sendSseEvent = (res, eventName, payload) => {
  * GET /supervisor/entries
  * Lista registros pendentes dos membros da equipe do supervisor logado
  */
+/**
+ * Ids abaixo de `rootId` na cadeia de supervisão, em qualquer profundidade, sem o próprio root.
+ * Trabalha em memória sobre a equipe já carregada — a hierarquia real tem poucos níveis
+ * (ADMIN -> RH -> colaborador), e um "grupo" precisa trazer a cadeia inteira, não só os diretos.
+ */
+const collectSubtreeIds = (people, rootId) => {
+  const childrenBy = new Map();
+  for (const person of people) {
+    if (!person.supervisorId) continue;
+    if (!childrenBy.has(person.supervisorId)) childrenBy.set(person.supervisorId, []);
+    childrenBy.get(person.supervisorId).push(person.id);
+  }
+
+  const ids = new Set();
+  const frontier = [rootId];
+  while (frontier.length > 0) {
+    for (const childId of childrenBy.get(frontier.pop()) || []) {
+      if (ids.has(childId)) continue; // também corta ciclo de cadastro
+      ids.add(childId);
+      frontier.push(childId);
+    }
+  }
+
+  return [...ids];
+};
+
+/**
+ * Escopo de leitura de ponto da equipe: o mesmo filtro usado pela listagem e pelas ações
+ * em lote por período. Devolve `null` quando o userId pedido está fora do escopo do ator —
+ * o chamador responde 403.
+ *
+ * `groupId` recorta pela cadeia abaixo daquele responsável (não só os diretos).
+ */
+const buildTeamEntriesScope = async (actor, { status = 'PENDING', userId, groupId, startDate, endDate }) => {
+  const subordinates = await prisma.user.findMany({
+    where: await buildManagedTeamWhere(actor),
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      supervisorId: true,
+    },
+  });
+
+  const subordinateIds = subordinates.map((s) => s.id);
+  if (userId && !subordinateIds.includes(userId)) return null;
+
+  const groupedSubordinateIds = groupId ? collectSubtreeIds(subordinates, groupId) : subordinateIds;
+
+  const where = {
+    userId: userId ? userId : { in: groupedSubordinateIds },
+    ...(status !== 'ALL' && { status }),
+  };
+
+  // Pendente só conta registro fechado: um dia em aberto ainda não é revisável.
+  if (status === 'PENDING') {
+    where.clockOut = { not: null };
+  }
+
+  if (startDate || endDate) {
+    where.clockIn = {};
+    if (startDate) {
+      where.clockIn.gte = parseLocalDate(startDate);
+    }
+    if (endDate) {
+      const end = parseLocalDate(endDate);
+      end.setHours(23, 59, 59, 999);
+      where.clockIn.lte = end;
+    }
+  }
+
+  return { subordinates, subordinateIds, where };
+};
+
 const getTeamPendingEntries = async (req, res) => {
   try {
     const { status = 'PENDING', page = 1, limit = 20, userId, groupId, startDate, endDate } = req.query;
@@ -696,16 +771,17 @@ const getTeamPendingEntries = async (req, res) => {
 
     // Se for ADMIN, pode visualizar todos os usuários não-admin
     // Se for SUPERVISOR, visualiza apenas os subordinados
-    const subordinates = await prisma.user.findMany({
-      where: await buildManagedTeamWhere(req.user),
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        supervisorId: true,
-      },
-    });
+    const scope = await buildTeamEntriesScope(req.user, { status, userId, groupId, startDate, endDate });
+
+    // Verifica se o userId solicitado é subordinado deste supervisor (ADMIN pode ver todos)
+    if (!scope) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você só pode visualizar registros de seus subordinados',
+      });
+    }
+
+    const { subordinates, subordinateIds, where } = scope;
 
     if (subordinates.length === 0) {
       return res.json({
@@ -723,42 +799,6 @@ const getTeamPendingEntries = async (req, res) => {
           total: 0,
           totalPages: 0,
         },
-      });
-    }
-
-    const subordinateIds = subordinates.map((s) => s.id);
-    const groupedSubordinateIds = groupId
-      ? subordinates.filter((s) => s.supervisorId === groupId).map((s) => s.id)
-      : subordinateIds;
-
-    // Filtros de busca
-    const where = {
-      userId: userId ? userId : { in: groupedSubordinateIds },
-      ...(status !== 'ALL' && { status }),
-    };
-
-    if (status === 'PENDING') {
-      where.clockOut = { not: null };
-    }
-
-    // Filtro por data
-    if (startDate || endDate) {
-      where.clockIn = {};
-      if (startDate) {
-        where.clockIn.gte = parseLocalDate(startDate);
-      }
-      if (endDate) {
-        const end = parseLocalDate(endDate);
-        end.setHours(23, 59, 59, 999);
-        where.clockIn.lte = end;
-      }
-    }
-
-    // Verifica se o userId solicitado é subordinado deste supervisor (ADMIN pode ver todos)
-    if (userId && !subordinateIds.includes(userId)) {
-      return res.status(403).json({
-        error: 'Forbidden',
-        message: 'Você só pode visualizar registros de seus subordinados',
       });
     }
 
@@ -1006,53 +1046,31 @@ const approveEntry = async (req, res) => {
   }
 };
 
-/**
- * Carrega, autoriza e classifica um lote de registros.
- * Reaproveitado por approve-bulk e reject-bulk.
- *
- * Diferente das rotas de um registro só, o lote NÃO recusa registros com HE pendente:
- * as duas ações em lote decidem a HE junto (aprovar tudo / negar tudo), que é o
- * ponto de aprovar ou negar uma semana inteira em um clique.
- *
- * Retorna { eligible, skipped } ou null (resposta de erro já enviada).
- */
-const loadEntriesForBulk = async (req, res) => {
-  const supervisorId = req.user.id;
-  const { entryIds } = req.body || {};
+// Teto de registros que uma ação por período pode atingir numa chamada.
+// ponytail: o gargalo é o laço sequencial de reverseEntryBankHours no reject; se
+// precisar de mais, mova a reversão para dentro do lote ou pagine no cliente.
+const MAX_SCOPE_ENTRIES = 500;
 
-  if (!Array.isArray(entryIds) || entryIds.length === 0 || entryIds.length > 200) {
-    res.status(400).json({
-      error: 'Bad Request',
-      message: 'Informe entryIds como um array com 1 a 200 registros.',
-    });
-    return null;
-  }
-
-  const entries = await prisma.timeEntry.findMany({
-    where: { id: { in: entryIds } },
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          supervisorId: true,
-          organizationAdminId: true,
-        },
-      },
+const BULK_ENTRY_INCLUDE = {
+  user: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      supervisorId: true,
+      organizationAdminId: true,
     },
-  });
+  },
+};
 
-  const foundIds = new Set(entries.map((entry) => entry.id));
-  const skipped = entryIds
-    .filter((id) => !foundIds.has(id))
-    .map((id) => ({ id, reason: 'NOT_FOUND' }));
+/** Separa o que o ator pode decidir do que precisa ser ignorado, com o motivo. */
+const classifyBulkEntries = async (actor, entries, skipped) => {
   const eligible = [];
 
   for (const entry of entries) {
-    if (!(await canManageTeamUser({ actor: req.user, targetUser: entry.user }))) {
+    if (!(await canManageTeamUser({ actor, targetUser: entry.user }))) {
       skipped.push({ id: entry.id, reason: 'FORBIDDEN' });
-    } else if (req.user.role === 'ADMIN' && entry.user.organizationAdminId !== supervisorId) {
+    } else if (actor.role === 'ADMIN' && entry.user.organizationAdminId !== actor.id) {
       skipped.push({ id: entry.id, reason: 'FORBIDDEN' });
     } else if (entry.status !== 'PENDING') {
       skipped.push({ id: entry.id, reason: 'ENTRY_NOT_PENDING' });
@@ -1064,6 +1082,100 @@ const loadEntriesForBulk = async (req, res) => {
   }
 
   return { eligible, skipped };
+};
+
+/**
+ * Modo por período: o servidor resolve quais registros entram, com o mesmo filtro da
+ * listagem (buildTeamEntriesScope), então o cliente não precisa mandar ids.
+ * Intervalo é obrigatório — "aprovar tudo desde sempre" não é alcançável por acidente.
+ */
+const loadEntriesForBulkScope = async (req, res, scope) => {
+  const { startDate, endDate, userId, groupId } = scope || {};
+
+  if (!startDate || !endDate) {
+    res.status(400).json({
+      error: 'Bad Request',
+      message: 'scope exige startDate e endDate.',
+    });
+    return null;
+  }
+
+  const resolved = await buildTeamEntriesScope(req.user, {
+    status: 'PENDING',
+    userId,
+    groupId,
+    startDate,
+    endDate,
+  });
+
+  if (!resolved) {
+    res.status(403).json({
+      error: 'Forbidden',
+      message: 'Você só pode revisar registros de seus subordinados',
+    });
+    return null;
+  }
+
+  const total = await prisma.timeEntry.count({ where: resolved.where });
+
+  if (total > MAX_SCOPE_ENTRIES) {
+    res.status(400).json({
+      error: 'Bad Request',
+      message: `O período selecionado tem ${total} registros pendentes, acima do limite de ${MAX_SCOPE_ENTRIES} por ação. Restrinja o filtro (colaborador, grupo ou período menor).`,
+    });
+    return null;
+  }
+
+  const entries = await prisma.timeEntry.findMany({
+    where: resolved.where,
+    include: BULK_ENTRY_INCLUDE,
+  });
+
+  // Nada a ignorar por "não encontrado": os ids saíram da própria consulta.
+  return classifyBulkEntries(req.user, entries, []);
+};
+
+/**
+ * Carrega, autoriza e classifica um lote de registros.
+ * Reaproveitado por approve-bulk e reject-bulk.
+ *
+ * Dois modos de entrada:
+ *   { entryIds: string[] }  -> lote explícito, 1..200 ids (um colaborador na tela)
+ *   { scope: { startDate, endDate, userId?, groupId? } } -> todos os pendentes do período
+ *     dentro do escopo do ator, resolvidos no servidor. É isso que permite aprovar a
+ *     semana inteira de todos os colaboradores do filtro em um clique, sem depender da
+ *     página carregada no cliente nem do teto de 200 ids.
+ *
+ * Diferente das rotas de um registro só, o lote NÃO recusa registros com HE pendente:
+ * as duas ações em lote decidem a HE junto (aprovar tudo / negar tudo), que é o
+ * ponto de aprovar ou negar uma semana inteira em um clique.
+ *
+ * Retorna { eligible, skipped } ou null (resposta de erro já enviada).
+ */
+const loadEntriesForBulk = async (req, res) => {
+  const { entryIds, scope } = req.body || {};
+
+  if (scope) return loadEntriesForBulkScope(req, res, scope);
+
+  if (!Array.isArray(entryIds) || entryIds.length === 0 || entryIds.length > 200) {
+    res.status(400).json({
+      error: 'Bad Request',
+      message: 'Informe entryIds como um array com 1 a 200 registros, ou scope com startDate e endDate.',
+    });
+    return null;
+  }
+
+  const entries = await prisma.timeEntry.findMany({
+    where: { id: { in: entryIds } },
+    include: BULK_ENTRY_INCLUDE,
+  });
+
+  const foundIds = new Set(entries.map((entry) => entry.id));
+  const skipped = entryIds
+    .filter((id) => !foundIds.has(id))
+    .map((id) => ({ id, reason: 'NOT_FOUND' }));
+
+  return classifyBulkEntries(req.user, entries, skipped);
 };
 
 /**

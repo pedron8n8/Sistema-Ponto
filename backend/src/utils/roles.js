@@ -1,6 +1,7 @@
 /**
- * INTEGRATOR é o HR com um degrau a mais: mesma superfície de permissões de um HR,
- * mais visão de todo o tenant (utils/visibleUsers.js) e o poder de gerir usuários HR.
+ * INTEGRATOR é o HR com um degrau a mais: mesma superfície de permissões e o mesmo
+ * escopo de leitura (o tenant inteiro, utils/visibleUsers.js), mais o poder de gerir
+ * usuários HR — hoje essa é a única diferença entre os dois cargos.
  *
  * Onde o código pergunta "é RH?" para liberar tela/rota/escopo, use isHrLevel.
  * Onde pergunta "quem esse ator pode criar/editar/promover?", use manageableRolesFor —

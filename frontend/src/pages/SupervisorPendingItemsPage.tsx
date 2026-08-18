@@ -39,6 +39,23 @@ type PeriodType = 'day' | 'week' | 'fortnight' | 'month'
 
 const defaultStats: Stats = { PENDING: 0, APPROVED: 0, REJECTED: 0 }
 
+// Chave de loading/comentario das acoes globais, ao lado das chaves por colaborador.
+const GLOBAL_BULK_KEY = '__period__'
+
+// Espelha MAX_SCOPE_ENTRIES do backend, so para nao oferecer um botao que vai voltar 400.
+// A autoridade continua sendo o servidor (supervisor.controller.js).
+const MAX_PERIOD_BULK = 500
+
+type PeriodBulkScope = { startDate: string; endDate: string; userId?: string; groupId?: string }
+type BulkBody = { entryIds: string[]; comment?: string } | { scope: PeriodBulkScope; comment?: string }
+type BulkResult = {
+  approvedCount?: number
+  rejectedCount?: number
+  overtimeApprovedCount?: number
+  overtimeRejectedCount?: number
+  skipped?: { id: string; reason: string }[]
+}
+
 const toYmd = (date: Date) => {
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
@@ -101,6 +118,9 @@ const SupervisorPendingItemsPage = () => {
   const [entries, setEntries] = useState<Entry[]>([])
   const [stats, setStats] = useState<Stats>(defaultStats)
   const [subordinates, setSubordinates] = useState<Subordinate[]>([])
+  // Total do servidor para o periodo/filtro atual: a listagem para em 500, entao o
+  // contador das acoes globais nao pode sair de `entries`.
+  const [periodTotal, setPeriodTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -141,17 +161,21 @@ const SupervisorPendingItemsPage = () => {
       query.set('endDate', endDate)
       query.set('limit', '500')
 
-      const entriesResponse = await apiFetch<{ entries: Entry[]; stats: Stats; subordinates: Subordinate[] }>(
-        `/supervisor/entries?${query.toString()}`,
-        { token }
-      )
+      const entriesResponse = await apiFetch<{
+        entries: Entry[]
+        stats: Stats
+        subordinates: Subordinate[]
+        pagination?: { total: number }
+      }>(`/supervisor/entries?${query.toString()}`, { token })
 
       setEntries(entriesResponse.entries || [])
       setStats(entriesResponse.stats || defaultStats)
       setSubordinates(entriesResponse.subordinates || [])
+      setPeriodTotal(entriesResponse.pagination?.total || 0)
     } catch (err) {
       setEntries([])
       setStats(defaultStats)
+      setPeriodTotal(0)
       setError(err instanceof Error ? err.message : t('Could not load pending items.', 'Erro ao carregar pendencias'))
     } finally {
       setLoading(false)
@@ -162,12 +186,33 @@ const SupervisorPendingItemsPage = () => {
     loadData().catch(() => undefined)
   }, [token, filters.status, filters.userId, filters.groupId, startDate, endDate])
 
-  const groups = useMemo(() => subordinates.filter((s) => s.role === 'SUPERVISOR'), [subordinates])
+  // Grupo = quem realmente tem gente abaixo, seja qual for o cargo. Filtrar por
+  // role === 'SUPERVISOR' escondia a lista inteira em organizacoes onde as equipes
+  // sao chefiadas por RH/INTEGRATOR/ADMIN, que e o caso real.
+  const groups = useMemo(() => {
+    const headIds = new Set(subordinates.map((s) => s.supervisorId).filter(Boolean))
+    return subordinates.filter((s) => headIds.has(s.id))
+  }, [subordinates])
 
-  const visibleSubordinates = useMemo(
-    () => (filters.groupId ? subordinates.filter((s) => s.supervisorId === filters.groupId) : subordinates),
-    [subordinates, filters.groupId]
-  )
+  const visibleSubordinates = useMemo(() => {
+    if (!filters.groupId) return subordinates
+    // Mesma regra do backend: o grupo traz a cadeia inteira abaixo do responsavel.
+    const childrenBy = new Map<string, string[]>()
+    for (const s of subordinates) {
+      if (!s.supervisorId) continue
+      childrenBy.set(s.supervisorId, [...(childrenBy.get(s.supervisorId) || []), s.id])
+    }
+    const ids = new Set<string>()
+    const frontier = [filters.groupId]
+    while (frontier.length > 0) {
+      for (const childId of childrenBy.get(frontier.pop() as string) || []) {
+        if (ids.has(childId)) continue
+        ids.add(childId)
+        frontier.push(childId)
+      }
+    }
+    return subordinates.filter((s) => ids.has(s.id))
+  }, [subordinates, filters.groupId])
 
   const pendingCount = useMemo(() => entries.filter((entry) => !entry.clockOut).length, [entries])
 
@@ -298,72 +343,69 @@ const SupervisorPendingItemsPage = () => {
     }
   }
 
-  const handleBulkApprove = async (group: WorkerGroup) => {
-    if (!token || group.approvableIds.length === 0) return
-
-    const userKey = group.user.id || group.user.email
-    const otWarning =
-      group.pendingOtMinutes > 0
-        ? t(
-            ` This also approves ${fmtHM(group.pendingOtMinutes)} of pending overtime.`,
-            ` Isso tambem aprova ${fmtHM(group.pendingOtMinutes)} de horas extras pendentes.`
-          )
-        : ''
-    const confirmed = window.confirm(
-      t(
-        `Approve all ${group.approvableIds.length} pending entries of ${group.user.name} in this period?`,
-        `Aprovar todos os ${group.approvableIds.length} registros pendentes de ${group.user.name} neste periodo?`
-      ) + otWarning
-    )
-    if (!confirmed) return
+  /**
+   * Uma unica rotina para as quatro acoes em lote: aprovar/negar um colaborador
+   * (entryIds da tela) e aprovar/negar todos do filtro (scope resolvido no servidor).
+   */
+  const runBulk = async ({
+    kind,
+    body,
+    loadingKey,
+    confirmText,
+  }: {
+    kind: 'approve' | 'deny'
+    body: BulkBody
+    loadingKey: string
+    confirmText: string
+  }) => {
+    if (!token) return
+    if (!window.confirm(confirmText)) return
 
     setNotice('')
     setError('')
-    setBulkLoadingByUser((prev) => ({ ...prev, [userKey]: true }))
+    setBulkLoadingByUser((prev) => ({ ...prev, [loadingKey]: true }))
 
     try {
       // skipIdempotency: o lote e explicitamente confirmado pelo supervisor; sem isso
-      // uma repeticao do mesmo corpo no mesmo dia volta 202 sem approvedCount.
-      const result = await apiFetch<{
-        approvedCount: number
-        overtimeApprovedCount: number
-        skipped: { id: string; reason: string }[]
-      }>('/supervisor/approve-bulk', {
-        token,
-        method: 'POST',
-        body: { entryIds: group.approvableIds },
-        skipIdempotency: true,
-      })
-
-      const skippedCount = result.skipped?.length || 0
-      const otNote =
-        result.overtimeApprovedCount > 0
-          ? t(
-              ` Overtime approved on ${result.overtimeApprovedCount} of them.`,
-              ` Horas extras aprovadas em ${result.overtimeApprovedCount} deles.`
-            )
-          : ''
-      setNotice(
-        (skippedCount > 0
-          ? t(
-              `${result.approvedCount} entries approved, ${skippedCount} skipped.`,
-              `${result.approvedCount} registros aprovados, ${skippedCount} ignorados.`
-            )
-          : t(`${result.approvedCount} entries approved.`, `${result.approvedCount} registros aprovados.`)) + otNote
+      // uma repeticao do mesmo corpo no mesmo dia volta 202 sem os contadores.
+      const result = await apiFetch<BulkResult>(
+        kind === 'approve' ? '/supervisor/approve-bulk' : '/supervisor/reject-bulk',
+        { token, method: 'POST', body, skipIdempotency: true }
       )
+
+      const count = (kind === 'approve' ? result.approvedCount : result.rejectedCount) || 0
+      const otCount = (kind === 'approve' ? result.overtimeApprovedCount : result.overtimeRejectedCount) || 0
+      const skippedCount = result.skipped?.length || 0
+
+      const done =
+        kind === 'approve'
+          ? t(`${count} entries approved.`, `${count} registros aprovados.`)
+          : t(`${count} entries denied.`, `${count} registros negados.`)
+      const skippedNote =
+        skippedCount > 0 ? t(` ${skippedCount} skipped.`, ` ${skippedCount} ignorados.`) : ''
+      const otNote =
+        otCount > 0
+          ? kind === 'approve'
+            ? t(` Overtime approved on ${otCount} of them.`, ` Horas extras aprovadas em ${otCount} deles.`)
+            : t(` Overtime denied on ${otCount} of them.`, ` Horas extras negadas em ${otCount} deles.`)
+          : ''
+
+      setNotice(done + skippedNote + otNote)
       await loadData()
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Could not bulk approve.', 'Erro ao aprovar em lote'))
+      const fallback =
+        kind === 'approve'
+          ? t('Could not bulk approve.', 'Erro ao aprovar em lote')
+          : t('Could not bulk deny.', 'Erro ao negar em lote')
+      setError(err instanceof Error ? err.message : fallback)
     } finally {
-      setBulkLoadingByUser((prev) => ({ ...prev, [userKey]: false }))
+      setBulkLoadingByUser((prev) => ({ ...prev, [loadingKey]: false }))
     }
   }
 
-  const handleBulkReject = async (group: WorkerGroup) => {
-    if (!token || group.approvableIds.length === 0) return
-
-    const userKey = group.user.id || group.user.email
-    const comment = (bulkCommentByUser[userKey] || '').trim()
+  /** Comentario obrigatorio em qualquer negacao: mesma regra do rejectEntry no backend. */
+  const readDenyComment = (key: string) => {
+    const comment = (bulkCommentByUser[key] || '').trim()
     if (comment.length < 5) {
       setError(
         t(
@@ -371,8 +413,37 @@ const SupervisorPendingItemsPage = () => {
           'Para negar em lote, informe comentario com pelo menos 5 caracteres.'
         )
       )
-      return
+      return null
     }
+    return comment
+  }
+
+  const handleBulkApprove = (group: WorkerGroup) => {
+    if (group.approvableIds.length === 0) return
+    const otWarning =
+      group.pendingOtMinutes > 0
+        ? t(
+            ` This also approves ${fmtHM(group.pendingOtMinutes)} of pending overtime.`,
+            ` Isso tambem aprova ${fmtHM(group.pendingOtMinutes)} de horas extras pendentes.`
+          )
+        : ''
+    return runBulk({
+      kind: 'approve',
+      body: { entryIds: group.approvableIds },
+      loadingKey: group.user.id || group.user.email,
+      confirmText:
+        t(
+          `Approve all ${group.approvableIds.length} pending entries of ${group.user.name} in this period?`,
+          `Aprovar todos os ${group.approvableIds.length} registros pendentes de ${group.user.name} neste periodo?`
+        ) + otWarning,
+    })
+  }
+
+  const handleBulkReject = async (group: WorkerGroup) => {
+    if (group.approvableIds.length === 0) return
+    const userKey = group.user.id || group.user.email
+    const comment = readDenyComment(userKey)
+    if (!comment) return
 
     const otWarning =
       group.pendingOtMinutes > 0
@@ -381,53 +452,62 @@ const SupervisorPendingItemsPage = () => {
             ` Isso tambem nega ${fmtHM(group.pendingOtMinutes)} de horas extras pendentes e reverte o credito de banco de horas.`
           )
         : ''
-    const confirmed = window.confirm(
-      t(
-        `Deny all ${group.approvableIds.length} pending entries of ${group.user.name} in this period?`,
-        `Negar todos os ${group.approvableIds.length} registros pendentes de ${group.user.name} neste periodo?`
-      ) + otWarning
-    )
-    if (!confirmed) return
+    await runBulk({
+      kind: 'deny',
+      body: { entryIds: group.approvableIds, comment },
+      loadingKey: userKey,
+      confirmText:
+        t(
+          `Deny all ${group.approvableIds.length} pending entries of ${group.user.name} in this period?`,
+          `Negar todos os ${group.approvableIds.length} registros pendentes de ${group.user.name} neste periodo?`
+        ) + otWarning,
+    })
+    setBulkCommentByUser((prev) => ({ ...prev, [userKey]: '' }))
+  }
 
-    setNotice('')
-    setError('')
-    setBulkLoadingByUser((prev) => ({ ...prev, [userKey]: true }))
+  /**
+   * Acao global: o servidor resolve o lote pelo mesmo filtro da tela, entao ela nao
+   * depende dos registros carregados (a listagem para em 500) nem do teto de 200 ids.
+   */
+  const periodScope = { startDate, endDate, userId: filters.userId, groupId: filters.groupId }
 
-    try {
-      const result = await apiFetch<{
-        rejectedCount: number
-        overtimeRejectedCount: number
-        skipped: { id: string; reason: string }[]
-      }>('/supervisor/reject-bulk', {
-        token,
-        method: 'POST',
-        body: { entryIds: group.approvableIds, comment },
-        skipIdempotency: true,
-      })
-
-      const skippedCount = result.skipped?.length || 0
-      const otNote =
-        result.overtimeRejectedCount > 0
-          ? t(
-              ` Overtime denied on ${result.overtimeRejectedCount} of them.`,
-              ` Horas extras negadas em ${result.overtimeRejectedCount} deles.`
-            )
-          : ''
-      setNotice(
-        (skippedCount > 0
-          ? t(
-              `${result.rejectedCount} entries denied, ${skippedCount} skipped.`,
-              `${result.rejectedCount} registros negados, ${skippedCount} ignorados.`
-            )
-          : t(`${result.rejectedCount} entries denied.`, `${result.rejectedCount} registros negados.`)) + otNote
-      )
-      setBulkCommentByUser((prev) => ({ ...prev, [userKey]: '' }))
-      await loadData()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('Could not bulk deny.', 'Erro ao negar em lote'))
-    } finally {
-      setBulkLoadingByUser((prev) => ({ ...prev, [userKey]: false }))
+  const scopeLabel = () => {
+    if (filters.userId) {
+      const target = subordinates.find((s) => s.id === filters.userId)
+      return target?.name || t('the selected employee', 'o colaborador selecionado')
     }
+    if (filters.groupId) {
+      const group = groups.find((g) => g.id === filters.groupId)
+      return t(`the group ${group?.name || ''}`, `o grupo ${group?.name || ''}`)
+    }
+    return t('ALL employees', 'TODOS os colaboradores')
+  }
+
+  const handleGlobalApprove = () =>
+    runBulk({
+      kind: 'approve',
+      body: { scope: periodScope },
+      loadingKey: GLOBAL_BULK_KEY,
+      confirmText: t(
+        `Approve the ${periodTotal} pending entries of ${scopeLabel()} between ${startDate} and ${endDate}? Pending overtime in the period is approved along with them.`,
+        `Aprovar os ${periodTotal} registros pendentes de ${scopeLabel()} entre ${startDate} e ${endDate}? As horas extras pendentes do periodo sao aprovadas junto.`
+      ),
+    })
+
+  const handleGlobalDeny = async () => {
+    const comment = readDenyComment(GLOBAL_BULK_KEY)
+    if (!comment) return
+
+    await runBulk({
+      kind: 'deny',
+      body: { scope: periodScope, comment },
+      loadingKey: GLOBAL_BULK_KEY,
+      confirmText: t(
+        `Deny the ${periodTotal} pending entries of ${scopeLabel()} between ${startDate} and ${endDate}? Pending overtime is zeroed permanently and the bank-hours credit is reversed. This cannot be undone.`,
+        `Negar os ${periodTotal} registros pendentes de ${scopeLabel()} entre ${startDate} e ${endDate}? As horas extras pendentes sao zeradas em definitivo e o credito de banco de horas e revertido. Nao ha como desfazer.`
+      ),
+    })
+    setBulkCommentByUser((prev) => ({ ...prev, [GLOBAL_BULK_KEY]: '' }))
   }
 
   const entryRowClass = (entry: Entry) => {
@@ -478,14 +558,8 @@ const SupervisorPendingItemsPage = () => {
           {groups.length > 0 ? (
             <select
               value={filters.groupId}
-              onChange={(event) => {
-                const groupId = event.target.value
-                setFilters((prev) => {
-                  const stillVisible =
-                    !groupId || subordinates.some((s) => s.id === prev.userId && s.supervisorId === groupId)
-                  return { ...prev, groupId, userId: stillVisible ? prev.userId : '' }
-                })
-              }}
+              // Troca de grupo zera o colaborador: escolhe-se o grupo e depois a pessoa dentro dele.
+              onChange={(event) => setFilters((prev) => ({ ...prev, groupId: event.target.value, userId: '' }))}
               className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
             >
               <option value="">{t('All groups', 'Todos os grupos')}</option>
@@ -550,6 +624,53 @@ const SupervisorPendingItemsPage = () => {
             {t('Refresh', 'Atualizar')}
           </button>
         </div>
+
+        {filters.status === 'PENDING' && periodTotal > 0 ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-2xl bg-slate-50 px-3 py-3">
+            <span className="text-xs font-medium text-slate-700">
+              {t(
+                `Whole period — ${periodTotal} pending entries of ${scopeLabel()}`,
+                `Periodo inteiro — ${periodTotal} registros pendentes de ${scopeLabel()}`
+              )}
+            </span>
+            {periodTotal > MAX_PERIOD_BULK ? (
+              <span className="text-xs text-amber-700">
+                {t(
+                  `Above the limit of ${MAX_PERIOD_BULK} entries per action — narrow the filter (employee, group or a shorter period).`,
+                  `Acima do limite de ${MAX_PERIOD_BULK} registros por acao — restrinja o filtro (colaborador, grupo ou periodo menor).`
+                )}
+              </span>
+            ) : (
+              <>
+                <input
+                  value={bulkCommentByUser[GLOBAL_BULK_KEY] || ''}
+                  onChange={(event) =>
+                    setBulkCommentByUser((prev) => ({ ...prev, [GLOBAL_BULK_KEY]: event.target.value }))
+                  }
+                  placeholder={t('Comment (required to deny)', 'Comentario (obrigatorio para negar)')}
+                  className="min-w-[16rem] flex-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
+                />
+                <button
+                  onClick={() => handleGlobalApprove()}
+                  disabled={bulkLoadingByUser[GLOBAL_BULK_KEY]}
+                  className="rounded-full bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                >
+                  {t(`Approve everyone (${periodTotal})`, `Aprovar todos (${periodTotal})`)}
+                </button>
+                <button
+                  onClick={() => handleGlobalDeny()}
+                  disabled={
+                    bulkLoadingByUser[GLOBAL_BULK_KEY] ||
+                    (bulkCommentByUser[GLOBAL_BULK_KEY] || '').trim().length < 5
+                  }
+                  className="rounded-full bg-rose-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                >
+                  {t(`Deny everyone (${periodTotal})`, `Negar todos (${periodTotal})`)}
+                </button>
+              </>
+            )}
+          </div>
+        ) : null}
 
         {loading ? <p className="mt-3 text-sm text-slate-500">{t('Loading pending items...', 'Carregando pendencias...')}</p> : null}
         {error ? <p className="mt-3 text-xs text-rose-600">{error}</p> : null}

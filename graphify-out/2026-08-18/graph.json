@@ -1570,7 +1570,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_config_database",
-      "community": 65,
+      "community": 3,
       "community_name": "database.js",
       "norm_label": "database.js"
     },
@@ -1581,7 +1581,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_config_database_prismaclient",
-      "community": 65,
+      "community": 3,
       "community_name": "database.js",
       "norm_label": "{ prismaclient }"
     },
@@ -1592,7 +1592,7 @@
       "source_location": "L2",
       "_origin": "ast",
       "id": "backend_src_config_database_prismapg",
-      "community": 65,
+      "community": 3,
       "community_name": "database.js",
       "norm_label": "{ prismapg }"
     },
@@ -1603,7 +1603,7 @@
       "source_location": "L3",
       "_origin": "ast",
       "id": "backend_src_config_database_pool",
-      "community": 65,
+      "community": 3,
       "community_name": "database.js",
       "norm_label": "{ pool }"
     },
@@ -1614,7 +1614,7 @@
       "source_location": "L20",
       "_origin": "ast",
       "id": "backend_src_config_database_adapter",
-      "community": 65,
+      "community": 3,
       "community_name": "database.js",
       "norm_label": "adapter"
     },
@@ -1625,7 +1625,7 @@
       "source_location": "L26",
       "_origin": "ast",
       "id": "backend_src_config_database_prisma",
-      "community": 65,
+      "community": 3,
       "community_name": "database.js",
       "norm_label": "prisma"
     },
@@ -1636,8 +1636,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_config_redis",
-      "community": 51,
-      "community_name": "workers/index.js",
+      "community": 34,
+      "community_name": "terminalQr.js",
       "norm_label": "redis.js"
     },
     {
@@ -1647,8 +1647,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_config_redis_redis",
-      "community": 51,
-      "community_name": "workers/index.js",
+      "community": 34,
+      "community_name": "terminalQr.js",
       "norm_label": "redis"
     },
     {
@@ -1659,7 +1659,7 @@
       "_origin": "ast",
       "id": "backend_src_config_supabase",
       "community": 3,
-      "community_name": "slackOAuth.controller.js",
+      "community_name": "database.js",
       "norm_label": "supabase.js"
     },
     {
@@ -1670,7 +1670,7 @@
       "_origin": "ast",
       "id": "backend_src_config_supabase_createclient",
       "community": 3,
-      "community_name": "slackOAuth.controller.js",
+      "community_name": "database.js",
       "norm_label": "{ createclient }"
     },
     {
@@ -1681,7 +1681,7 @@
       "_origin": "ast",
       "id": "backend_src_config_supabase_supabase",
       "community": 3,
-      "community_name": "slackOAuth.controller.js",
+      "community_name": "database.js",
       "norm_label": "supabase"
     },
     {
@@ -1692,7 +1692,7 @@
       "_origin": "ast",
       "id": "backend_src_config_supabase_supabaseadmin",
       "community": 3,
-      "community_name": "slackOAuth.controller.js",
+      "community_name": "database.js",
       "norm_label": "supabaseadmin"
     },
     {
@@ -1862,8 +1862,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_admin_controller_setuserpin",
-      "community": 14,
-      "community_name": "admin.controller.js",
+      "community": 9,
+      "community_name": "slack.controller.js",
       "norm_label": "setuserpin()"
     },
     {
@@ -1910,8 +1910,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_admin_controller_adjustuserbankhours",
-      "community": 25,
-      "community_name": "supervisor.routes.js",
+      "community": 82,
+      "community_name": "adjustBankHours",
       "norm_label": "adjustuserbankhours()"
     },
     {
@@ -1922,8 +1922,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_admin_controller_updateuserworksettings",
-      "community": 61,
-      "community_name": "updateUserWorkSettings",
+      "community": 14,
+      "community_name": "admin.controller.js",
       "norm_label": "updateuserworksettings()"
     },
     {
@@ -1958,8 +1958,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_admin_controller_getlocationsettings",
-      "community": 14,
-      "community_name": "admin.controller.js",
+      "community": 41,
+      "community_name": "geofence.js",
       "norm_label": "getlocationsettings()"
     },
     {
@@ -1970,8 +1970,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_admin_controller_updatelocationsettings",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 14,
+      "community_name": "admin.controller.js",
       "norm_label": "updatelocationsettings()"
     },
     {
@@ -3412,7 +3412,7 @@
       "_origin": "ast",
       "id": "backend_src_controllers_slackoauth_controller",
       "community": 3,
-      "community_name": "slackOAuth.controller.js",
+      "community_name": "database.js",
       "norm_label": "slackoauth.controller.js"
     },
     {
@@ -3423,7 +3423,7 @@
       "_origin": "ast",
       "id": "backend_src_controllers_slackoauth_controller_crypto",
       "community": 3,
-      "community_name": "slackOAuth.controller.js",
+      "community_name": "database.js",
       "norm_label": "crypto"
     },
     {
@@ -3434,7 +3434,7 @@
       "_origin": "ast",
       "id": "backend_src_controllers_slackoauth_controller_prisma",
       "community": 3,
-      "community_name": "slackOAuth.controller.js",
+      "community_name": "database.js",
       "norm_label": "{ prisma }"
     },
     {
@@ -3445,7 +3445,7 @@
       "_origin": "ast",
       "id": "backend_src_controllers_slackoauth_controller_supabase",
       "community": 3,
-      "community_name": "slackOAuth.controller.js",
+      "community_name": "database.js",
       "norm_label": "{ supabase }"
     },
     {
@@ -3456,7 +3456,7 @@
       "_origin": "ast",
       "id": "backend_src_controllers_slackoauth_controller_pendingstates",
       "community": 3,
-      "community_name": "slackOAuth.controller.js",
+      "community_name": "database.js",
       "norm_label": "pendingstates"
     },
     {
@@ -3468,7 +3468,7 @@
       "_origin": "ast",
       "id": "backend_src_controllers_slackoauth_controller_cleanexpiredstates",
       "community": 3,
-      "community_name": "slackOAuth.controller.js",
+      "community_name": "database.js",
       "norm_label": "cleanexpiredstates()"
     },
     {
@@ -3480,7 +3480,7 @@
       "_origin": "ast",
       "id": "backend_src_controllers_slackoauth_controller_startslackoauth",
       "community": 3,
-      "community_name": "slackOAuth.controller.js",
+      "community_name": "database.js",
       "norm_label": "startslackoauth()"
     },
     {
@@ -3492,7 +3492,7 @@
       "_origin": "ast",
       "id": "backend_src_controllers_slackoauth_controller_handleslackoauthcallback",
       "community": 3,
-      "community_name": "slackOAuth.controller.js",
+      "community_name": "database.js",
       "norm_label": "handleslackoauthcallback()"
     },
     {
@@ -3504,7 +3504,7 @@
       "_origin": "ast",
       "id": "backend_src_controllers_slackoauth_controller_resolvebackendurl",
       "community": 3,
-      "community_name": "slackOAuth.controller.js",
+      "community_name": "database.js",
       "norm_label": "resolvebackendurl()"
     },
     {
@@ -3704,8 +3704,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_buildmanagedteamwhere",
-      "community": 45,
-      "community_name": "buildTeamEntriesScope",
+      "community": 25,
+      "community_name": "supervisor.routes.js",
       "norm_label": "buildmanagedteamwhere()"
     },
     {
@@ -3889,46 +3889,22 @@
       "norm_label": "sendsseevent()"
     },
     {
-      "label": "collectSubtreeIds()",
-      "file_type": "code",
-      "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L694",
-      "_callable": true,
-      "_origin": "ast",
-      "id": "backend_src_controllers_supervisor_controller_collectsubtreeids",
-      "community": 45,
-      "community_name": "buildTeamEntriesScope",
-      "norm_label": "collectsubtreeids()"
-    },
-    {
-      "label": "buildTeamEntriesScope()",
-      "file_type": "code",
-      "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L722",
-      "_callable": true,
-      "_origin": "ast",
-      "id": "backend_src_controllers_supervisor_controller_buildteamentriesscope",
-      "community": 45,
-      "community_name": "buildTeamEntriesScope",
-      "norm_label": "buildteamentriesscope()"
-    },
-    {
       "label": "getTeamPendingEntries()",
       "file_type": "code",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L764",
+      "source_location": "L689",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_getteampendingentries",
-      "community": 45,
-      "community_name": "buildTeamEntriesScope",
+      "community": 25,
+      "community_name": "supervisor.routes.js",
       "norm_label": "getteampendingentries()"
     },
     {
       "label": "approveEntry()",
       "file_type": "code",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L917",
+      "source_location": "L877",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_approveentry",
@@ -3937,69 +3913,34 @@
       "norm_label": "approveentry()"
     },
     {
-      "label": "BULK_ENTRY_INCLUDE",
-      "file_type": "code",
-      "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1054",
-      "_origin": "ast",
-      "id": "backend_src_controllers_supervisor_controller_bulk_entry_include",
-      "community": 11,
-      "community_name": "supervisor.controller.js",
-      "norm_label": "bulk_entry_include"
-    },
-    {
-      "label": "classifyBulkEntries()",
-      "file_type": "code",
-      "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1067",
-      "_callable": true,
-      "_origin": "ast",
-      "id": "backend_src_controllers_supervisor_controller_classifybulkentries",
-      "community": 45,
-      "community_name": "buildTeamEntriesScope",
-      "norm_label": "classifybulkentries()"
-    },
-    {
-      "label": "loadEntriesForBulkScope()",
-      "file_type": "code",
-      "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1092",
-      "_callable": true,
-      "_origin": "ast",
-      "id": "backend_src_controllers_supervisor_controller_loadentriesforbulkscope",
-      "community": 45,
-      "community_name": "buildTeamEntriesScope",
-      "norm_label": "loadentriesforbulkscope()"
-    },
-    {
       "label": "loadEntriesForBulk()",
       "file_type": "code",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1155",
+      "source_location": "L1019",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_loadentriesforbulk",
-      "community": 45,
-      "community_name": "buildTeamEntriesScope",
+      "community": 25,
+      "community_name": "supervisor.routes.js",
       "norm_label": "loadentriesforbulk()"
     },
     {
       "label": "approveEntriesBulk()",
       "file_type": "code",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1187",
+      "source_location": "L1075",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_approveentriesbulk",
-      "community": 45,
-      "community_name": "buildTeamEntriesScope",
+      "community": 25,
+      "community_name": "supervisor.routes.js",
       "norm_label": "approveentriesbulk()"
     },
     {
       "label": "rejectEntry()",
       "file_type": "code",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1267",
+      "source_location": "L1155",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_rejectentry",
@@ -4011,19 +3952,19 @@
       "label": "rejectEntriesBulk()",
       "file_type": "code",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1397",
+      "source_location": "L1285",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_rejectentriesbulk",
-      "community": 45,
-      "community_name": "buildTeamEntriesScope",
+      "community": 25,
+      "community_name": "supervisor.routes.js",
       "norm_label": "rejectentriesbulk()"
     },
     {
       "label": "loadEntryForOvertimeDecision()",
       "file_type": "code",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1498",
+      "source_location": "L1386",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_loadentryforovertimedecision",
@@ -4035,7 +3976,7 @@
       "label": "approveOvertime()",
       "file_type": "code",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1578",
+      "source_location": "L1466",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_approveovertime",
@@ -4047,7 +3988,7 @@
       "label": "rejectOvertime()",
       "file_type": "code",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1633",
+      "source_location": "L1521",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_rejectovertime",
@@ -4059,7 +4000,7 @@
       "label": "requestEdit()",
       "file_type": "code",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1705",
+      "source_location": "L1593",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_requestedit",
@@ -4071,7 +4012,7 @@
       "label": "getEntryDetails()",
       "file_type": "code",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1804",
+      "source_location": "L1692",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_getentrydetails",
@@ -4083,19 +4024,19 @@
       "label": "getTeamMembers()",
       "file_type": "code",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1882",
+      "source_location": "L1770",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_getteammembers",
-      "community": 45,
-      "community_name": "buildTeamEntriesScope",
+      "community": 25,
+      "community_name": "supervisor.routes.js",
       "norm_label": "getteammembers()"
     },
     {
       "label": "getTeamPresenceSnapshot()",
       "file_type": "code",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1944",
+      "source_location": "L1832",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_getteampresencesnapshot",
@@ -4107,7 +4048,7 @@
       "label": "streamTeamPresence()",
       "file_type": "code",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1970",
+      "source_location": "L1858",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_streamteampresence",
@@ -4119,7 +4060,7 @@
       "label": "getTeamHoursKpis()",
       "file_type": "code",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2041",
+      "source_location": "L1929",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_getteamhourskpis",
@@ -4131,43 +4072,43 @@
       "label": "adjustTeamMemberBankHours()",
       "file_type": "code",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2065",
+      "source_location": "L1953",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_adjustteammemberbankhours",
-      "community": 25,
-      "community_name": "supervisor.routes.js",
+      "community": 82,
+      "community_name": "adjustBankHours",
       "norm_label": "adjustteammemberbankhours()"
     },
     {
       "label": "updateTeamMemberWorkSettings()",
       "file_type": "code",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2151",
+      "source_location": "L2039",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_updateteammemberworksettings",
-      "community": 61,
-      "community_name": "updateUserWorkSettings",
+      "community": 14,
+      "community_name": "admin.controller.js",
       "norm_label": "updateteammemberworksettings()"
     },
     {
       "label": "getTeamBankHoursOverview()",
       "file_type": "code",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2268",
+      "source_location": "L2156",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_getteambankhoursoverview",
-      "community": 45,
-      "community_name": "buildTeamEntriesScope",
+      "community": 25,
+      "community_name": "supervisor.routes.js",
       "norm_label": "getteambankhoursoverview()"
     },
     {
       "label": "payTeamMemberBankHours()",
       "file_type": "code",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2349",
+      "source_location": "L2237",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_supervisor_controller_payteammemberbankhours",
@@ -4315,7 +4256,7 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_time_controller_buildlocationpayload",
-      "community": 49,
+      "community": 67,
       "community_name": "clockOut",
       "norm_label": "buildlocationpayload()"
     },
@@ -4327,7 +4268,7 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_time_controller_getgeofenceerrormessage",
-      "community": 49,
+      "community": 67,
       "community_name": "clockOut",
       "norm_label": "getgeofenceerrormessage()"
     },
@@ -4387,7 +4328,7 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_time_controller_calculatefinancialsummary",
-      "community": 49,
+      "community": 67,
       "community_name": "clockOut",
       "norm_label": "calculatefinancialsummary()"
     },
@@ -4400,7 +4341,7 @@
       "_origin": "ast",
       "id": "backend_src_controllers_time_controller_resolvestoredbreakminutes",
       "community": 49,
-      "community_name": "clockOut",
+      "community_name": "resolveStoredBreakMinutes",
       "norm_label": "resolvestoredbreakminutes()"
     },
     {
@@ -4412,7 +4353,7 @@
       "_origin": "ast",
       "id": "backend_src_controllers_time_controller_resolvebreakminutes",
       "community": 49,
-      "community_name": "clockOut",
+      "community_name": "resolveStoredBreakMinutes",
       "norm_label": "resolvebreakminutes()"
     },
     {
@@ -4424,7 +4365,7 @@
       "_origin": "ast",
       "id": "backend_src_controllers_time_controller_resolveworkedminutes",
       "community": 49,
-      "community_name": "clockOut",
+      "community_name": "resolveStoredBreakMinutes",
       "norm_label": "resolveworkedminutes()"
     },
     {
@@ -4435,7 +4376,7 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_time_controller_resolvelocationvalidationsource",
-      "community": 49,
+      "community": 67,
       "community_name": "clockOut",
       "norm_label": "resolvelocationvalidationsource()"
     },
@@ -4447,7 +4388,7 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_time_controller_getqrerrormessage",
-      "community": 49,
+      "community": 67,
       "community_name": "clockOut",
       "norm_label": "getqrerrormessage()"
     },
@@ -4471,7 +4412,7 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_time_controller_clockin",
-      "community": 49,
+      "community": 67,
       "community_name": "clockOut",
       "norm_label": "clockin()"
     },
@@ -4483,7 +4424,7 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_time_controller_clockout",
-      "community": 49,
+      "community": 67,
       "community_name": "clockOut",
       "norm_label": "clockout()"
     },
@@ -4496,7 +4437,7 @@
       "_origin": "ast",
       "id": "backend_src_controllers_time_controller_startbreak",
       "community": 49,
-      "community_name": "clockOut",
+      "community_name": "resolveStoredBreakMinutes",
       "norm_label": "startbreak()"
     },
     {
@@ -4508,7 +4449,7 @@
       "_origin": "ast",
       "id": "backend_src_controllers_time_controller_resumebreak",
       "community": 49,
-      "community_name": "clockOut",
+      "community_name": "resolveStoredBreakMinutes",
       "norm_label": "resumebreak()"
     },
     {
@@ -4519,8 +4460,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_time_controller_getgeofencesettings",
-      "community": 14,
-      "community_name": "admin.controller.js",
+      "community": 41,
+      "community_name": "geofence.js",
       "norm_label": "getgeofencesettings()"
     },
     {
@@ -4532,7 +4473,7 @@
       "_origin": "ast",
       "id": "backend_src_controllers_time_controller_getmybankhours",
       "community": 42,
-      "community_name": "bankHours.js",
+      "community_name": "recalcDay.js",
       "norm_label": "getmybankhours()"
     },
     {
@@ -4544,7 +4485,7 @@
       "_origin": "ast",
       "id": "backend_src_controllers_time_controller_getmytimeentries",
       "community": 49,
-      "community_name": "clockOut",
+      "community_name": "resolveStoredBreakMinutes",
       "norm_label": "getmytimeentries()"
     },
     {
@@ -4555,8 +4496,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_time_controller_getcurrententry",
-      "community": 62,
-      "community_name": "recalcDay.js",
+      "community": 49,
+      "community_name": "resolveStoredBreakMinutes",
       "norm_label": "getcurrententry()"
     },
     {
@@ -4567,8 +4508,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_time_controller_gettodayentries",
-      "community": 62,
-      "community_name": "recalcDay.js",
+      "community": 49,
+      "community_name": "resolveStoredBreakMinutes",
       "norm_label": "gettodayentries()"
     },
     {
@@ -4580,7 +4521,7 @@
       "_origin": "ast",
       "id": "backend_src_controllers_time_controller_gettimeentrybyid",
       "community": 49,
-      "community_name": "clockOut",
+      "community_name": "resolveStoredBreakMinutes",
       "norm_label": "gettimeentrybyid()"
     },
     {
@@ -4736,8 +4677,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_user_controller_removephotofileifexists",
-      "community": 12,
-      "community_name": "user.controller.js",
+      "community": 65,
+      "community_name": "buildUserPhotoUrl",
       "norm_label": "removephotofileifexists()"
     },
     {
@@ -5230,8 +5171,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_user_controller_uploadmyphoto",
-      "community": 21,
-      "community_name": "upload.middleware.js",
+      "community": 65,
+      "community_name": "buildUserPhotoUrl",
       "norm_label": "uploadmyphoto()"
     },
     {
@@ -5242,8 +5183,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_user_controller_deletemyphoto",
-      "community": 12,
-      "community_name": "user.controller.js",
+      "community": 65,
+      "community_name": "buildUserPhotoUrl",
       "norm_label": "deletemyphoto()"
     },
     {
@@ -5475,8 +5416,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_vacation_controller_withuserphoto",
-      "community": 59,
-      "community_name": "vacation.routes.js",
+      "community": 17,
+      "community_name": "vacation.controller.js",
       "norm_label": "withuserphoto()"
     },
     {
@@ -5487,8 +5428,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_vacation_controller_withrequestphoto",
-      "community": 59,
-      "community_name": "vacation.routes.js",
+      "community": 17,
+      "community_name": "vacation.controller.js",
       "norm_label": "withrequestphoto()"
     },
     {
@@ -5571,8 +5512,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_vacation_controller_getmyvacationrequests",
-      "community": 59,
-      "community_name": "vacation.routes.js",
+      "community": 17,
+      "community_name": "vacation.controller.js",
       "norm_label": "getmyvacationrequests()"
     },
     {
@@ -5607,8 +5548,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_vacation_controller_getteamvacationrequests",
-      "community": 59,
-      "community_name": "vacation.routes.js",
+      "community": 17,
+      "community_name": "vacation.controller.js",
       "norm_label": "getteamvacationrequests()"
     },
     {
@@ -5619,8 +5560,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_controllers_vacation_controller_gethrvacationrequests",
-      "community": 59,
-      "community_name": "vacation.routes.js",
+      "community": 17,
+      "community_name": "vacation.controller.js",
       "norm_label": "gethrvacationrequests()"
     },
     {
@@ -6155,8 +6096,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_middlewares_idempotency_middleware",
-      "community": 41,
-      "community_name": "idempotency.middleware.js",
+      "community": 34,
+      "community_name": "terminalQr.js",
       "norm_label": "idempotency.middleware.js"
     },
     {
@@ -6166,8 +6107,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_middlewares_idempotency_middleware_crypto",
-      "community": 41,
-      "community_name": "idempotency.middleware.js",
+      "community": 34,
+      "community_name": "terminalQr.js",
       "norm_label": "crypto"
     },
     {
@@ -6177,8 +6118,8 @@
       "source_location": "L2",
       "_origin": "ast",
       "id": "backend_src_middlewares_idempotency_middleware_redis",
-      "community": 41,
-      "community_name": "idempotency.middleware.js",
+      "community": 34,
+      "community_name": "terminalQr.js",
       "norm_label": "redis"
     },
     {
@@ -6188,8 +6129,8 @@
       "source_location": "L6",
       "_origin": "ast",
       "id": "backend_src_middlewares_idempotency_middleware_idempotency_methods",
-      "community": 41,
-      "community_name": "idempotency.middleware.js",
+      "community": 34,
+      "community_name": "terminalQr.js",
       "norm_label": "idempotency_methods"
     },
     {
@@ -6200,8 +6141,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_middlewares_idempotency_middleware_isplainobject",
-      "community": 41,
-      "community_name": "idempotency.middleware.js",
+      "community": 34,
+      "community_name": "terminalQr.js",
       "norm_label": "isplainobject()"
     },
     {
@@ -6212,8 +6153,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_middlewares_idempotency_middleware_stablestringify",
-      "community": 41,
-      "community_name": "idempotency.middleware.js",
+      "community": 34,
+      "community_name": "terminalQr.js",
       "norm_label": "stablestringify()"
     },
     {
@@ -6224,8 +6165,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_middlewares_idempotency_middleware_normalizebodyforhash",
-      "community": 41,
-      "community_name": "idempotency.middleware.js",
+      "community": 34,
+      "community_name": "terminalQr.js",
       "norm_label": "normalizebodyforhash()"
     },
     {
@@ -6236,8 +6177,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_middlewares_idempotency_middleware_buildpayloadhash",
-      "community": 41,
-      "community_name": "idempotency.middleware.js",
+      "community": 34,
+      "community_name": "terminalQr.js",
       "norm_label": "buildpayloadhash()"
     },
     {
@@ -6248,8 +6189,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_middlewares_idempotency_middleware_parserecord",
-      "community": 41,
-      "community_name": "idempotency.middleware.js",
+      "community": 34,
+      "community_name": "terminalQr.js",
       "norm_label": "parserecord()"
     },
     {
@@ -6260,8 +6201,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_middlewares_idempotency_middleware_buildactorscope",
-      "community": 41,
-      "community_name": "idempotency.middleware.js",
+      "community": 34,
+      "community_name": "terminalQr.js",
       "norm_label": "buildactorscope()"
     },
     {
@@ -6272,8 +6213,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_middlewares_idempotency_middleware_buildstoragekey",
-      "community": 41,
-      "community_name": "idempotency.middleware.js",
+      "community": 34,
+      "community_name": "terminalQr.js",
       "norm_label": "buildstoragekey()"
     },
     {
@@ -6284,8 +6225,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_middlewares_idempotency_middleware_shouldprocessrequest",
-      "community": 41,
-      "community_name": "idempotency.middleware.js",
+      "community": 34,
+      "community_name": "terminalQr.js",
       "norm_label": "shouldprocessrequest()"
     },
     {
@@ -6296,8 +6237,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_middlewares_idempotency_middleware_attachfinalizehandler",
-      "community": 41,
-      "community_name": "idempotency.middleware.js",
+      "community": 34,
+      "community_name": "terminalQr.js",
       "norm_label": "attachfinalizehandler()"
     },
     {
@@ -6308,8 +6249,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_middlewares_idempotency_middleware_idempotencymiddleware",
-      "community": 41,
-      "community_name": "idempotency.middleware.js",
+      "community": 34,
+      "community_name": "terminalQr.js",
       "norm_label": "idempotencymiddleware()"
     },
     {
@@ -6320,7 +6261,7 @@
       "_origin": "ast",
       "id": "backend_src_middlewares_index",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "middlewares/index.js"
     },
     {
@@ -6331,7 +6272,7 @@
       "_origin": "ast",
       "id": "backend_src_middlewares_index_authmiddleware",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "authmiddleware"
     },
     {
@@ -6342,7 +6283,7 @@
       "_origin": "ast",
       "id": "backend_src_middlewares_index_rolecheck",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "rolecheck"
     },
     {
@@ -6353,7 +6294,7 @@
       "_origin": "ast",
       "id": "backend_src_middlewares_index_requireplan",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "requireplan"
     },
     {
@@ -6475,8 +6416,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_middlewares_ratelimit_middleware",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 64,
+      "community_name": "rateLimit.middleware.js",
       "norm_label": "ratelimit.middleware.js"
     },
     {
@@ -6486,8 +6427,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_middlewares_ratelimit_middleware_window_ms",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 64,
+      "community_name": "rateLimit.middleware.js",
       "norm_label": "window_ms"
     },
     {
@@ -6497,8 +6438,8 @@
       "source_location": "L2",
       "_origin": "ast",
       "id": "backend_src_middlewares_ratelimit_middleware_max_requests",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 64,
+      "community_name": "rateLimit.middleware.js",
       "norm_label": "max_requests"
     },
     {
@@ -6508,8 +6449,8 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "backend_src_middlewares_ratelimit_middleware_rate_limit_messages",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 64,
+      "community_name": "rateLimit.middleware.js",
       "norm_label": "rate_limit_messages"
     },
     {
@@ -6519,8 +6460,8 @@
       "source_location": "L9",
       "_origin": "ast",
       "id": "backend_src_middlewares_ratelimit_middleware_requestlog",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 64,
+      "community_name": "rateLimit.middleware.js",
       "norm_label": "requestlog"
     },
     {
@@ -6531,8 +6472,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_middlewares_ratelimit_middleware_resolveratelimitlanguage",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 64,
+      "community_name": "rateLimit.middleware.js",
       "norm_label": "resolveratelimitlanguage()"
     },
     {
@@ -6543,8 +6484,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_middlewares_ratelimit_middleware_buildclientkey",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 64,
+      "community_name": "rateLimit.middleware.js",
       "norm_label": "buildclientkey()"
     },
     {
@@ -6555,8 +6496,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_middlewares_ratelimit_middleware_ratelimitmiddleware",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 64,
+      "community_name": "rateLimit.middleware.js",
       "norm_label": "ratelimitmiddleware()"
     },
     {
@@ -6567,7 +6508,7 @@
       "_origin": "ast",
       "id": "backend_src_middlewares_requireplan_middleware",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "requireplan.middleware.js"
     },
     {
@@ -6579,7 +6520,7 @@
       "_origin": "ast",
       "id": "backend_src_middlewares_requireplan_middleware_requireplan",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "requireplan()"
     },
     {
@@ -6590,7 +6531,7 @@
       "_origin": "ast",
       "id": "backend_src_middlewares_rolecheck_middleware",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "rolecheck.middleware.js"
     },
     {
@@ -6602,7 +6543,7 @@
       "_origin": "ast",
       "id": "backend_src_middlewares_rolecheck_middleware_rolecheck",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "rolecheck()"
     },
     {
@@ -6767,7 +6708,7 @@
       "_origin": "ast",
       "id": "backend_src_routes_auth_routes",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "auth.routes.js"
     },
     {
@@ -6778,7 +6719,7 @@
       "_origin": "ast",
       "id": "backend_src_routes_auth_routes_express",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "express"
     },
     {
@@ -6789,7 +6730,7 @@
       "_origin": "ast",
       "id": "backend_src_routes_auth_routes_authmiddleware_rolecheck",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "{ authmiddleware, rolecheck }"
     },
     {
@@ -6800,7 +6741,7 @@
       "_origin": "ast",
       "id": "backend_src_routes_auth_routes_builduserphotourl",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "{ builduserphotourl }"
     },
     {
@@ -6811,7 +6752,7 @@
       "_origin": "ast",
       "id": "backend_src_routes_auth_routes_prisma",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "{ prisma }"
     },
     {
@@ -6822,7 +6763,7 @@
       "_origin": "ast",
       "id": "backend_src_routes_auth_routes_verifyteaminvitetoken",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "{ verifyteaminvitetoken }"
     },
     {
@@ -6833,7 +6774,7 @@
       "_origin": "ast",
       "id": "backend_src_routes_auth_routes_router",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "router"
     },
     {
@@ -7262,7 +7203,7 @@
       "_origin": "ast",
       "id": "backend_src_routes_time_routes",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "time.routes.js"
     },
     {
@@ -7273,7 +7214,7 @@
       "_origin": "ast",
       "id": "backend_src_routes_time_routes_express",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "express"
     },
     {
@@ -7284,7 +7225,7 @@
       "_origin": "ast",
       "id": "backend_src_routes_time_routes_authmiddleware_rolecheck_requireplan",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "{ authmiddleware, rolecheck, requireplan }"
     },
     {
@@ -7295,7 +7236,7 @@
       "_origin": "ast",
       "id": "backend_src_routes_time_routes_timecontroller",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "timecontroller"
     },
     {
@@ -7306,7 +7247,7 @@
       "_origin": "ast",
       "id": "backend_src_routes_time_routes_router",
       "community": 19,
-      "community_name": "user.routes.js",
+      "community_name": "auth.routes.js",
       "norm_label": "router"
     },
     {
@@ -7316,7 +7257,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_routes_user_routes",
-      "community": 19,
+      "community": 61,
       "community_name": "user.routes.js",
       "norm_label": "user.routes.js"
     },
@@ -7327,7 +7268,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_routes_user_routes_express",
-      "community": 19,
+      "community": 61,
       "community_name": "user.routes.js",
       "norm_label": "express"
     },
@@ -7338,7 +7279,7 @@
       "source_location": "L2",
       "_origin": "ast",
       "id": "backend_src_routes_user_routes_multer",
-      "community": 19,
+      "community": 61,
       "community_name": "user.routes.js",
       "norm_label": "multer"
     },
@@ -7349,7 +7290,7 @@
       "source_location": "L3",
       "_origin": "ast",
       "id": "backend_src_routes_user_routes_authmiddleware_rolecheck_requireplan",
-      "community": 19,
+      "community": 61,
       "community_name": "user.routes.js",
       "norm_label": "{ authmiddleware, rolecheck, requireplan }"
     },
@@ -7360,7 +7301,7 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "backend_src_routes_user_routes_usercontroller",
-      "community": 19,
+      "community": 61,
       "community_name": "user.routes.js",
       "norm_label": "usercontroller"
     },
@@ -7371,7 +7312,7 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "backend_src_routes_user_routes_financecontroller",
-      "community": 19,
+      "community": 61,
       "community_name": "user.routes.js",
       "norm_label": "financecontroller"
     },
@@ -7382,7 +7323,7 @@
       "source_location": "L6",
       "_origin": "ast",
       "id": "backend_src_routes_user_routes_photoupload_max_photo_size_bytes",
-      "community": 19,
+      "community": 61,
       "community_name": "user.routes.js",
       "norm_label": "{ photoupload, max_photo_size_bytes }"
     },
@@ -7393,7 +7334,7 @@
       "source_location": "L8",
       "_origin": "ast",
       "id": "backend_src_routes_user_routes_router",
-      "community": 19,
+      "community": 61,
       "community_name": "user.routes.js",
       "norm_label": "router"
     },
@@ -7405,7 +7346,7 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_routes_user_routes_uploadsinglephoto",
-      "community": 19,
+      "community": 61,
       "community_name": "user.routes.js",
       "norm_label": "uploadsinglephoto()"
     },
@@ -7416,8 +7357,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_routes_vacation_routes",
-      "community": 59,
-      "community_name": "vacation.routes.js",
+      "community": 17,
+      "community_name": "vacation.controller.js",
       "norm_label": "vacation.routes.js"
     },
     {
@@ -7427,8 +7368,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_routes_vacation_routes_express",
-      "community": 59,
-      "community_name": "vacation.routes.js",
+      "community": 17,
+      "community_name": "vacation.controller.js",
       "norm_label": "express"
     },
     {
@@ -7438,8 +7379,8 @@
       "source_location": "L2",
       "_origin": "ast",
       "id": "backend_src_routes_vacation_routes_authmiddleware_rolecheck_requireplan",
-      "community": 59,
-      "community_name": "vacation.routes.js",
+      "community": 17,
+      "community_name": "vacation.controller.js",
       "norm_label": "{ authmiddleware, rolecheck, requireplan }"
     },
     {
@@ -7449,8 +7390,8 @@
       "source_location": "L3",
       "_origin": "ast",
       "id": "backend_src_routes_vacation_routes_createvacationrequest_getmyvacationrequests_getteamvacationrequests_gethrvacationrequests_reviewvacationbysupervisor_reviewvacationbyhr_getteamvacationcalendar",
-      "community": 59,
-      "community_name": "vacation.routes.js",
+      "community": 17,
+      "community_name": "vacation.controller.js",
       "norm_label": "{\r\n  createvacationrequest,\r\n  getmyvacationrequests,\r\n  getteamvacationrequests,\r\n  gethrvacationrequests,\r\n  reviewvacationbysupervisor,\r\n  reviewvacationbyhr,\r\n  getteamvacationcalendar,\r\n}"
     },
     {
@@ -7460,8 +7401,8 @@
       "source_location": "L13",
       "_origin": "ast",
       "id": "backend_src_routes_vacation_routes_router",
-      "community": 59,
-      "community_name": "vacation.routes.js",
+      "community": 17,
+      "community_name": "vacation.controller.js",
       "norm_label": "router"
     },
     {
@@ -7472,7 +7413,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_bankhours",
       "community": 42,
-      "community_name": "bankHours.js",
+      "community_name": "recalcDay.js",
       "norm_label": "bankhours.js"
     },
     {
@@ -7483,7 +7424,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_bankhours_prisma",
       "community": 42,
-      "community_name": "bankHours.js",
+      "community_name": "recalcDay.js",
       "norm_label": "{ prisma }"
     },
     {
@@ -7495,7 +7436,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_bankhours_clamppositiveinteger",
       "community": 42,
-      "community_name": "bankHours.js",
+      "community_name": "recalcDay.js",
       "norm_label": "clamppositiveinteger()"
     },
     {
@@ -7507,7 +7448,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_bankhours_addmonths",
       "community": 42,
-      "community_name": "bankHours.js",
+      "community_name": "recalcDay.js",
       "norm_label": "addmonths()"
     },
     {
@@ -7519,7 +7460,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_bankhours_expirebankhoursifneeded",
       "community": 42,
-      "community_name": "bankHours.js",
+      "community_name": "recalcDay.js",
       "norm_label": "expirebankhoursifneeded()"
     },
     {
@@ -7531,7 +7472,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_bankhours_accruebankhours",
       "community": 42,
-      "community_name": "bankHours.js",
+      "community_name": "recalcDay.js",
       "norm_label": "accruebankhours()"
     },
     {
@@ -7542,8 +7483,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_bankhours_adjustbankhours",
-      "community": 25,
-      "community_name": "supervisor.routes.js",
+      "community": 82,
+      "community_name": "adjustBankHours",
       "norm_label": "adjustbankhours()"
     },
     {
@@ -7555,7 +7496,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_bankhours_settlebankhoursaccruals",
       "community": 42,
-      "community_name": "bankHours.js",
+      "community_name": "recalcDay.js",
       "norm_label": "settlebankhoursaccruals()"
     },
     {
@@ -7742,8 +7683,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_utils_geofence",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 41,
+      "community_name": "geofence.js",
       "norm_label": "geofence.js"
     },
     {
@@ -7753,8 +7694,8 @@
       "source_location": "L2",
       "_origin": "ast",
       "id": "backend_src_utils_geofence_location_validation_sources",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 41,
+      "community_name": "geofence.js",
       "norm_label": "location_validation_sources"
     },
     {
@@ -7765,8 +7706,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_geofence_tonumber",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 41,
+      "community_name": "geofence.js",
       "norm_label": "tonumber()"
     },
     {
@@ -7777,8 +7718,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_geofence_resolvelocationvalidationsource",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 41,
+      "community_name": "geofence.js",
       "norm_label": "resolvelocationvalidationsource()"
     },
     {
@@ -7789,8 +7730,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_geofence_readenvgeofenceconfig",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 41,
+      "community_name": "geofence.js",
       "norm_label": "readenvgeofenceconfig()"
     },
     {
@@ -7800,8 +7741,8 @@
       "source_location": "L52",
       "_origin": "ast",
       "id": "backend_src_utils_geofence_runtimegeofenceconfig",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 41,
+      "community_name": "geofence.js",
       "norm_label": "runtimegeofenceconfig"
     },
     {
@@ -7812,8 +7753,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_geofence_getgeofenceconfig",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 41,
+      "community_name": "geofence.js",
       "norm_label": "getgeofenceconfig()"
     },
     {
@@ -7824,8 +7765,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_geofence_updategeofenceconfig",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 41,
+      "community_name": "geofence.js",
       "norm_label": "updategeofenceconfig()"
     },
     {
@@ -7836,8 +7777,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_geofence_toradians",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 41,
+      "community_name": "geofence.js",
       "norm_label": "toradians()"
     },
     {
@@ -7848,8 +7789,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_geofence_haversinedistancemeters",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 41,
+      "community_name": "geofence.js",
       "norm_label": "haversinedistancemeters()"
     },
     {
@@ -7860,8 +7801,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_geofence_evaluategeofence",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 41,
+      "community_name": "geofence.js",
       "norm_label": "evaluategeofence()"
     },
     {
@@ -7872,8 +7813,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_geofence_getgeofencepublicconfig",
-      "community": 14,
-      "community_name": "admin.controller.js",
+      "community": 41,
+      "community_name": "geofence.js",
       "norm_label": "getgeofencepublicconfig()"
     },
     {
@@ -7884,8 +7825,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_geofence_initgeofenceconfig",
-      "community": 43,
-      "community_name": "src/index.js",
+      "community": 41,
+      "community_name": "geofence.js",
       "norm_label": "initgeofenceconfig()"
     },
     {
@@ -8292,8 +8233,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_pinauth_hashpin",
-      "community": 14,
-      "community_name": "admin.controller.js",
+      "community": 23,
+      "community_name": "time.controller.js",
       "norm_label": "hashpin()"
     },
     {
@@ -8339,8 +8280,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_utils_presencebus",
-      "community": 68,
-      "community_name": "presenceBus.js",
+      "community": 11,
+      "community_name": "supervisor.controller.js",
       "norm_label": "presencebus.js"
     },
     {
@@ -8350,8 +8291,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_utils_presencebus_eventemitter",
-      "community": 68,
-      "community_name": "presenceBus.js",
+      "community": 11,
+      "community_name": "supervisor.controller.js",
       "norm_label": "{ eventemitter }"
     },
     {
@@ -8361,8 +8302,8 @@
       "source_location": "L6",
       "_origin": "ast",
       "id": "backend_src_utils_presencebus_presencebus",
-      "community": 68,
-      "community_name": "presenceBus.js",
+      "community": 11,
+      "community_name": "supervisor.controller.js",
       "norm_label": "presencebus"
     },
     {
@@ -8374,7 +8315,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_presencebus_emitpunch",
       "community": 49,
-      "community_name": "clockOut",
+      "community_name": "resolveStoredBreakMinutes",
       "norm_label": "emitpunch()"
     },
     {
@@ -8643,7 +8584,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_utils_recalcday",
-      "community": 62,
+      "community": 42,
       "community_name": "recalcDay.js",
       "norm_label": "recalcday.js"
     },
@@ -8654,7 +8595,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_utils_recalcday_prisma",
-      "community": 62,
+      "community": 42,
       "community_name": "recalcDay.js",
       "norm_label": "{ prisma }"
     },
@@ -8665,7 +8606,7 @@
       "source_location": "L2",
       "_origin": "ast",
       "id": "backend_src_utils_recalcday_calculateincrementalovertimesummary",
-      "community": 62,
+      "community": 42,
       "community_name": "recalcDay.js",
       "norm_label": "{ calculateincrementalovertimesummary }"
     },
@@ -8676,7 +8617,7 @@
       "source_location": "L3",
       "_origin": "ast",
       "id": "backend_src_utils_recalcday_accruebankhours",
-      "community": 62,
+      "community": 42,
       "community_name": "recalcDay.js",
       "norm_label": "{ accruebankhours }"
     },
@@ -8687,7 +8628,7 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "backend_src_utils_recalcday_getstartofday_getendofday",
-      "community": 62,
+      "community": 42,
       "community_name": "recalcDay.js",
       "norm_label": "{ getstartofday, getendofday }"
     },
@@ -8723,7 +8664,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_requestmetadata",
       "community": 67,
-      "community_name": "captureRequestMetadata",
+      "community_name": "clockOut",
       "norm_label": "requestmetadata.js"
     },
     {
@@ -8735,7 +8676,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_requestmetadata_getclientip",
       "community": 67,
-      "community_name": "captureRequestMetadata",
+      "community_name": "clockOut",
       "norm_label": "getclientip()"
     },
     {
@@ -8747,7 +8688,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_requestmetadata_getdeviceinfo",
       "community": 67,
-      "community_name": "captureRequestMetadata",
+      "community_name": "clockOut",
       "norm_label": "getdeviceinfo()"
     },
     {
@@ -8759,7 +8700,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_requestmetadata_getlocation",
       "community": 67,
-      "community_name": "captureRequestMetadata",
+      "community_name": "clockOut",
       "norm_label": "getlocation()"
     },
     {
@@ -8771,7 +8712,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_requestmetadata_capturerequestmetadata",
       "community": 67,
-      "community_name": "captureRequestMetadata",
+      "community_name": "clockOut",
       "norm_label": "capturerequestmetadata()"
     },
     {
@@ -8781,7 +8722,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_utils_resendnotifier",
-      "community": 40,
+      "community": 45,
       "community_name": "sendResendEmail",
       "norm_label": "resendnotifier.js"
     },
@@ -8793,7 +8734,7 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_resendnotifier_isresendconfigured",
-      "community": 40,
+      "community": 45,
       "community_name": "sendResendEmail",
       "norm_label": "isresendconfigured()"
     },
@@ -8805,7 +8746,7 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_resendnotifier_resolvefromaddress",
-      "community": 40,
+      "community": 45,
       "community_name": "sendResendEmail",
       "norm_label": "resolvefromaddress()"
     },
@@ -8817,7 +8758,7 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_resendnotifier_sendresendemail",
-      "community": 40,
+      "community": 45,
       "community_name": "sendResendEmail",
       "norm_label": "sendresendemail()"
     },
@@ -8828,60 +8769,60 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_utils_roles",
-      "community": 37,
-      "community_name": "createUser",
+      "community": 68,
+      "community_name": "roles.js",
       "norm_label": "roles.js"
     },
     {
       "label": "HR_LEVEL_ROLES",
       "file_type": "code",
       "source_file": "backend/src/utils/roles.js",
-      "source_location": "L10",
+      "source_location": "L9",
       "_origin": "ast",
       "id": "backend_src_utils_roles_hr_level_roles",
-      "community": 37,
-      "community_name": "createUser",
+      "community": 68,
+      "community_name": "roles.js",
       "norm_label": "hr_level_roles"
     },
     {
       "label": "isHrLevel()",
       "file_type": "code",
       "source_file": "backend/src/utils/roles.js",
-      "source_location": "L12",
+      "source_location": "L11",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_roles_ishrlevel",
-      "community": 16,
-      "community_name": "hr.controller.js",
+      "community": 14,
+      "community_name": "admin.controller.js",
       "norm_label": "ishrlevel()"
     },
     {
       "label": "HR_MANAGEABLE_ROLES",
       "file_type": "code",
       "source_file": "backend/src/utils/roles.js",
-      "source_location": "L14",
+      "source_location": "L13",
       "_origin": "ast",
       "id": "backend_src_utils_roles_hr_manageable_roles",
-      "community": 37,
-      "community_name": "createUser",
+      "community": 68,
+      "community_name": "roles.js",
       "norm_label": "hr_manageable_roles"
     },
     {
       "label": "INTEGRATOR_MANAGEABLE_ROLES",
       "file_type": "code",
       "source_file": "backend/src/utils/roles.js",
-      "source_location": "L15",
+      "source_location": "L14",
       "_origin": "ast",
       "id": "backend_src_utils_roles_integrator_manageable_roles",
-      "community": 37,
-      "community_name": "createUser",
+      "community": 68,
+      "community_name": "roles.js",
       "norm_label": "integrator_manageable_roles"
     },
     {
       "label": "manageableRolesFor()",
       "file_type": "code",
       "source_file": "backend/src/utils/roles.js",
-      "source_location": "L18",
+      "source_location": "L17",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_roles_manageablerolesfor",
@@ -9132,7 +9073,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_slacknotifier",
       "community": 40,
-      "community_name": "sendResendEmail",
+      "community_name": "processShiftEndDispatchJob",
       "norm_label": "slacknotifier.js"
     },
     {
@@ -9144,7 +9085,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_slacknotifier_isslackbotconfigured",
       "community": 40,
-      "community_name": "sendResendEmail",
+      "community_name": "processShiftEndDispatchJob",
       "norm_label": "isslackbotconfigured()"
     },
     {
@@ -9156,7 +9097,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_slacknotifier_sendslackdm",
       "community": 40,
-      "community_name": "sendResendEmail",
+      "community_name": "processShiftEndDispatchJob",
       "norm_label": "sendslackdm()"
     },
     {
@@ -9526,7 +9467,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_timecalculations",
       "community": 62,
-      "community_name": "recalcDay.js",
+      "community_name": "timeCalculations.js",
       "norm_label": "timecalculations.js"
     },
     {
@@ -9538,7 +9479,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_timecalculations_calculateduration",
       "community": 49,
-      "community_name": "clockOut",
+      "community_name": "resolveStoredBreakMinutes",
       "norm_label": "calculateduration()"
     },
     {
@@ -9550,7 +9491,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_timecalculations_issameday",
       "community": 62,
-      "community_name": "recalcDay.js",
+      "community_name": "timeCalculations.js",
       "norm_label": "issameday()"
     },
     {
@@ -9573,8 +9514,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_timecalculations_getstartofday",
-      "community": 62,
-      "community_name": "recalcDay.js",
+      "community": 49,
+      "community_name": "resolveStoredBreakMinutes",
       "norm_label": "getstartofday()"
     },
     {
@@ -9585,8 +9526,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_timecalculations_getendofday",
-      "community": 62,
-      "community_name": "recalcDay.js",
+      "community": 49,
+      "community_name": "resolveStoredBreakMinutes",
       "norm_label": "getendofday()"
     },
     {
@@ -9598,7 +9539,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_timecalculations_getstartofweek",
       "community": 62,
-      "community_name": "recalcDay.js",
+      "community_name": "timeCalculations.js",
       "norm_label": "getstartofweek()"
     },
     {
@@ -9610,7 +9551,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_timecalculations_getendofweek",
       "community": 62,
-      "community_name": "recalcDay.js",
+      "community_name": "timeCalculations.js",
       "norm_label": "getendofweek()"
     },
     {
@@ -9622,7 +9563,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_timecalculations_getstartofmonth",
       "community": 62,
-      "community_name": "recalcDay.js",
+      "community_name": "timeCalculations.js",
       "norm_label": "getstartofmonth()"
     },
     {
@@ -9634,7 +9575,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_timecalculations_getendofmonth",
       "community": 62,
-      "community_name": "recalcDay.js",
+      "community_name": "timeCalculations.js",
       "norm_label": "getendofmonth()"
     },
     {
@@ -9646,7 +9587,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_timecalculations_formatdate",
       "community": 62,
-      "community_name": "recalcDay.js",
+      "community_name": "timeCalculations.js",
       "norm_label": "formatdate()"
     },
     {
@@ -9658,7 +9599,7 @@
       "_origin": "ast",
       "id": "backend_src_utils_timecalculations_formatdatetime",
       "community": 62,
-      "community_name": "recalcDay.js",
+      "community_name": "timeCalculations.js",
       "norm_label": "formatdatetime()"
     },
     {
@@ -9725,8 +9666,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_userphoto_normalizephotopath",
-      "community": 21,
-      "community_name": "upload.middleware.js",
+      "community": 65,
+      "community_name": "buildUserPhotoUrl",
       "norm_label": "normalizephotopath()"
     },
     {
@@ -9737,8 +9678,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_userphoto_builduserphotourl",
-      "community": 21,
-      "community_name": "upload.middleware.js",
+      "community": 65,
+      "community_name": "buildUserPhotoUrl",
       "norm_label": "builduserphotourl()"
     },
     {
@@ -9764,21 +9705,10 @@
       "norm_label": "{ prisma }"
     },
     {
-      "label": "{ isHrLevel }",
-      "file_type": "code",
-      "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L2",
-      "_origin": "ast",
-      "id": "backend_src_utils_visibleusers_ishrlevel",
-      "community": 16,
-      "community_name": "hr.controller.js",
-      "norm_label": "{ ishrlevel }"
-    },
-    {
       "label": "resolveTenantOwnerId()",
       "file_type": "code",
       "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L8",
+      "source_location": "L7",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_visibleusers_resolvetenantownerid",
@@ -9790,7 +9720,7 @@
       "label": "listTenantUserIds()",
       "file_type": "code",
       "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L15",
+      "source_location": "L14",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_visibleusers_listtenantuserids",
@@ -9802,7 +9732,7 @@
       "label": "listDescendantIds()",
       "file_type": "code",
       "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L32",
+      "source_location": "L31",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_visibleusers_listdescendantids",
@@ -9814,7 +9744,7 @@
       "label": "compute()",
       "file_type": "code",
       "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L73",
+      "source_location": "L67",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_visibleusers_compute",
@@ -9826,7 +9756,7 @@
       "label": "CACHE",
       "file_type": "code",
       "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L94",
+      "source_location": "L88",
       "_origin": "ast",
       "id": "backend_src_utils_visibleusers_cache",
       "community": 16,
@@ -9837,7 +9767,7 @@
       "label": "resolveVisibleUserIds()",
       "file_type": "code",
       "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L96",
+      "source_location": "L90",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_visibleusers_resolvevisibleuserids",
@@ -9849,7 +9779,7 @@
       "label": "canViewUser()",
       "file_type": "code",
       "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L105",
+      "source_location": "L99",
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_visibleusers_canviewuser",
@@ -9864,8 +9794,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_src_utils_worksettings",
-      "community": 61,
-      "community_name": "updateUserWorkSettings",
+      "community": 14,
+      "community_name": "admin.controller.js",
       "norm_label": "worksettings.js"
     },
     {
@@ -9876,8 +9806,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_worksettings_normalizeminutes",
-      "community": 61,
-      "community_name": "updateUserWorkSettings",
+      "community": 14,
+      "community_name": "admin.controller.js",
       "norm_label": "normalizeminutes()"
     },
     {
@@ -9888,8 +9818,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_worksettings_normalizetime",
-      "community": 61,
-      "community_name": "updateUserWorkSettings",
+      "community": 14,
+      "community_name": "admin.controller.js",
       "norm_label": "normalizetime()"
     },
     {
@@ -9900,8 +9830,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_worksettings_normalizehourlyrate",
-      "community": 61,
-      "community_name": "updateUserWorkSettings",
+      "community": 14,
+      "community_name": "admin.controller.js",
       "norm_label": "normalizehourlyrate()"
     },
     {
@@ -9912,8 +9842,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_utils_worksettings_normalizetimezone",
-      "community": 61,
-      "community_name": "updateUserWorkSettings",
+      "community": 14,
+      "community_name": "admin.controller.js",
       "norm_label": "normalizetimezone()"
     },
     {
@@ -10201,8 +10131,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_workers_proactivealertworker_parsetimetominutes",
-      "community": 6,
-      "community_name": "proactiveAlertWorker.js",
+      "community": 63,
+      "community_name": "evaluateClockInReminder",
       "norm_label": "parsetimetominutes()"
     },
     {
@@ -10213,8 +10143,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_workers_proactivealertworker_getnowminutesfortimezone",
-      "community": 6,
-      "community_name": "proactiveAlertWorker.js",
+      "community": 63,
+      "community_name": "evaluateClockInReminder",
       "norm_label": "getnowminutesfortimezone()"
     },
     {
@@ -10273,8 +10203,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_workers_proactivealertworker_shouldalertnearshiftend",
-      "community": 6,
-      "community_name": "proactiveAlertWorker.js",
+      "community": 63,
+      "community_name": "evaluateClockInReminder",
       "norm_label": "shouldalertnearshiftend()"
     },
     {
@@ -10382,7 +10312,7 @@
       "_origin": "ast",
       "id": "backend_src_workers_proactivealertworker_formatshiftendtime",
       "community": 40,
-      "community_name": "sendResendEmail",
+      "community_name": "processShiftEndDispatchJob",
       "norm_label": "formatshiftendtime()"
     },
     {
@@ -10394,7 +10324,7 @@
       "_origin": "ast",
       "id": "backend_src_workers_proactivealertworker_buildshiftendusermessage",
       "community": 40,
-      "community_name": "sendResendEmail",
+      "community_name": "processShiftEndDispatchJob",
       "norm_label": "buildshiftendusermessage()"
     },
     {
@@ -10406,7 +10336,7 @@
       "_origin": "ast",
       "id": "backend_src_workers_proactivealertworker_buildshiftendsupervisormessage",
       "community": 40,
-      "community_name": "sendResendEmail",
+      "community_name": "processShiftEndDispatchJob",
       "norm_label": "buildshiftendsupervisormessage()"
     },
     {
@@ -10418,7 +10348,7 @@
       "_origin": "ast",
       "id": "backend_src_workers_proactivealertworker_buildshiftendsupervisoremail",
       "community": 40,
-      "community_name": "sendResendEmail",
+      "community_name": "processShiftEndDispatchJob",
       "norm_label": "buildshiftendsupervisoremail()"
     },
     {
@@ -10429,8 +10359,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_workers_proactivealertworker_getweekdayfortimezone",
-      "community": 6,
-      "community_name": "proactiveAlertWorker.js",
+      "community": 63,
+      "community_name": "evaluateClockInReminder",
       "norm_label": "getweekdayfortimezone()"
     },
     {
@@ -10441,8 +10371,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_workers_proactivealertworker_getlocaldayboundsutc",
-      "community": 6,
-      "community_name": "proactiveAlertWorker.js",
+      "community": 63,
+      "community_name": "evaluateClockInReminder",
       "norm_label": "getlocaldayboundsutc()"
     },
     {
@@ -10453,8 +10383,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_workers_proactivealertworker_processclockinscanjob",
-      "community": 51,
-      "community_name": "workers/index.js",
+      "community": 63,
+      "community_name": "evaluateClockInReminder",
       "norm_label": "processclockinscanjob()"
     },
     {
@@ -10465,8 +10395,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_workers_proactivealertworker_evaluateclockinreminder",
-      "community": 6,
-      "community_name": "proactiveAlertWorker.js",
+      "community": 63,
+      "community_name": "evaluateClockInReminder",
       "norm_label": "evaluateclockinreminder()"
     },
     {
@@ -10477,7 +10407,7 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_workers_proactivealertworker_buildclockinmessage",
-      "community": 40,
+      "community": 45,
       "community_name": "sendResendEmail",
       "norm_label": "buildclockinmessage()"
     },
@@ -10489,7 +10419,7 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_workers_proactivealertworker_buildclockinsupervisoremail",
-      "community": 40,
+      "community": 45,
       "community_name": "sendResendEmail",
       "norm_label": "buildclockinsupervisoremail()"
     },
@@ -10501,7 +10431,7 @@
       "_callable": true,
       "_origin": "ast",
       "id": "backend_src_workers_proactivealertworker_processclockindispatchjob",
-      "community": 40,
+      "community": 45,
       "community_name": "sendResendEmail",
       "norm_label": "processclockindispatchjob()"
     },
@@ -10514,7 +10444,7 @@
       "_origin": "ast",
       "id": "backend_src_workers_proactivealertworker_processshiftenddispatchjob",
       "community": 40,
-      "community_name": "sendResendEmail",
+      "community_name": "processShiftEndDispatchJob",
       "norm_label": "processshiftenddispatchjob()"
     },
     {
@@ -11581,8 +11511,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_components_brandwordmark",
-      "community": 38,
-      "community_name": "SuperAdminAccountsPage.tsx",
+      "community": 20,
+      "community_name": "ShellLayout.tsx",
       "norm_label": "brandwordmark.tsx"
     },
     {
@@ -11594,8 +11524,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_components_brandwordmark_brandwordmarkprops",
-      "community": 38,
-      "community_name": "SuperAdminAccountsPage.tsx",
+      "community": 20,
+      "community_name": "ShellLayout.tsx",
       "norm_label": "brandwordmarkprops"
     },
     {
@@ -11606,8 +11536,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_components_brandwordmark_joinclassnames",
-      "community": 38,
-      "community_name": "SuperAdminAccountsPage.tsx",
+      "community": 20,
+      "community_name": "ShellLayout.tsx",
       "norm_label": "joinclassnames()"
     },
     {
@@ -11618,8 +11548,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_components_brandwordmark_brandwordmark",
-      "community": 38,
-      "community_name": "SuperAdminAccountsPage.tsx",
+      "community": 20,
+      "community_name": "ShellLayout.tsx",
       "norm_label": "brandwordmark()"
     },
     {
@@ -11652,8 +11582,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_components_dualclock",
-      "community": 20,
-      "community_name": "ShellLayout.tsx",
+      "community": 26,
+      "community_name": "ColaboradorDashboard.tsx",
       "norm_label": "dualclock.tsx"
     },
     {
@@ -11664,8 +11594,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_components_dualclock_getbrowsertimezone",
-      "community": 20,
-      "community_name": "ShellLayout.tsx",
+      "community": 26,
+      "community_name": "ColaboradorDashboard.tsx",
       "norm_label": "getbrowsertimezone()"
     },
     {
@@ -11676,8 +11606,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_components_dualclock_formattime",
-      "community": 20,
-      "community_name": "ShellLayout.tsx",
+      "community": 26,
+      "community_name": "ColaboradorDashboard.tsx",
       "norm_label": "formattime()"
     },
     {
@@ -11688,8 +11618,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_components_dualclock_getzoneshortlabel",
-      "community": 20,
-      "community_name": "ShellLayout.tsx",
+      "community": 26,
+      "community_name": "ColaboradorDashboard.tsx",
       "norm_label": "getzoneshortlabel()"
     },
     {
@@ -11701,8 +11631,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_components_dualclock_dualclockprops",
-      "community": 20,
-      "community_name": "ShellLayout.tsx",
+      "community": 26,
+      "community_name": "ColaboradorDashboard.tsx",
       "norm_label": "dualclockprops"
     },
     {
@@ -11713,8 +11643,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_components_dualclock_dualclock",
-      "community": 20,
-      "community_name": "ShellLayout.tsx",
+      "community": 26,
+      "community_name": "ColaboradorDashboard.tsx",
       "norm_label": "dualclock()"
     },
     {
@@ -11808,8 +11738,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_components_languageswitcher",
-      "community": 38,
-      "community_name": "SuperAdminAccountsPage.tsx",
+      "community": 20,
+      "community_name": "ShellLayout.tsx",
       "norm_label": "languageswitcher.tsx"
     },
     {
@@ -11821,8 +11751,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_components_languageswitcher_languageswitcherprops",
-      "community": 38,
-      "community_name": "SuperAdminAccountsPage.tsx",
+      "community": 20,
+      "community_name": "ShellLayout.tsx",
       "norm_label": "languageswitcherprops"
     },
     {
@@ -11833,8 +11763,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_components_languageswitcher_normalizelanguage",
-      "community": 38,
-      "community_name": "SuperAdminAccountsPage.tsx",
+      "community": 20,
+      "community_name": "ShellLayout.tsx",
       "norm_label": "normalizelanguage()"
     },
     {
@@ -11845,8 +11775,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_components_languageswitcher_languageswitcher",
-      "community": 38,
-      "community_name": "SuperAdminAccountsPage.tsx",
+      "community": 20,
+      "community_name": "ShellLayout.tsx",
       "norm_label": "languageswitcher()"
     },
     {
@@ -12122,8 +12052,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_components_shelllayout_shelllayout",
-      "community": 8,
-      "community_name": "useAuth",
+      "community": 5,
+      "community_name": "App.tsx",
       "norm_label": "shelllayout()"
     },
     {
@@ -12133,8 +12063,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_components_useravatar",
-      "community": 27,
-      "community_name": "AdminDashboard.tsx",
+      "community": 59,
+      "community_name": "VacationSupervisorPage.tsx",
       "norm_label": "useravatar.tsx"
     },
     {
@@ -12146,8 +12076,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_components_useravatar_useravatarprops",
-      "community": 27,
-      "community_name": "AdminDashboard.tsx",
+      "community": 59,
+      "community_name": "VacationSupervisorPage.tsx",
       "norm_label": "useravatarprops"
     },
     {
@@ -12157,8 +12087,8 @@
       "source_location": "L10",
       "_origin": "ast",
       "id": "frontend_src_components_useravatar_sizebyvariant",
-      "community": 27,
-      "community_name": "AdminDashboard.tsx",
+      "community": 59,
+      "community_name": "VacationSupervisorPage.tsx",
       "norm_label": "sizebyvariant"
     },
     {
@@ -12169,8 +12099,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_components_useravatar_pickinitial",
-      "community": 27,
-      "community_name": "AdminDashboard.tsx",
+      "community": 59,
+      "community_name": "VacationSupervisorPage.tsx",
       "norm_label": "pickinitial()"
     },
     {
@@ -12181,8 +12111,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_components_useravatar_useravatar",
-      "community": 27,
-      "community_name": "AdminDashboard.tsx",
+      "community": 59,
+      "community_name": "VacationSupervisorPage.tsx",
       "norm_label": "useravatar()"
     },
     {
@@ -12192,8 +12122,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_components_public_publiclayout",
-      "community": 38,
-      "community_name": "SuperAdminAccountsPage.tsx",
+      "community": 20,
+      "community_name": "ShellLayout.tsx",
       "norm_label": "publiclayout.tsx"
     },
     {
@@ -12205,8 +12135,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_components_public_publiclayout_publiclayoutprops",
-      "community": 38,
-      "community_name": "SuperAdminAccountsPage.tsx",
+      "community": 20,
+      "community_name": "ShellLayout.tsx",
       "norm_label": "publiclayoutprops"
     },
     {
@@ -12351,8 +12281,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_context_authcontext_useauth",
-      "community": 8,
-      "community_name": "useAuth",
+      "community": 5,
+      "community_name": "App.tsx",
       "norm_label": "useauth()"
     },
     {
@@ -12459,7 +12389,7 @@
       "_origin": "ast",
       "id": "frontend_src_context_timezonecontext",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "timezonecontext.tsx"
     },
     {
@@ -12472,7 +12402,7 @@
       "_origin": "ast",
       "id": "frontend_src_context_timezonecontext_timezonestate",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "timezonestate"
     },
     {
@@ -12484,7 +12414,7 @@
       "_origin": "ast",
       "id": "frontend_src_context_timezonecontext_getinitialtimezone",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "getinitialtimezone()"
     },
     {
@@ -12495,7 +12425,7 @@
       "_origin": "ast",
       "id": "frontend_src_context_timezonecontext_timezonecontext",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "timezonecontext"
     },
     {
@@ -12507,7 +12437,7 @@
       "_origin": "ast",
       "id": "frontend_src_context_timezonecontext_timezoneprovider",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "timezoneprovider()"
     },
     {
@@ -12519,7 +12449,7 @@
       "_origin": "ast",
       "id": "frontend_src_context_timezonecontext_usetimezone",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "usetimezone()"
     },
     {
@@ -12670,7 +12600,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "api.ts"
     },
     {
@@ -12681,7 +12611,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_api_base",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "api_base"
     },
     {
@@ -12692,7 +12622,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_idempotency_methods",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "idempotency_methods"
     },
     {
@@ -12704,7 +12634,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_isportugueselanguage",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "isportugueselanguage()"
     },
     {
@@ -12716,7 +12646,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_localizemessage",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "localizemessage()"
     },
     {
@@ -12728,7 +12658,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_isrecordpayload",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "isrecordpayload()"
     },
     {
@@ -12740,7 +12670,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_resolveapipayloadmessage",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "resolveapipayloadmessage()"
     },
     {
@@ -12752,7 +12682,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_resolveauthfactormessage",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "resolveauthfactormessage()"
     },
     {
@@ -12763,7 +12693,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_pt_to_en_error_rules",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "pt_to_en_error_rules"
     },
     {
@@ -12775,7 +12705,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_probablyportuguesemessage",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "probablyportuguesemessage()"
     },
     {
@@ -12787,7 +12717,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_probablysuccessmessage",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "probablysuccessmessage()"
     },
     {
@@ -12799,7 +12729,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_translateapimessage",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "translateapimessage()"
     },
     {
@@ -12812,7 +12742,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_requestoptions",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "requestoptions"
     },
     {
@@ -12825,7 +12755,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_formdatarequestoptions",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "formdatarequestoptions"
     },
     {
@@ -12837,7 +12767,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_readjsonresponse",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "readjsonresponse()"
     },
     {
@@ -12849,7 +12779,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_isplainobject",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "isplainobject()"
     },
     {
@@ -12861,7 +12791,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_stablestringify",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "stablestringify()"
     },
     {
@@ -12873,7 +12803,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_normalizebodyforhash",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "normalizebodyforhash()"
     },
     {
@@ -12885,7 +12815,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_tohex",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "tohex()"
     },
     {
@@ -12897,7 +12827,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_sha256hex",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "sha256hex()"
     },
     {
@@ -12909,7 +12839,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_buildidempotencyheaders",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "buildidempotencyheaders()"
     },
     {
@@ -12920,7 +12850,7 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_lib_api_apifetch",
-      "community": 35,
+      "community": 7,
       "community_name": "apiFetch",
       "norm_label": "apifetch()"
     },
@@ -12933,7 +12863,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_api_apifetchformdata",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "apifetchformdata()"
     },
     {
@@ -12944,8 +12874,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_lib_api_resolveapiasseturl",
-      "community": 27,
-      "community_name": "AdminDashboard.tsx",
+      "community": 59,
+      "community_name": "VacationSupervisorPage.tsx",
       "norm_label": "resolveapiasseturl()"
     },
     {
@@ -13440,7 +13370,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_timezone",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "timezone.ts"
     },
     {
@@ -13450,8 +13380,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_lib_timezone_time_zone_options",
-      "community": 47,
-      "community_name": "HrSchedulesPage.tsx",
+      "community": 35,
+      "community_name": "SupervisorHoursPage.tsx",
       "norm_label": "time_zone_options"
     },
     {
@@ -13462,7 +13392,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_timezone_default_view_time_zone",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "default_view_time_zone"
     },
     {
@@ -13474,7 +13404,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_timezone_isvalidtimezone",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "isvalidtimezone()"
     },
     {
@@ -13486,7 +13416,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_timezone_formatdatewithtimezone",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "formatdatewithtimezone()"
     },
     {
@@ -13498,7 +13428,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_timezone_formattimewithtimezone",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "formattimewithtimezone()"
     },
     {
@@ -13510,7 +13440,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_timezone_getdatekeywithtimezone",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "getdatekeywithtimezone()"
     },
     {
@@ -13522,7 +13452,7 @@
       "_origin": "ast",
       "id": "frontend_src_lib_timezone_formatdatetimewithtimezone",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "formatdatetimewithtimezone()"
     },
     {
@@ -13554,8 +13484,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_adminbankhourspage",
-      "community": 63,
-      "community_name": "AdminBankHoursPage.tsx",
+      "community": 7,
+      "community_name": "apiFetch",
       "norm_label": "adminbankhourspage.tsx"
     },
     {
@@ -13567,8 +13497,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_pages_adminbankhourspage_kpiperiod",
-      "community": 63,
-      "community_name": "AdminBankHoursPage.tsx",
+      "community": 7,
+      "community_name": "apiFetch",
       "norm_label": "kpiperiod"
     },
     {
@@ -13580,8 +13510,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_pages_adminbankhourspage_hourskpiitem",
-      "community": 63,
-      "community_name": "AdminBankHoursPage.tsx",
+      "community": 7,
+      "community_name": "apiFetch",
       "norm_label": "hourskpiitem"
     },
     {
@@ -13593,8 +13523,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_pages_adminbankhourspage_hourskpiresponse",
-      "community": 63,
-      "community_name": "AdminBankHoursPage.tsx",
+      "community": 7,
+      "community_name": "apiFetch",
       "norm_label": "hourskpiresponse"
     },
     {
@@ -13606,8 +13536,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_pages_adminbankhourspage_bankhoursoverviewitem",
-      "community": 63,
-      "community_name": "AdminBankHoursPage.tsx",
+      "community": 7,
+      "community_name": "apiFetch",
       "norm_label": "bankhoursoverviewitem"
     },
     {
@@ -13618,8 +13548,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_pages_adminbankhourspage_formatminuteslabel",
-      "community": 63,
-      "community_name": "AdminBankHoursPage.tsx",
+      "community": 7,
+      "community_name": "apiFetch",
       "norm_label": "formatminuteslabel()"
     },
     {
@@ -13630,8 +13560,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_pages_adminbankhourspage_adminbankhourspage",
-      "community": 63,
-      "community_name": "AdminBankHoursPage.tsx",
+      "community": 7,
+      "community_name": "apiFetch",
       "norm_label": "adminbankhourspage()"
     },
     {
@@ -13677,7 +13607,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_admincheckoutthankyoupage",
-      "community": 35,
+      "community": 7,
       "community_name": "apiFetch",
       "norm_label": "admincheckoutthankyoupage.tsx"
     },
@@ -13689,7 +13619,7 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_pages_admincheckoutthankyoupage_admincheckoutthankyoupage",
-      "community": 35,
+      "community": 7,
       "community_name": "apiFetch",
       "norm_label": "admincheckoutthankyoupage()"
     },
@@ -14183,7 +14113,7 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_pages_adminpendingapprovalspage_adminpendingapprovalspage",
-      "community": 35,
+      "community": 7,
       "community_name": "apiFetch",
       "norm_label": "adminpendingapprovalspage()"
     },
@@ -14328,7 +14258,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_adminuserspage",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "adminuserspage.tsx"
     },
     {
@@ -14341,7 +14271,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_adminuserspage_role",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "role"
     },
     {
@@ -14354,7 +14284,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_adminuserspage_invitablerole",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "invitablerole"
     },
     {
@@ -14367,7 +14297,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_adminuserspage_user",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "user"
     },
     {
@@ -14380,7 +14310,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_adminuserspage_adminseatpayload",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "adminseatpayload"
     },
     {
@@ -14393,7 +14323,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_adminuserspage_teaminvitelinkresponse",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "teaminvitelinkresponse"
     },
     {
@@ -14404,7 +14334,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_adminuserspage_team_roles",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "team_roles"
     },
     {
@@ -14416,7 +14346,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_adminuserspage_adminuserspage",
       "community": 7,
-      "community_name": "api.ts",
+      "community_name": "apiFetch",
       "norm_label": "adminuserspage()"
     },
     {
@@ -14615,7 +14545,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_colaboradorhistorypage",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "colaboradorhistorypage.tsx"
     },
     {
@@ -14628,7 +14558,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_colaboradorhistorypage_timeentry",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "timeentry"
     },
     {
@@ -14641,7 +14571,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_colaboradorhistorypage_completeprofile",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "completeprofile"
     },
     {
@@ -14654,7 +14584,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_colaboradorhistorypage_dayhistory",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "dayhistory"
     },
     {
@@ -14666,7 +14596,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_colaboradorhistorypage_formatminuteslabel",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "formatminuteslabel()"
     },
     {
@@ -14678,7 +14608,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_colaboradorhistorypage_calculategain",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "calculategain()"
     },
     {
@@ -14690,7 +14620,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_colaboradorhistorypage_colaboradorhistorypage",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "colaboradorhistorypage()"
     },
     {
@@ -14906,8 +14836,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_pages_hrdailytimepage_hrdailytimepage",
-      "community": 5,
-      "community_name": "App.tsx",
+      "community": 48,
+      "community_name": "HrDailyTimePage.tsx",
       "norm_label": "hrdailytimepage()"
     },
     {
@@ -14917,8 +14847,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_hrgroupspage",
-      "community": 35,
-      "community_name": "apiFetch",
+      "community": 5,
+      "community_name": "App.tsx",
       "norm_label": "hrgroupspage.tsx"
     },
     {
@@ -14930,8 +14860,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_pages_hrgroupspage_role",
-      "community": 35,
-      "community_name": "apiFetch",
+      "community": 5,
+      "community_name": "App.tsx",
       "norm_label": "role"
     },
     {
@@ -14943,8 +14873,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_pages_hrgroupspage_manageablerole",
-      "community": 35,
-      "community_name": "apiFetch",
+      "community": 5,
+      "community_name": "App.tsx",
       "norm_label": "manageablerole"
     },
     {
@@ -14956,8 +14886,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_pages_hrgroupspage_user",
-      "community": 35,
-      "community_name": "apiFetch",
+      "community": 5,
+      "community_name": "App.tsx",
       "norm_label": "user"
     },
     {
@@ -14968,8 +14898,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_pages_hrgroupspage_manageablerolesfor",
-      "community": 35,
-      "community_name": "apiFetch",
+      "community": 5,
+      "community_name": "App.tsx",
       "norm_label": "manageablerolesfor()"
     },
     {
@@ -14980,8 +14910,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_pages_hrgroupspage_hrgroupspage",
-      "community": 35,
-      "community_name": "apiFetch",
+      "community": 5,
+      "community_name": "App.tsx",
       "norm_label": "hrgroupspage()"
     },
     {
@@ -15167,8 +15097,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_login",
-      "community": 38,
-      "community_name": "SuperAdminAccountsPage.tsx",
+      "community": 20,
+      "community_name": "ShellLayout.tsx",
       "norm_label": "login.tsx"
     },
     {
@@ -15179,8 +15109,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_pages_login_login",
-      "community": 5,
-      "community_name": "App.tsx",
+      "community": 20,
+      "community_name": "ShellLayout.tsx",
       "norm_label": "login()"
     },
     {
@@ -15214,7 +15144,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_overview",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "overview.tsx"
     },
     {
@@ -15227,7 +15157,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_overview_approvallog",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "approvallog"
     },
     {
@@ -15240,7 +15170,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_overview_timeentry",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "timeentry"
     },
     {
@@ -15252,7 +15182,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_overview_overview",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "overview()"
     },
     {
@@ -15416,8 +15346,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_profilecomplete",
-      "community": 27,
-      "community_name": "AdminDashboard.tsx",
+      "community": 59,
+      "community_name": "VacationSupervisorPage.tsx",
       "norm_label": "profilecomplete.tsx"
     },
     {
@@ -15429,8 +15359,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_pages_profilecomplete_role",
-      "community": 27,
-      "community_name": "AdminDashboard.tsx",
+      "community": 59,
+      "community_name": "VacationSupervisorPage.tsx",
       "norm_label": "role"
     },
     {
@@ -15442,8 +15372,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_pages_profilecomplete_completeprofile",
-      "community": 27,
-      "community_name": "AdminDashboard.tsx",
+      "community": 59,
+      "community_name": "VacationSupervisorPage.tsx",
       "norm_label": "completeprofile"
     },
     {
@@ -15454,8 +15384,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_pages_profilecomplete_formatdatetime",
-      "community": 27,
-      "community_name": "AdminDashboard.tsx",
+      "community": 59,
+      "community_name": "VacationSupervisorPage.tsx",
       "norm_label": "formatdatetime()"
     },
     {
@@ -15466,8 +15396,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_pages_profilecomplete_profilecomplete",
-      "community": 27,
-      "community_name": "AdminDashboard.tsx",
+      "community": 59,
+      "community_name": "VacationSupervisorPage.tsx",
       "norm_label": "profilecomplete()"
     },
     {
@@ -15478,7 +15408,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_reports",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "reports.tsx"
     },
     {
@@ -15489,7 +15419,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_reports_api_origin",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "api_origin"
     },
     {
@@ -15502,7 +15432,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_reports_timeentry",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "timeentry"
     },
     {
@@ -15515,7 +15445,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_reports_exportjobresponse",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "exportjobresponse"
     },
     {
@@ -15528,7 +15458,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_reports_exportstatusresponse",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "exportstatusresponse"
     },
     {
@@ -15541,7 +15471,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_reports_dailybreakdownrow",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "dailybreakdownrow"
     },
     {
@@ -15554,7 +15484,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_reports_dailybreakdownresponse",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "dailybreakdownresponse"
     },
     {
@@ -15566,7 +15496,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_reports_reports",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "reports()"
     },
     {
@@ -15576,8 +15506,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_signup",
-      "community": 38,
-      "community_name": "SuperAdminAccountsPage.tsx",
+      "community": 20,
+      "community_name": "ShellLayout.tsx",
       "norm_label": "signup.tsx"
     },
     {
@@ -15589,8 +15519,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_pages_signup_invitepreview",
-      "community": 38,
-      "community_name": "SuperAdminAccountsPage.tsx",
+      "community": 20,
+      "community_name": "ShellLayout.tsx",
       "norm_label": "invitepreview"
     },
     {
@@ -16174,7 +16104,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorhourspage",
       "community": 35,
-      "community_name": "apiFetch",
+      "community_name": "SupervisorHoursPage.tsx",
       "norm_label": "supervisorhourspage.tsx"
     },
     {
@@ -16187,7 +16117,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorhourspage_teammember",
       "community": 35,
-      "community_name": "apiFetch",
+      "community_name": "SupervisorHoursPage.tsx",
       "norm_label": "teammember"
     },
     {
@@ -16200,7 +16130,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorhourspage_teamworksettingsform",
       "community": 35,
-      "community_name": "apiFetch",
+      "community_name": "SupervisorHoursPage.tsx",
       "norm_label": "teamworksettingsform"
     },
     {
@@ -16213,7 +16143,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorhourspage_teambankhoursoverviewitem",
       "community": 35,
-      "community_name": "apiFetch",
+      "community_name": "SupervisorHoursPage.tsx",
       "norm_label": "teambankhoursoverviewitem"
     },
     {
@@ -16225,7 +16155,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorhourspage_formatminuteslabel",
       "community": 35,
-      "community_name": "apiFetch",
+      "community_name": "SupervisorHoursPage.tsx",
       "norm_label": "formatminuteslabel()"
     },
     {
@@ -16237,7 +16167,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorhourspage_formatminutestohours",
       "community": 35,
-      "community_name": "apiFetch",
+      "community_name": "SupervisorHoursPage.tsx",
       "norm_label": "formatminutestohours()"
     },
     {
@@ -16249,7 +16179,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorhourspage_parsehourstominutes",
       "community": 35,
-      "community_name": "apiFetch",
+      "community_name": "SupervisorHoursPage.tsx",
       "norm_label": "parsehourstominutes()"
     },
     {
@@ -16261,7 +16191,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorhourspage_supervisorhourspage",
       "community": 35,
-      "community_name": "apiFetch",
+      "community_name": "SupervisorHoursPage.tsx",
       "norm_label": "supervisorhourspage()"
     },
     {
@@ -16271,8 +16201,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorkpispage",
-      "community": 64,
-      "community_name": "SupervisorKpisPage.tsx",
+      "community": 5,
+      "community_name": "App.tsx",
       "norm_label": "supervisorkpispage.tsx"
     },
     {
@@ -16284,8 +16214,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorkpispage_kpiperiod",
-      "community": 64,
-      "community_name": "SupervisorKpisPage.tsx",
+      "community": 5,
+      "community_name": "App.tsx",
       "norm_label": "kpiperiod"
     },
     {
@@ -16297,8 +16227,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorkpispage_hourskpiitem",
-      "community": 64,
-      "community_name": "SupervisorKpisPage.tsx",
+      "community": 5,
+      "community_name": "App.tsx",
       "norm_label": "hourskpiitem"
     },
     {
@@ -16310,8 +16240,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorkpispage_hourskpitimelineitem",
-      "community": 64,
-      "community_name": "SupervisorKpisPage.tsx",
+      "community": 5,
+      "community_name": "App.tsx",
       "norm_label": "hourskpitimelineitem"
     },
     {
@@ -16323,8 +16253,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorkpispage_hourskpiresponse",
-      "community": 64,
-      "community_name": "SupervisorKpisPage.tsx",
+      "community": 5,
+      "community_name": "App.tsx",
       "norm_label": "hourskpiresponse"
     },
     {
@@ -16335,8 +16265,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorkpispage_formatminuteslabel",
-      "community": 64,
-      "community_name": "SupervisorKpisPage.tsx",
+      "community": 5,
+      "community_name": "App.tsx",
       "norm_label": "formatminuteslabel()"
     },
     {
@@ -16347,8 +16277,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorkpispage_supervisorkpispage",
-      "community": 64,
-      "community_name": "SupervisorKpisPage.tsx",
+      "community": 5,
+      "community_name": "App.tsx",
       "norm_label": "supervisorkpispage()"
     },
     {
@@ -16439,49 +16369,10 @@
       "norm_label": "defaultstats"
     },
     {
-      "label": "PeriodBulkScope",
-      "file_type": "code",
-      "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L49",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "id": "frontend_src_pages_supervisorpendingitemspage_periodbulkscope",
-      "community": 13,
-      "community_name": "SupervisorPendingItemsPage.tsx",
-      "norm_label": "periodbulkscope"
-    },
-    {
-      "label": "BulkBody",
-      "file_type": "code",
-      "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L50",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "id": "frontend_src_pages_supervisorpendingitemspage_bulkbody",
-      "community": 13,
-      "community_name": "SupervisorPendingItemsPage.tsx",
-      "norm_label": "bulkbody"
-    },
-    {
-      "label": "BulkResult",
-      "file_type": "code",
-      "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L51",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "id": "frontend_src_pages_supervisorpendingitemspage_bulkresult",
-      "community": 13,
-      "community_name": "SupervisorPendingItemsPage.tsx",
-      "norm_label": "bulkresult"
-    },
-    {
       "label": "toYmd()",
       "file_type": "code",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L59",
+      "source_location": "L42",
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorpendingitemspage_toymd",
@@ -16493,7 +16384,7 @@
       "label": "parseYmd()",
       "file_type": "code",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L65",
+      "source_location": "L48",
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorpendingitemspage_parseymd",
@@ -16505,7 +16396,7 @@
       "label": "getPeriodRange()",
       "file_type": "code",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L70",
+      "source_location": "L53",
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorpendingitemspage_getperiodrange",
@@ -16517,7 +16408,7 @@
       "label": "fmtHM()",
       "file_type": "code",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L93",
+      "source_location": "L76",
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorpendingitemspage_fmthm",
@@ -16529,7 +16420,7 @@
       "label": "entryMinutes()",
       "file_type": "code",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L95",
+      "source_location": "L78",
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorpendingitemspage_entryminutes",
@@ -16541,7 +16432,7 @@
       "label": "DayGroup",
       "file_type": "code",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L101",
+      "source_location": "L84",
       "_callable": true,
       "_callable_class": true,
       "_origin": "ast",
@@ -16554,7 +16445,7 @@
       "label": "WorkerGroup",
       "file_type": "code",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L102",
+      "source_location": "L85",
       "_callable": true,
       "_callable_class": true,
       "_origin": "ast",
@@ -16567,7 +16458,7 @@
       "label": "SupervisorPendingItemsPage()",
       "file_type": "code",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L110",
+      "source_location": "L93",
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_pages_supervisorpendingitemspage_supervisorpendingitemspage",
@@ -16617,7 +16508,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_vacationmemberpage",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "vacationmemberpage.tsx"
     },
     {
@@ -16630,7 +16521,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_vacationmemberpage_vacationrequest",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "vacationrequest"
     },
     {
@@ -16642,7 +16533,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_vacationmemberpage_getvacationstatuslabel",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "getvacationstatuslabel()"
     },
     {
@@ -16654,7 +16545,7 @@
       "_origin": "ast",
       "id": "frontend_src_pages_vacationmemberpage_vacationmemberpage",
       "community": 8,
-      "community_name": "useAuth",
+      "community_name": "Reports.tsx",
       "norm_label": "vacationmemberpage()"
     },
     {
@@ -16664,8 +16555,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_vacationsupervisorpage",
-      "community": 8,
-      "community_name": "useAuth",
+      "community": 59,
+      "community_name": "VacationSupervisorPage.tsx",
       "norm_label": "vacationsupervisorpage.tsx"
     },
     {
@@ -16677,8 +16568,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_pages_vacationsupervisorpage_vacationrequest",
-      "community": 8,
-      "community_name": "useAuth",
+      "community": 59,
+      "community_name": "VacationSupervisorPage.tsx",
       "norm_label": "vacationrequest"
     },
     {
@@ -16690,8 +16581,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_pages_vacationsupervisorpage_vacationcalendarday",
-      "community": 8,
-      "community_name": "useAuth",
+      "community": 59,
+      "community_name": "VacationSupervisorPage.tsx",
       "norm_label": "vacationcalendarday"
     },
     {
@@ -16703,8 +16594,8 @@
       "_callable_class": true,
       "_origin": "ast",
       "id": "frontend_src_pages_vacationsupervisorpage_vacationcalendar",
-      "community": 8,
-      "community_name": "useAuth",
+      "community": 59,
+      "community_name": "VacationSupervisorPage.tsx",
       "norm_label": "vacationcalendar"
     },
     {
@@ -16715,8 +16606,8 @@
       "_callable": true,
       "_origin": "ast",
       "id": "frontend_src_pages_vacationsupervisorpage_vacationsupervisorpage",
-      "community": 8,
-      "community_name": "useAuth",
+      "community": 59,
+      "community_name": "VacationSupervisorPage.tsx",
       "norm_label": "vacationsupervisorpage()"
     },
     {
@@ -24490,7 +24381,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2427",
+      "source_location": "L2315",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -24513,7 +24404,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2416",
+      "source_location": "L2304",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -24525,7 +24416,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2415",
+      "source_location": "L2303",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -24537,7 +24428,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2419",
+      "source_location": "L2307",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -24593,17 +24484,6 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L722",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "backend_src_controllers_supervisor_controller",
-      "target": "backend_src_controllers_supervisor_controller_buildteamentriesscope",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "backend/src/controllers/supervisor.controller.js",
       "source_location": "L222",
       "weight": 1.0,
       "_origin": "ast",
@@ -24615,44 +24495,11 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1054",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "backend_src_controllers_supervisor_controller",
-      "target": "backend_src_controllers_supervisor_controller_bulk_entry_include",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "backend/src/controllers/supervisor.controller.js",
       "source_location": "L51",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller",
       "target": "backend_src_controllers_supervisor_controller_canmanageteamuser",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1067",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "backend_src_controllers_supervisor_controller",
-      "target": "backend_src_controllers_supervisor_controller_classifybulkentries",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L694",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "backend_src_controllers_supervisor_controller",
-      "target": "backend_src_controllers_supervisor_controller_collectsubtreeids",
       "confidence_score": 1.0
     },
     {
@@ -24725,7 +24572,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2422",
+      "source_location": "L2310",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -24737,7 +24584,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2429",
+      "source_location": "L2317",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -24749,7 +24596,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2426",
+      "source_location": "L2314",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -24761,7 +24608,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2423",
+      "source_location": "L2311",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -24773,7 +24620,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2414",
+      "source_location": "L2302",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -24785,7 +24632,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2424",
+      "source_location": "L2312",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -24841,7 +24688,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1155",
+      "source_location": "L1019",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller",
@@ -24852,18 +24699,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1092",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "backend_src_controllers_supervisor_controller",
-      "target": "backend_src_controllers_supervisor_controller_loadentriesforbulkscope",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1498",
+      "source_location": "L1386",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller",
@@ -24929,7 +24765,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2430",
+      "source_location": "L2318",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -24974,7 +24810,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2418",
+      "source_location": "L2306",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -24986,7 +24822,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2417",
+      "source_location": "L2305",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -24998,7 +24834,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2420",
+      "source_location": "L2308",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -25010,7 +24846,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2421",
+      "source_location": "L2309",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -25077,7 +24913,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2425",
+      "source_location": "L2313",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -25100,7 +24936,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2428",
+      "source_location": "L2316",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -25341,7 +25177,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L920",
+      "source_location": "L880",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_approveentry",
@@ -25353,7 +25189,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1807",
+      "source_location": "L1695",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_getentrydetails",
@@ -25365,7 +25201,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1270",
+      "source_location": "L1158",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_rejectentry",
@@ -25377,7 +25213,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1708",
+      "source_location": "L1596",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_requestedit",
@@ -25401,7 +25237,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2043",
+      "source_location": "L1931",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_getteamhourskpis",
@@ -25413,7 +25249,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1946",
+      "source_location": "L1834",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_getteampresencesnapshot",
@@ -25425,7 +25261,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1983",
+      "source_location": "L1871",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_streamteampresence",
@@ -25449,19 +25285,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L724",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "backend_src_controllers_supervisor_controller_buildteamentriesscope",
-      "target": "backend_src_controllers_supervisor_controller_buildmanagedteamwhere",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2271",
+      "source_location": "L2159",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_getteambankhoursoverview",
@@ -25473,7 +25297,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1885",
+      "source_location": "L1773",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_getteammembers",
@@ -25485,7 +25309,19 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2107",
+      "source_location": "L700",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "backend_src_controllers_supervisor_controller_getteampendingentries",
+      "target": "backend_src_controllers_supervisor_controller_buildmanagedteamwhere",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "backend/src/controllers/supervisor.controller.js",
+      "source_location": "L1995",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_adjustteammemberbankhours",
@@ -25497,7 +25333,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L948",
+      "source_location": "L908",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_approveentry",
@@ -25521,19 +25357,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1071",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "backend_src_controllers_supervisor_controller_classifybulkentries",
-      "target": "backend_src_controllers_supervisor_controller_canmanageteamuser",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1846",
+      "source_location": "L1734",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_getentrydetails",
@@ -25545,7 +25369,19 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1525",
+      "source_location": "L1053",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "backend_src_controllers_supervisor_controller_loadentriesforbulk",
+      "target": "backend_src_controllers_supervisor_controller_canmanageteamuser",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "backend/src/controllers/supervisor.controller.js",
+      "source_location": "L1413",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_loadentryforovertimedecision",
@@ -25557,7 +25393,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2374",
+      "source_location": "L2262",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_payteammemberbankhours",
@@ -25569,7 +25405,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1306",
+      "source_location": "L1194",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_rejectentry",
@@ -25581,7 +25417,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1744",
+      "source_location": "L1632",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_requestedit",
@@ -25593,7 +25429,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2175",
+      "source_location": "L2063",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_updateteammemberworksettings",
@@ -25821,7 +25657,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1947",
+      "source_location": "L1835",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_getteampresencesnapshot",
@@ -25833,7 +25669,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1984",
+      "source_location": "L1872",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_streamteampresence",
@@ -25845,7 +25681,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2044",
+      "source_location": "L1932",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_getteamhourskpis",
@@ -25857,7 +25693,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1991",
+      "source_location": "L1879",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_streamteampresence",
@@ -25868,49 +25704,13 @@
       "relation": "calls",
       "context": "call",
       "confidence": "EXTRACTED",
-      "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L737",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "backend_src_controllers_supervisor_controller_buildteamentriesscope",
-      "target": "backend_src_controllers_supervisor_controller_collectsubtreeids",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L752",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "backend_src_controllers_supervisor_controller_buildteamentriesscope",
-      "target": "backend_src_utils_timecalculations_parselocaldate"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L774",
+      "source_location": "L748",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_getteampendingentries",
-      "target": "backend_src_controllers_supervisor_controller_buildteamentriesscope",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1103",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "backend_src_controllers_supervisor_controller_loadentriesforbulkscope",
-      "target": "backend_src_controllers_supervisor_controller_buildteamentriesscope",
-      "confidence_score": 1.0
+      "target": "backend_src_utils_timecalculations_parselocaldate"
     },
     {
       "relation": "imports",
@@ -25941,43 +25741,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1178",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "backend_src_controllers_supervisor_controller_loadentriesforbulk",
-      "target": "backend_src_controllers_supervisor_controller_classifybulkentries",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1135",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "backend_src_controllers_supervisor_controller_loadentriesforbulkscope",
-      "target": "backend_src_controllers_supervisor_controller_classifybulkentries",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1158",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "backend_src_controllers_supervisor_controller_loadentriesforbulk",
-      "target": "backend_src_controllers_supervisor_controller_loadentriesforbulkscope",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1192",
+      "source_location": "L1080",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_approveentriesbulk",
@@ -25989,7 +25753,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1410",
+      "source_location": "L1298",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_rejectentriesbulk",
@@ -26026,7 +25790,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1433",
+      "source_location": "L1321",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_rejectentriesbulk",
@@ -26049,7 +25813,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1584",
+      "source_location": "L1472",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_approveovertime",
@@ -26061,7 +25825,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1647",
+      "source_location": "L1535",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_rejectovertime",
@@ -26086,7 +25850,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L1651",
+      "source_location": "L1539",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_rejectovertime",
@@ -26182,7 +25946,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2114",
+      "source_location": "L2002",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_adjustteammemberbankhours",
@@ -26206,7 +25970,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2185",
+      "source_location": "L2073",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_updateteammemberworksettings",
@@ -26218,7 +25982,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2196",
+      "source_location": "L2084",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_updateteammemberworksettings",
@@ -26230,7 +25994,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2218",
+      "source_location": "L2106",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_updateteammemberworksettings",
@@ -26266,7 +26030,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/src/controllers/supervisor.controller.js",
-      "source_location": "L2381",
+      "source_location": "L2269",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_controllers_supervisor_controller_payteammemberbankhours",
@@ -35457,7 +35221,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/utils/roles.js",
-      "source_location": "L10",
+      "source_location": "L9",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_utils_roles",
@@ -35468,7 +35232,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/utils/roles.js",
-      "source_location": "L14",
+      "source_location": "L13",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_utils_roles",
@@ -35479,7 +35243,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/utils/roles.js",
-      "source_location": "L15",
+      "source_location": "L14",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_utils_roles",
@@ -35490,7 +35254,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/utils/roles.js",
-      "source_location": "L23",
+      "source_location": "L22",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -35502,49 +35266,13 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/utils/roles.js",
-      "source_location": "L26",
+      "source_location": "L25",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
       "source": "backend_src_utils_roles",
       "target": "backend_src_utils_roles_manageablerolesfor",
       "confidence_score": 0.5
-    },
-    {
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L2",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "backend_src_utils_visibleusers",
-      "target": "backend_src_utils_roles",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L2",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "backend_src_utils_visibleusers",
-      "target": "backend_src_utils_roles_ishrlevel",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L78",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "backend_src_utils_visibleusers_compute",
-      "target": "backend_src_utils_roles_ishrlevel"
     },
     {
       "relation": "contains",
@@ -36855,7 +36583,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L94",
+      "source_location": "L88",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_utils_visibleusers",
@@ -36866,7 +36594,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L113",
+      "source_location": "L107",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -36878,7 +36606,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L73",
+      "source_location": "L67",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_utils_visibleusers",
@@ -36889,18 +36617,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L2",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "backend_src_utils_visibleusers",
-      "target": "backend_src_utils_visibleusers_ishrlevel",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L32",
+      "source_location": "L31",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_utils_visibleusers",
@@ -36911,7 +36628,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L15",
+      "source_location": "L14",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_utils_visibleusers",
@@ -36933,7 +36650,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L111",
+      "source_location": "L105",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -36945,7 +36662,7 @@
       "relation": "indirect_call",
       "confidence": "INFERRED",
       "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L112",
+      "source_location": "L106",
       "weight": 1.0,
       "_origin": "ast",
       "context": "collection",
@@ -36958,7 +36675,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L76",
+      "source_location": "L70",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_utils_visibleusers_compute",
@@ -36970,7 +36687,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L79",
+      "source_location": "L73",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_utils_visibleusers_compute",
@@ -36982,7 +36699,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L83",
+      "source_location": "L77",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_utils_visibleusers_compute",
@@ -36994,7 +36711,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L99",
+      "source_location": "L93",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_utils_visibleusers_resolvevisibleuserids",
@@ -37006,7 +36723,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/utils/visibleUsers.js",
-      "source_location": "L106",
+      "source_location": "L100",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_utils_visibleusers_canviewuser",
@@ -43626,7 +43343,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L111",
+      "source_location": "L94",
       "weight": 1.0,
       "_origin": "ast",
       "source": "frontend_src_pages_supervisorpendingitemspage_supervisorpendingitemspage",
@@ -46162,7 +45879,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L282",
+      "source_location": "L237",
       "weight": 1.0,
       "_origin": "ast",
       "source": "frontend_src_pages_supervisorpendingitemspage_supervisorpendingitemspage",
@@ -50443,29 +50160,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L50",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "frontend_src_pages_supervisorpendingitemspage",
-      "target": "frontend_src_pages_supervisorpendingitemspage_bulkbody",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L51",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "frontend_src_pages_supervisorpendingitemspage",
-      "target": "frontend_src_pages_supervisorpendingitemspage_bulkresult",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L101",
+      "source_location": "L84",
       "weight": 1.0,
       "_origin": "ast",
       "source": "frontend_src_pages_supervisorpendingitemspage",
@@ -50498,7 +50193,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L95",
+      "source_location": "L78",
       "weight": 1.0,
       "_origin": "ast",
       "source": "frontend_src_pages_supervisorpendingitemspage",
@@ -50509,7 +50204,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L93",
+      "source_location": "L76",
       "weight": 1.0,
       "_origin": "ast",
       "source": "frontend_src_pages_supervisorpendingitemspage",
@@ -50520,7 +50215,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L70",
+      "source_location": "L53",
       "weight": 1.0,
       "_origin": "ast",
       "source": "frontend_src_pages_supervisorpendingitemspage",
@@ -50531,22 +50226,11 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L65",
+      "source_location": "L48",
       "weight": 1.0,
       "_origin": "ast",
       "source": "frontend_src_pages_supervisorpendingitemspage",
       "target": "frontend_src_pages_supervisorpendingitemspage_parseymd",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L49",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "frontend_src_pages_supervisorpendingitemspage",
-      "target": "frontend_src_pages_supervisorpendingitemspage_periodbulkscope",
       "confidence_score": 1.0
     },
     {
@@ -50597,7 +50281,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L110",
+      "source_location": "L93",
       "weight": 1.0,
       "_origin": "ast",
       "source": "frontend_src_pages_supervisorpendingitemspage",
@@ -50608,7 +50292,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L59",
+      "source_location": "L42",
       "weight": 1.0,
       "_origin": "ast",
       "source": "frontend_src_pages_supervisorpendingitemspage",
@@ -50619,7 +50303,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L102",
+      "source_location": "L85",
       "weight": 1.0,
       "_origin": "ast",
       "source": "frontend_src_pages_supervisorpendingitemspage",
@@ -50631,7 +50315,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L82",
+      "source_location": "L65",
       "weight": 1.0,
       "_origin": "ast",
       "source": "frontend_src_pages_supervisorpendingitemspage_getperiodrange",
@@ -50643,7 +50327,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L139",
+      "source_location": "L119",
       "weight": 1.0,
       "_origin": "ast",
       "source": "frontend_src_pages_supervisorpendingitemspage_supervisorpendingitemspage",
@@ -50655,7 +50339,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L71",
+      "source_location": "L54",
       "weight": 1.0,
       "_origin": "ast",
       "source": "frontend_src_pages_supervisorpendingitemspage_getperiodrange",
@@ -50667,7 +50351,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L144",
+      "source_location": "L124",
       "weight": 1.0,
       "_origin": "ast",
       "source": "frontend_src_pages_supervisorpendingitemspage_supervisorpendingitemspage",
@@ -50679,7 +50363,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L141",
+      "source_location": "L121",
       "weight": 1.0,
       "_origin": "ast",
       "source": "frontend_src_pages_supervisorpendingitemspage_supervisorpendingitemspage",
@@ -50691,7 +50375,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L426",
+      "source_location": "L308",
       "weight": 1.0,
       "_origin": "ast",
       "source": "frontend_src_pages_supervisorpendingitemspage_supervisorpendingitemspage",
@@ -50703,7 +50387,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "frontend/src/pages/SupervisorPendingItemsPage.tsx",
-      "source_location": "L237",
+      "source_location": "L192",
       "weight": 1.0,
       "_origin": "ast",
       "source": "frontend_src_pages_supervisorpendingitemspage_supervisorpendingitemspage",
@@ -51677,5 +51361,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "d94569cc302898c29eb68988bb514b62c99ea27a"
+  "built_at_commit": "591fa630bd6cd96d49242a22baec01af465c304b"
 }
