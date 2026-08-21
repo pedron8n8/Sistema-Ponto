@@ -100,6 +100,8 @@ model User {
   hrVacationReviews VacationRequest[] @relation("VacationHr")
   vacationLogsAsActor VacationApprovalLog[] @relation("VacationActionActor")
   reviewedLogs    ApprovalLog[] @relation("ReviewerAction")
+  mcpConnections  McpConnection[] @relation("McpTenant")
+  mcpGrants       McpGrant[]      @relation("McpGrantUser")
   createdAt       DateTime      @default(now())
 
   @@index([email])
@@ -273,4 +275,66 @@ model VacationApprovalLog {
   @@index([vacationRequestId])
   @@index([actorId])
   @@index([timestamp])
+}
+
+enum McpGrantKind {
+  AUTH_REQUEST
+  CODE
+  ACCESS
+  REFRESH
+}
+
+/// Uma conexao MCP: o TETO de permissoes que um ADMIN/INTEGRATOR concede a um
+/// cliente de IA. Quem autoriza no /oauth/authorize escolhe uma destas; o efetivo
+/// e a intersecao entre `tools` e as permissoes do usuario que autorizou.
+model McpConnection {
+  id                  String   @id @default(uuid())
+  name                String
+  organizationAdminId String
+  tools               String[]
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  organizationAdmin   User     @relation("McpTenant", fields: [organizationAdminId], references: [id], onDelete: Cascade)
+  grants              McpGrant[]
+
+  @@index([organizationAdminId])
+}
+
+/// Cliente OAuth registrado via Dynamic Client Registration (RFC 7591).
+/// Tabela propria porque o ciclo de vida nao expira junto com os grants.
+model McpOAuthClient {
+  clientId   String   @id
+  metadata   Json
+  secretHash String?
+  createdAt  DateTime @default(now())
+}
+
+/// Os quatro estagios do fluxo OAuth em uma tabela (pedido de autorizacao, code,
+/// access token, refresh token). Tokens guardados como sha256: apagar ou desativar
+/// a conexao revoga o acesso na hora, que e o que o token HMAC da API publica
+/// (utils/publicApiToken.js) nao permite.
+model McpGrant {
+  id            String       @id @default(uuid())
+  kind          McpGrantKind
+  tokenHash     String       @unique
+  clientId      String
+  connectionId  String?
+  userId        String?
+  scopes        String[]
+  resource      String?
+  redirectUri   String?
+  codeChallenge String?
+  state         String?
+  expiresAt     DateTime
+  usedAt        DateTime?
+  revokedAt     DateTime?
+  lastUsedAt    DateTime?
+  createdAt     DateTime     @default(now())
+  connection    McpConnection? @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  user          User?          @relation("McpGrantUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([connectionId])
+  @@index([expiresAt])
 }

@@ -1,13 +1,28 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
 import LanguageSwitcher from '../components/LanguageSwitcher'
 import BrandWordmark from '../components/BrandWordmark'
 import PageMeta from '../components/PageMeta'
 
+/**
+ * Destinos permitidos apos o login. Mesma ideia do resolveReturnPath de
+ * PlanSelectionPage: whitelist de prefixos, para que ?returnTo nao vire open
+ * redirect. /oauth/authorize entra porque o consentimento MCP manda o usuario
+ * para o login e precisa voltar ao pedido pendente.
+ */
+const resolveReturnPath = (value: string | null) => {
+  const normalized = String(value || '').trim()
+  if (!normalized.startsWith('/')) return ''
+  if (normalized === '/app' || normalized.startsWith('/app/')) return normalized
+  if (normalized.startsWith('/oauth/authorize')) return normalized
+  return ''
+}
+
 const Login = () => {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { signIn, signInWithGoogle, resetPassword, session, profile, loading, profileError } = useAuth()
   const { t } = useTranslation()
   const [email, setEmail] = useState('')
@@ -19,8 +34,15 @@ const Login = () => {
   const [emailLoading, setEmailLoading] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
 
+  const returnPath = resolveReturnPath(searchParams.get('returnTo'))
+
   useEffect(() => {
     if (loading || !session || !profile) return
+
+    if (returnPath) {
+      navigate(returnPath, { replace: true })
+      return
+    }
 
     if (profile.role === 'SUPERADMIN') {
       navigate('/app/superadmin/accounts', { replace: true })
@@ -28,7 +50,7 @@ const Login = () => {
     }
 
     navigate(profile.currentPlanStatus === 'ACTIVE' ? '/app' : '/app/escolher-plano', { replace: true })
-  }, [loading, navigate, profile, session])
+  }, [loading, navigate, profile, returnPath, session])
 
   const resolveGoogleSignInError = (err: unknown) => {
     if (!(err instanceof Error)) {

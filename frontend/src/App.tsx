@@ -27,6 +27,8 @@ import AdminCheckoutThankYouPage from './pages/AdminCheckoutThankYouPage.tsx'
 import AdminSeatPurchasePage from './pages/AdminSeatPurchasePage'
 import AdminQrCodePage from './pages/AdminQrCodePage'
 import AdminProSettingsPage from './pages/AdminProSettingsPage'
+import AdminMcpPage from './pages/AdminMcpPage'
+import McpAuthorizePage from './pages/McpAuthorizePage'
 import SupervisorKpisPage from './pages/SupervisorKpisPage'
 import SupervisorPendingItemsPage from './pages/SupervisorPendingItemsPage'
 import SupervisorHoursPage from './pages/SupervisorHoursPage'
@@ -109,6 +111,10 @@ const App = () => {
                 <Route path="/terms" element={<TermsPage />} />
                 <Route path="/consent" element={<ConsentPolicyPage />} />
                 <Route path="/login" element={<Login />} />
+                {/* Consentimento OAuth do MCP. Publica: quem chega vem do redirect
+                    de /authorize no backend e pode nao estar logado — a propria
+                    pagina manda para /login?returnTo quando falta sessao. */}
+                <Route path="/oauth/authorize" element={<McpAuthorizePage />} />
                 <Route path="/signup" element={<Signup />} />
                 <Route
                   path="/app/escolher-plano"
@@ -334,6 +340,16 @@ const App = () => {
                     <ProtectedRoute allowedRoles={['ADMIN']} allowedPlans={['PRO']}>
                       <ShellLayout>
                         <AdminProSettingsPage />
+                      </ShellLayout>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/admin/mcp"
+                  element={
+                    <ProtectedRoute allowedRoles={['ADMIN', 'INTEGRATOR']}>
+                      <ShellLayout>
+                        <AdminMcpPage />
                       </ShellLayout>
                     </ProtectedRoute>
                   }

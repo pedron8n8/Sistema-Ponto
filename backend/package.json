@@ -36,13 +36,15 @@
     "pentest:phase7": "node scripts/pentest-phase7.js",
     "pentest:phase8": "node scripts/pentest-phase8.js",
     "pentest:phase9": "node scripts/pentest-phase9.js",
-    "test:connections": "node scripts/test-connections.js"
+    "test:connections": "node scripts/test-connections.js",
+    "test:mcp": "node scripts/test-mcp.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@prisma/adapter-pg": "latest",
     "@prisma/client": "^7.5.0",
     "@supabase/supabase-js": "^2.99.1",

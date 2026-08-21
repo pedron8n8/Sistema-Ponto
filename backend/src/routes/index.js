@@ -9,6 +9,7 @@ const adminRoutes = require('./admin.routes');
 const vacationRoutes = require('./vacation.routes');
 const publicRoutes = require('./public.routes');
 const integrationsRoutes = require('./integrations.routes');
+const mcpRoutes = require('./mcp.routes');
 
 const router = express.Router();
 
@@ -41,6 +42,11 @@ router.use('/admin', adminRoutes);
 
 // Rotas de férias
 router.use('/vacations', vacationRoutes);
+
+// Conexoes MCP (integracao com modelos de IA) e consentimento OAuth.
+// O endpoint MCP em si (POST /mcp) e os documentos /.well-known/* ficam na raiz
+// da app, em src/index.js — o mcpAuthRouter do SDK exige isso.
+router.use('/mcp', mcpRoutes);
 
 // Health check (sem autenticação)
 router.get('/health', (req, res) => {

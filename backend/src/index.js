@@ -10,6 +10,14 @@ const { initGeofenceConfig } = require('./utils/geofence');
 
 // Import routes
 const routes = require('./routes');
+const {
+  mcpAuthRouter,
+  getOAuthProtectedResourceMetadataUrl,
+} = require('@modelcontextprotocol/sdk/server/auth/router.js');
+const { requireBearerAuth } = require('@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js');
+const { provider: mcpOAuthProvider } = require('./mcp/oauthProvider');
+const { handleMcpRequest } = require('./mcp/server');
+const mcpCatalog = require('./mcp/catalog');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -25,6 +33,10 @@ const defaultAllowedOrigins = [
   'https://omnipunt.com',
   'https://www.omnipunt.com',
   'https://app.omnipunt.com',
+  // Clientes MCP. O Claude.ai chama o /mcp pelo backend dele, entao isso e
+  // cinturao e suspensorio para o caso de a descoberta partir do navegador.
+  'https://claude.ai',
+  'https://claude.com',
 ];
 const allowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || defaultAllowedOrigins.join(','))
   .split(',')
@@ -55,7 +67,17 @@ const corsOptions = {
     return callback(new Error('Origin nao permitida por CORS'));
   },
   methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Idempotency-Key', 'X-Idempotency-Date'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Idempotency-Key',
+    'X-Idempotency-Date',
+    'Mcp-Session-Id',
+    'MCP-Protocol-Version',
+    'Mcp-Method',
+    'Mcp-Name',
+  ],
+  exposedHeaders: ['WWW-Authenticate', 'Mcp-Session-Id'],
   credentials: true,
   optionsSuccessStatus: 200,
 };
@@ -95,6 +117,39 @@ app.get('/health', (req, res) => {
 });
 
 // API Routes
+// --- MCP -------------------------------------------------------------------
+// Precisa vir na raiz da app (nao sob /api/v1): o mcpAuthRouter serve
+// /.well-known/oauth-authorization-server e /.well-known/oauth-protected-resource,
+// que por RFC 8414 e RFC 9728 tem de estar na raiz do host. Isso e o que faz o
+// Claude descobrir o fluxo OAuth so com a URL https://api.omnipunt.com/mcp.
+const mcpIssuerUrl = new URL(process.env.MCP_ISSUER_URL || 'https://api.omnipunt.com');
+const mcpResourceUrl = new URL(process.env.MCP_RESOURCE_URL || 'https://api.omnipunt.com/mcp');
+
+app.use(
+  mcpAuthRouter({
+    provider: mcpOAuthProvider,
+    issuerUrl: mcpIssuerUrl,
+    resourceServerUrl: mcpResourceUrl,
+    resourceName: 'OmniPunt',
+    scopesSupported: mcpCatalog.allScopes(),
+  })
+);
+
+const mcpResourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(mcpResourceUrl);
+
+app.post(
+  '/mcp',
+  requireBearerAuth({ verifier: mcpOAuthProvider, resourceMetadataUrl: mcpResourceMetadataUrl }),
+  handleMcpRequest
+);
+
+// Esta revisao do transporte nao usa GET (stream standalone) nem DELETE (fim de
+// sessao): rodamos stateless.
+app.all('/mcp', (req, res) => res.status(405).json({
+  error: 'Method Not Allowed',
+  message: 'O endpoint MCP aceita apenas POST.',
+}));
+
 app.use('/api/v1', routes);
 
 // 404 handler

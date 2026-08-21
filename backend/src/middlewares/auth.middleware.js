@@ -1,6 +1,7 @@
 const { supabase } = require('../config/supabase');
 const { prisma } = require('../config/database');
 const { verifyTeamInviteToken } = require('../utils/teamInviteToken');
+const { resolveMcpAccessToken } = require('../mcp/tokenAuth');
 
 const TEAM_MEMBER_ROLES = ['INTEGRATOR', 'HR', 'SUPERVISOR', 'MEMBER'];
 
@@ -211,6 +212,33 @@ const normalizeLegacyPlanCode = (value) => {
 };
 
 /**
+ * Calcula o plano vigente a partir do admin dono do workspace e o anexa ao user.
+ * Extraido para que o caminho de token MCP monte exatamente o mesmo req.user que
+ * o caminho do Supabase — e o que faz roleCheck/requirePlan/visibleUsers valerem
+ * igual para as duas credenciais.
+ */
+const attachCurrentPlan = (user) => {
+  let currentPlan = 'STARTER';
+  let currentPlanStatus = 'INACTIVE';
+
+  if (user.role === 'SUPERADMIN') {
+    currentPlan = 'PRO'; // Superadmin tem tudo
+    currentPlanStatus = 'ACTIVE';
+  } else if (user.role === 'ADMIN') {
+    currentPlan = normalizeLegacyPlanCode(user.adminPlan?.code || 'STARTER');
+    currentPlanStatus = user.adminPlanStatus;
+  } else if (user.organizationAdmin) {
+    currentPlan = normalizeLegacyPlanCode(user.organizationAdmin.adminPlan?.code || 'STARTER');
+    currentPlanStatus = user.organizationAdmin.adminPlanStatus;
+  }
+
+  user.currentPlan = currentPlan;
+  user.currentPlanStatus = currentPlanStatus;
+
+  return user;
+};
+
+/**
  * Middleware de autenticação
  * Valida o token JWT do Supabase e busca o usuário no banco local
  */
@@ -227,6 +255,49 @@ const authMiddleware = async (req, res, next) => {
     }
 
     const token = authHeader.substring(7); // Remove 'Bearer '
+
+    // Segunda via de credencial: token de uma conexao MCP. E o que permite a
+    // ponte de src/mcp/bridge.js atravessar esta cadeia sem um JWT do Supabase.
+    // Devolve null silenciosamente quando nao e um token MCP, para nao alterar o
+    // comportamento do caminho normal.
+    const mcpGrant = await resolveMcpAccessToken(token);
+
+    if (mcpGrant) {
+      const mcpUser = await prisma.user.findUnique({
+        where: { id: mcpGrant.userId },
+        include: USER_INCLUDE,
+      });
+
+      if (!mcpUser) {
+        return res.status(401).json({
+          error: 'Unauthorized',
+          message: 'O usuario que autorizou esta conexao MCP nao existe mais.',
+        });
+      }
+
+      if (mcpUser.isActive === false) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'O usuario que autorizou esta conexao MCP esta desativado.',
+        });
+      }
+
+      attachCurrentPlan(mcpUser);
+
+      req.user = mcpUser;
+      req.token = token;
+      // Sem supabaseUser: nao ha provisionamento just-in-time neste caminho.
+      req.mcp = {
+        connectionId: mcpGrant.connectionId,
+        connectionName: mcpGrant.connectionName,
+        tools: mcpGrant.tools,
+        scopes: mcpGrant.scopes,
+        clientId: mcpGrant.clientId,
+        toolName: req.get('x-mcp-tool') || null,
+      };
+
+      return next();
+    }
 
     // Valida o token com o Supabase
     const {
@@ -284,23 +355,7 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    // Calcula o plano atual do usuário baseado no admin dono do workspace
-    let currentPlan = 'STARTER';
-    let currentPlanStatus = 'INACTIVE';
-
-    if (user.role === 'SUPERADMIN') {
-      currentPlan = 'PRO'; // Superadmin tem tudo
-      currentPlanStatus = 'ACTIVE';
-    } else if (user.role === 'ADMIN') {
-      currentPlan = normalizeLegacyPlanCode(user.adminPlan?.code || 'STARTER');
-      currentPlanStatus = user.adminPlanStatus;
-    } else if (user.organizationAdmin) {
-      currentPlan = normalizeLegacyPlanCode(user.organizationAdmin.adminPlan?.code || 'STARTER');
-      currentPlanStatus = user.organizationAdmin.adminPlanStatus;
-    }
-
-    user.currentPlan = currentPlan;
-    user.currentPlanStatus = currentPlanStatus;
+    attachCurrentPlan(user);
 
     // Adiciona o usuário e o token na requisição
     req.user = user;

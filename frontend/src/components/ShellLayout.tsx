@@ -60,6 +60,18 @@ const AdminIcon = () => (
   </svg>
 )
 
+const McpIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={iconClassName}>
+    <circle cx="12" cy="12" r="2.4" />
+    <circle cx="5" cy="6.5" r="1.8" />
+    <circle cx="19" cy="6.5" r="1.8" />
+    <circle cx="12" cy="20" r="1.8" />
+    <path d="M6.4 7.6L10.3 10.6" />
+    <path d="M17.6 7.6L13.7 10.6" />
+    <path d="M12 14.4V18.2" />
+  </svg>
+)
+
 const SuperAdminIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={iconClassName}>
     <path d="M12 3.8L19.2 6.8V12.5C19.2 16.5 16.3 20.1 12 21.2C7.7 20.1 4.8 16.5 4.8 12.5V6.8L12 3.8Z" />
@@ -103,6 +115,8 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
   // INTEGRATOR é HR com um degrau a mais: alcança tudo que o HR alcança.
   const isHrLevel = profile?.role === 'HR' || profile?.role === 'INTEGRATOR'
   const canManageProSettings = profile?.role === 'ADMIN' || isHrLevel
+  // INTEGRATOR nao ve a secao Admin (visible: isOnlyAdmin), mas gerencia conexoes MCP.
+  const canManageMcp = profile?.role === 'ADMIN' || profile?.role === 'INTEGRATOR'
   const isSupervisor = profile?.role === 'SUPERVISOR' || isHrLevel || isAdmin
   const isHrOrAdmin = isHrLevel || isAdmin
   const navSections: NavSection[] = [
@@ -249,6 +263,17 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
               },
             ]
           : []),
+      ],
+    },
+    {
+      title: t('Integrations', 'Integracoes'),
+      visible: canManageMcp,
+      items: [
+        {
+          to: '/app/admin/mcp',
+          label: t('MCP / AI', 'MCP / IA'),
+          icon: <McpIcon />,
+        },
       ],
     },
   ]

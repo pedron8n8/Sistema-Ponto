@@ -1,3 +1,5 @@
+const crypto = require('crypto');
+
 const WINDOW_MS = Math.max(1_000, Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000));
 const MAX_REQUESTS = Math.max(1, Number(process.env.RATE_LIMIT_MAX_REQUESTS || 120));
 
@@ -31,7 +33,21 @@ const resolveRateLimitLanguage = (req) => {
   return 'pt';
 };
 
+/**
+ * Chaveia por credencial quando ha uma, senao por IP.
+ *
+ * Por IP puro, todo o trafego MCP cai num bucket unico: o Claude chama de um
+ * punhado de IPs da Anthropic (compartilhados entre tenants) e a ponte interna de
+ * src/mcp/bridge.js chama de 127.0.0.1. Chavear pelo Authorization da limite por
+ * token, que e o que se quer em todos os casos, nao so no MCP. Mesma ideia do
+ * buildActorScope de idempotency.middleware.js.
+ */
 const buildClientKey = (req) => {
+  const authHeader = req.headers.authorization;
+  if (typeof authHeader === 'string' && authHeader.trim()) {
+    return `t:${crypto.createHash('sha1').update(authHeader.trim()).digest('hex').slice(0, 20)}`;
+  }
+
   const forwardedFor = req.headers['x-forwarded-for'];
   if (typeof forwardedFor === 'string' && forwardedFor.trim()) {
     return forwardedFor.split(',')[0].trim();
