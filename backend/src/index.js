@@ -83,6 +83,13 @@ const corsOptions = {
 };
 
 // Middlewares
+// Atras de nginx + Cloudflare. Sem isso o express-rate-limit que o mcpAuthRouter
+// (SDK) monta em /authorize, /token e /register joga todos os clientes no mesmo
+// balde, porque req.ip vira o IP do container do nginx — e loga ValidationError
+// a cada request. 2 hops: nginx e Cloudflare; sobra o cliente real no inicio do
+// X-Forwarded-For.
+app.set('trust proxy', 2);
+
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
