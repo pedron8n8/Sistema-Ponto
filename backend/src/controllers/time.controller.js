@@ -26,6 +26,7 @@ const {
   PIN_LOCK_MINUTES,
 } = require('../utils/pinAuth');
 const { emitPunch } = require('../utils/presenceBus');
+const { resolvePunchTimestamp } = require('../utils/offlinePunch');
 
 const buildLocationPayload = ({ existingLocation, currentLocation, eventType, geofenceResult }) => {
   const isStructuredLocation =
@@ -522,6 +523,19 @@ const clockIn = async (req, res) => {
     // Captura metadados da requisição
     const metadata = captureRequestMetadata(req);
 
+    // Batida offline: o cliente propõe QUANDO aconteceu, o servidor decide se
+    // acredita. Sem isso a fila offline gravaria a hora da sincronização.
+    let punch;
+    try {
+      punch = resolvePunchTimestamp({ occurredAt: req.body.occurredAt });
+    } catch (error) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: error.message,
+        code: 'INVALID_OCCURRED_AT',
+      });
+    }
+
     const authResult = await validateClockAuthFactors({
       userId,
       faceDescriptor,
@@ -573,6 +587,16 @@ const clockIn = async (req, res) => {
       geofenceResult,
     });
 
+    if (punch.offline) {
+      // Origem da batida fica auditável para sempre, sem migration.
+      locationPayload.offline = {
+        event: 'clockIn',
+        occurredAt: punch.timestamp.toISOString(),
+        syncedAt: new Date().toISOString(),
+        skewMs: punch.skewMs,
+      };
+    }
+
     if (!requiresTerminalQr && qrToken) {
       terminalAuth = await consumeTerminalQrToken({ token: qrToken });
       if (!terminalAuth.ok) {
@@ -606,7 +630,7 @@ const clockIn = async (req, res) => {
     const timeEntry = await prisma.timeEntry.create({
       data: {
         userId,
-        clockIn: new Date(),
+        clockIn: punch.timestamp,
         notes: notes || null,
         ipAddress: metadata.ip,
         device: metadata.device,
@@ -686,6 +710,20 @@ const clockOut = async (req, res) => {
 
     // Captura metadados da requisição
     const metadata = captureRequestMetadata(req);
+
+    // Mesma fronteira de confiança do clock-in: workedMinutes e hora extra saem
+    // de clockOut - clockIn, então a hora real da batida é o que importa aqui.
+    let punch;
+    try {
+      punch = resolvePunchTimestamp({ occurredAt: req.body.occurredAt });
+    } catch (error) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: error.message,
+        code: 'INVALID_OCCURRED_AT',
+      });
+    }
+
     let terminalAuth = null;
     if (requiresTerminalQr) {
       terminalAuth = await consumeTerminalQrToken({ token: qrToken });
@@ -734,7 +772,7 @@ const clockOut = async (req, res) => {
       });
     }
 
-    const clockOutTime = new Date();
+    const clockOutTime = punch.timestamp;
     const breakSummary = resolveBreakMinutes(openEntry, clockOutTime);
 
     const locationPayload = buildLocationPayload({
@@ -743,6 +781,19 @@ const clockOut = async (req, res) => {
       eventType: 'clockOut',
       geofenceResult,
     });
+
+    if (punch.offline) {
+      // Origem da batida fica auditável para sempre, sem migration. O bloco da
+      // entrada é preservado quando as duas batidas vieram da fila offline.
+      const offlineClockIn = locationPayload.offline;
+      locationPayload.offline = {
+        event: 'clockOut',
+        occurredAt: punch.timestamp.toISOString(),
+        syncedAt: new Date().toISOString(),
+        skewMs: punch.skewMs,
+        ...(offlineClockIn && { clockIn: offlineClockIn }),
+      };
+    }
 
     if (!requiresTerminalQr && qrToken) {
       terminalAuth = await consumeTerminalQrToken({ token: qrToken });
