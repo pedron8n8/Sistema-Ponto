@@ -72,7 +72,13 @@ const stubTimeEntryFindFirst = (mockPrisma, { open = null, others = [] } = {}) =
   mockPrisma.timeEntry.findFirst.mockImplementation(async (args = {}) => {
     const where = args.where || {};
 
-    if (where.clockOut === null) return open;
+    // A consulta do registro aberto também passa pelo `where` inteiro. Enquanto
+    // ela devolvia `open` direto, o `userId` da consulta era ignorado: dava para
+    // APAGAR a cláusula userId dos DOIS lookups de registro aberto (clockIn e
+    // clockOut) sem quebrar um único teste — e no banco a consulta passaria a
+    // enxergar o turno aberto de OUTRO colaborador, fechando o registro alheio
+    // com timestamp, minutos trabalhados, hora extra e banco de horas errados.
+    if (where.clockOut === null) return open && matchesWhere(open, where) ? open : null;
 
     const matches = others.filter((entry) => matchesWhere(entry, where));
     return applyOrderBy(matches, args.orderBy)[0] || null;
