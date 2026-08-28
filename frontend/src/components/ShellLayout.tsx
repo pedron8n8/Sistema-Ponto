@@ -1,4 +1,5 @@
-import { Link, NavLink } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTimeZone } from '../context/TimezoneContext'
 import { usePlan } from '../hooks/usePlan'
@@ -88,12 +89,29 @@ const ReportsIcon = () => (
   </svg>
 )
 
+const MoreIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={iconClassName}>
+    <circle cx="5.5" cy="12" r="1.4" />
+    <circle cx="12" cy="12" r="1.4" />
+    <circle cx="18.5" cy="12" r="1.4" />
+  </svg>
+)
+
 type NavItem = {
   to: string
   label: string
   icon: React.ReactNode
   end?: boolean
 }
+
+// Uma "vaga" da barra inferior: o primeiro candidato disponivel vence. Se o
+// plano ou o papel derruba o destino principal, cai para o proximo em vez de
+// renderizar uma aba morta. Cada candidato leva o proprio rotulo curto para a
+// aba nunca prometer um destino diferente do que abre.
+type TabSlot = {
+  to: string
+  label: string
+}[]
 
 type NavSection = {
   title: string
@@ -105,6 +123,8 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
   const { profile, profileError, signOut } = useAuth()
   const { isGrowthOrBetter, isPro } = usePlan()
   const { viewTimeZone, setViewTimeZone } = useTimeZone()
+  const location = useLocation()
+  const [moreOpen, setMoreOpen] = useState(false)
   const { t: i18nT, i18n } = useTranslation()
   const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
   const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
@@ -278,6 +298,78 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
     },
   ]
 
+  // Barra inferior do celular: no maximo 4 destinos + "Mais".
+  // Os candidatos sao resolvidos contra navSections, entao papel e plano ja
+  // decidiram o que existe -- nada aqui reimplementa permissao.
+  const memberTabSlots: TabSlot[] = [
+    [{ to: '/app/colaborador', label: t('Clock', 'Ponto') }],
+    [{ to: '/app/colaborador/historico', label: t('History', 'Historico') }],
+    // Saldo (banco de horas do colaborador) ainda nao tem item de menu; enquanto
+    // nao tiver, a vaga cai para Relatorios.
+    [
+      { to: '/app/colaborador/saldo', label: t('Balance', 'Saldo') },
+      { to: '/app/relatorios', label: t('Reports', 'Relatorios') },
+    ],
+    [
+      { to: '/app/colaborador/ferias', label: t('Vacations', 'Ferias') },
+      { to: '/app', label: t('Overview', 'Geral') },
+    ],
+  ]
+
+  const supervisorTabSlots: TabSlot[] = [
+    [
+      { to: '/app/hr/groups', label: t('Team', 'Equipe') },
+      { to: '/app/supervisor/overview', label: t('Team', 'Equipe') },
+    ],
+    [{ to: '/app/supervisor/pending-items', label: t('Pending', 'Pendencias') }],
+    [{ to: '/app/colaborador', label: t('Clock', 'Ponto') }],
+    [{ to: '/app/relatorios', label: t('Reports', 'Relatorios') }],
+  ]
+
+  // SUPERADMIN nao enxerga a secao Admin (visible: isOnlyAdmin), por isso cada
+  // vaga tem o equivalente alcancavel por ele como alternativa.
+  const adminTabSlots: TabSlot[] = [
+    [
+      { to: '/app/admin/pending-approvals', label: t('Pending', 'Pendencias') },
+      { to: '/app/supervisor/pending-items', label: t('Pending', 'Pendencias') },
+    ],
+    [
+      { to: '/app/admin/users', label: t('Users', 'Usuarios') },
+      { to: '/app/superadmin/accounts', label: t('Accounts', 'Contas') },
+    ],
+    [{ to: '/app/colaborador', label: t('Clock', 'Ponto') }],
+    [
+      { to: '/app/admin/financeiro', label: t('Finance', 'Financeiro') },
+      { to: '/app/relatorios', label: t('Reports', 'Relatorios') },
+    ],
+  ]
+
+  const tabSlots = isAdmin ? adminTabSlots : isSupervisor ? supervisorTabSlots : memberTabSlots
+
+  const visibleItems = navSections.filter((section) => section.visible).flatMap((section) => section.items)
+  const takenPaths = new Set<string>()
+  const bottomTabs = tabSlots
+    .map((slot) => {
+      for (const candidate of slot) {
+        if (takenPaths.has(candidate.to)) continue
+        const item = visibleItems.find((visible) => visible.to === candidate.to)
+        if (!item) continue
+        takenPaths.add(item.to)
+        return { ...item, label: candidate.label }
+      }
+      return null
+    })
+    .filter((tab): tab is NavItem => tab !== null)
+
+  const moreSections = navSections
+    .filter((section) => section.visible)
+    .map((section) => ({ ...section, items: section.items.filter((item) => !takenPaths.has(item.to)) }))
+    .filter((section) => section.items.length > 0)
+
+  const isItemActive = (item: NavItem) =>
+    item.end ? location.pathname === item.to : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)
+  const moreIsActive = moreSections.some((section) => section.items.some(isItemActive))
+
   return (
     <div className="min-h-screen bg-transparent text-slate-900">
       <div className="flex">
@@ -391,26 +483,79 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
                 </div>
               </div>
 
-              <nav className="mb-4 flex gap-2 overflow-x-auto rounded-2xl border border-white/80 bg-white/80 p-2 shadow-[0_10px_26px_-25px_rgba(15,23,42,0.6)] backdrop-blur md:hidden">
-                {navSections
-                  .filter((section) => section.visible)
-                  .flatMap((section) => section.items)
-                  .map((item) => (
-                    <NavLink
-                      key={`mobile-${item.to}`}
-                      to={item.to}
-                      end={item.end}
-                      className={({ isActive }) =>
-                        `flex shrink-0 items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition ${
-                          isActive ? 'bg-teal-700 text-white' : 'bg-white text-slate-600'
-                        }`
-                      }
-                    >
-                      {item.icon}
-                      <span>{item.label}</span>
-                    </NavLink>
-                  ))}
+              <nav
+                aria-label={t('Main navigation', 'Navegacao principal')}
+                className="fixed inset-x-0 bottom-0 z-30 flex items-stretch border-t border-white/80 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-10px_26px_-22px_rgba(15,23,42,0.75)] backdrop-blur md:hidden"
+              >
+                {bottomTabs.map((item) => (
+                  <NavLink
+                    key={`tab-${item.to}`}
+                    to={item.to}
+                    end={item.end}
+                    className={({ isActive }) =>
+                      `flex min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1 py-2 text-[10px] font-semibold transition ${
+                        isActive ? 'text-teal-700' : 'text-slate-500'
+                      }`
+                    }
+                  >
+                    {item.icon}
+                    <span className="w-full truncate text-center leading-tight">{item.label}</span>
+                  </NavLink>
+                ))}
+
+                {moreSections.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setMoreOpen(true)}
+                    aria-expanded={moreOpen}
+                    className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1 py-2 text-[10px] font-semibold transition ${
+                      moreIsActive ? 'text-teal-700' : 'text-slate-500'
+                    }`}
+                  >
+                    <MoreIcon />
+                    <span className="w-full truncate text-center leading-tight">{t('More', 'Mais')}</span>
+                  </button>
+                ) : null}
               </nav>
+
+              {moreOpen && moreSections.length > 0 ? (
+                <div className="fixed inset-0 z-40 md:hidden">
+                  <button
+                    type="button"
+                    aria-label={t('Close', 'Fechar')}
+                    onClick={() => setMoreOpen(false)}
+                    className="absolute inset-0 h-full w-full bg-slate-900/40"
+                  />
+                  <div className="absolute inset-x-0 bottom-0 max-h-[75vh] overflow-y-auto rounded-t-3xl border-t border-white/80 bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-18px_35px_-25px_rgba(15,23,42,0.55)]">
+                    <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-200" />
+                    <div className="space-y-4">
+                      {moreSections.map((section) => (
+                        <div key={`more-${section.title}`} className="space-y-1">
+                          <p className="px-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            {section.title}
+                          </p>
+                          {section.items.map((item) => (
+                            <NavLink
+                              key={`more-${item.to}`}
+                              to={item.to}
+                              end={item.end}
+                              onClick={() => setMoreOpen(false)}
+                              className={({ isActive }) =>
+                                `flex items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium transition ${
+                                  isActive ? 'bg-teal-700 text-white' : 'text-slate-600 hover:bg-slate-100'
+                                }`
+                              }
+                            >
+                              {item.icon}
+                              <span className="truncate">{item.label}</span>
+                            </NavLink>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="mb-4 rounded-2xl border border-white/80 bg-white/80 p-4 shadow-[0_10px_26px_-25px_rgba(15,23,42,0.6)] backdrop-blur md:hidden">
                 <div className="mb-3 flex items-center gap-3">
@@ -465,7 +610,8 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
                 </div>
               ) : null}
 
-              <main className="pb-8">{children}</main>
+              {/* A barra inferior e fixed: sem esta folga a ultima linha de cada pagina fica embaixo dela. */}
+              <main className="pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-8">{children}</main>
             </div>
           </div>
         </div>
