@@ -7,7 +7,17 @@ import { useTranslation } from 'react-i18next'
 import { Circle, CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet'
 import * as faceapi from 'face-api.js'
 import { formatDateTimeWithTimeZone, formatTimeWithTimeZone } from '../lib/timezone'
-import { enqueue, readQueue, syncQueue } from '../lib/offlineQueue'
+import {
+  clearDroppedPunches,
+  enqueue,
+  isDeviceOffline,
+  isOfflineFailure,
+  readDroppedPunches,
+  readQueue,
+  syncQueue,
+  type DroppedPunch,
+  type OfflineClockPath,
+} from '../lib/offlineQueue'
 import DualClock from '../components/DualClock'
 
 type TimeEntry = {
@@ -106,18 +116,6 @@ const FACE_TURN_DELTA = 0.08
 const FACE_VERTICAL_CENTER_MIN = 0.44
 const FACE_VERTICAL_CENTER_MAX = 0.56
 const FACE_VERTICAL_TURN_DELTA = 0.06
-// So enfileira quando a requisicao realmente nao chegou ao servidor (ou o servidor
-// falhou em 5xx). Um 4xx e rejeicao de regra de negocio: enfileirar viraria uma
-// batida envenenada, descartada so depois de 3 tentativas. Mesmo criterio que o
-// isNetworkError de ../lib/offlineQueue, para o que entra na fila e o que fica nela
-// concordarem.
-const isOfflineFailure = (error: unknown) => {
-  const status = (error as { status?: number } | null | undefined)?.status
-  if (typeof status === 'number') return status >= 500
-  const message = error instanceof Error ? error.message : String(error)
-  return /failed to fetch|network|tempo de resposta excedido|networkerror|abort/i.test(message)
-}
-
 const getBarcodeDetector = () =>
   (window as Window & { BarcodeDetector?: BarcodeDetectorStatic }).BarcodeDetector
 
@@ -148,6 +146,7 @@ const ColaboradorDashboard = () => {
   const [isOnline, setIsOnline] = useState(() => navigator.onLine)
   const [pendingSyncCount, setPendingSyncCount] = useState(0)
   const [syncingOfflineQueue, setSyncingOfflineQueue] = useState(false)
+  const [droppedPunches, setDroppedPunches] = useState<DroppedPunch[]>([])
   const [geoLoading, setGeoLoading] = useState(false)
   const [geoError, setGeoError] = useState('')
   const [currentPosition, setCurrentPosition] = useState<{ lat: number; lng: number } | null>(null)
@@ -171,6 +170,7 @@ const ColaboradorDashboard = () => {
   const qrScanAnimationRef = useRef<number | null>(null)
   const qrScannerActiveRef = useRef(false)
   const dailyTargetNotifiedRef = useRef(false)
+  const syncingQueueRef = useRef(false)
 
   const token = session?.access_token
 
@@ -245,32 +245,103 @@ const ColaboradorDashboard = () => {
   }
 
   const syncOfflineClockQueue = async () => {
-    if (!token || syncingOfflineQueue) return
+    // O ref fecha a janela entre duas chamadas concorrentes (intervalo + evento
+    // online) que o estado, assincrono, deixaria passar: reenviar batida e pagar duas vezes.
+    if (!token || syncingQueueRef.current) return
+    syncingQueueRef.current = true
     setSyncingOfflineQueue(true)
-    // skipIdempotency e obrigatorio: buildIdempotencyHeaders faz hash de
-    // `data | body`, entao duas batidas offline do mesmo dia colidiriam na mesma
-    // chave e a segunda voltaria como 202 duplicado — uma batida perdida em silencio.
-    const { synced, remaining, dropped } = await syncQueue({
-      storage: window.localStorage,
-      send: (path, body) => apiFetch(path, { token, method: 'POST', body, skipIdempotency: true }),
-    })
-    setPendingSyncCount(remaining.length)
 
-    if (dropped.length > 0) {
-      setError(
-        t(
-          `${dropped.length} offline punch(es) could not be synced and were discarded. Ask your supervisor to add them.`,
-          `${dropped.length} batida(s) offline nao puderam ser sincronizadas e foram descartadas. Peca ao seu supervisor para lancar.`
-        )
+    try {
+      // Idempotencia LIGADA no replay: buildIdempotencyHeaders faz hash de
+      // `data | body` e o body carrega occurredAt, unico por batida, entao a
+      // colisao que justificava skipIdempotency nao existe mais. Se o app morrer
+      // depois do POST e antes de gravar a fila, o reenvio volta 202 duplicado
+      // em vez de abrir um segundo registro.
+      const { synced, remaining, dropped } = await syncQueue({
+        storage: window.localStorage,
+        send: (path, body) => apiFetch(path, { token, method: 'POST', body }),
+      })
+      setPendingSyncCount(remaining.length)
+
+      if (dropped.length > 0) {
+        // Descarte nao pode viver so num <p> transitorio: fica gravado ate ter ciencia.
+        setDroppedPunches(readDroppedPunches(window.localStorage))
+      }
+      if (synced > 0) {
+        setSuccess(t('Offline pending items synced successfully.', 'Pendencias offline sincronizadas com sucesso.'))
+        await loadEntries()
+        await loadCurrentEntry()
+      }
+    } finally {
+      // Sem isto, um throw (QuotaExceededError no Safari privado, por exemplo)
+      // travaria a flag e nenhuma sincronizacao rodaria de novo ate remontar.
+      syncingQueueRef.current = false
+      setSyncingOfflineQueue(false)
+    }
+  }
+
+  // Uma batida enfileirada so consegue ser reenviada com PIN. O descriptor facial
+  // nao ajuda: a prova de vida exige capturedAt com menos de 15s (backend/src/utils/liveness.js),
+  // entao qualquer replay chega vencido. O QR do terminal e de uso unico e curta
+  // duracao (consumeTerminalQrToken), entao tambem chega vencido. Decisao de
+  // produto: bater ponto sem sinal exige PIN.
+  const offlinePunchBlocker = () => {
+    if (geofence?.locationValidationSource === 'TERMINAL_QR') {
+      return t(
+        'This site validates punches by terminal QR, which cannot be revalidated later. Punching here requires a connection.',
+        'Este local valida o ponto pelo QR do terminal, que nao pode ser revalidado depois. Aqui o registro exige conexao.'
       )
     }
-    if (synced > 0) {
-      setSuccess(t('Offline pending items synced successfully.', 'Pendencias offline sincronizadas com sucesso.'))
-      await loadEntries()
-      await loadCurrentEntry()
+
+    if (!pin.trim()) {
+      return t(
+        'Without a connection, punching requires your PIN: face recognition cannot be validated later. Enter your PIN and try again. If you have no PIN, ask your administrator.',
+        'Sem conexao, o registro de ponto exige seu PIN: o reconhecimento facial nao pode ser validado depois. Informe seu PIN e tente novamente. Se voce nao tem PIN, procure o administrador.'
+      )
     }
 
-    setSyncingOfflineQueue(false)
+    return null
+  }
+
+  const queueOfflinePunch = (path: OfflineClockPath) => {
+    const blocker = offlinePunchBlocker()
+    if (blocker) {
+      // Melhor recusar na cara do colaborador do que aceitar uma batida que
+      // seria descartada em silencio no replay.
+      setError(blocker)
+      return
+    }
+
+    const { persisted } = enqueue(window.localStorage, {
+      path,
+      body: {
+        notes,
+        ...(currentPosition ? { latitude: currentPosition.lat, longitude: currentPosition.lng } : {}),
+        pin: pin.trim(),
+      },
+    })
+
+    if (!persisted) {
+      setError(
+        t(
+          'Could not save the punch on this device (storage unavailable or full). Write down the time and tell your supervisor.',
+          'Nao foi possivel salvar a batida neste aparelho (armazenamento indisponivel ou cheio). Anote o horario e avise seu supervisor.'
+        )
+      )
+      return
+    }
+
+    setPendingSyncCount(readQueue(window.localStorage).length)
+    setSuccess(
+      path === '/time/clock-in'
+        ? t('No connection. Clock-in saved locally and pending sync.', 'Sem conexão. Clock-in salvo localmente e pendente de sincronização.')
+        : t('No connection. Clock-out saved locally and pending sync.', 'Sem conexão. Clock-out salvo localmente e pendente de sincronização.')
+    )
+  }
+
+  const acknowledgeDroppedPunches = () => {
+    clearDroppedPunches(window.localStorage)
+    setDroppedPunches([])
   }
 
   const loadCurrentEntry = async () => {
@@ -756,6 +827,7 @@ const ColaboradorDashboard = () => {
       )
     })
     setPendingSyncCount(readQueue(window.localStorage).length)
+    setDroppedPunches(readDroppedPunches(window.localStorage))
   }, [token])
 
   useEffect(() => {
@@ -950,6 +1022,13 @@ const ColaboradorDashboard = () => {
     setError('')
     setSuccess('')
     try {
+      // Aparelho ja se declara offline: avisa antes de capturar rosto e antes de
+      // deixar o colaborador acreditar que a batida foi guardada.
+      if (isDeviceOffline()) {
+        const blocker = offlinePunchBlocker()
+        if (blocker) throw new Error(blocker)
+      }
+
       if (geofence?.locationValidationSource === 'TERMINAL_QR' && !scannedQrToken.trim()) {
         throw new Error(
           t(
@@ -993,11 +1072,21 @@ const ColaboradorDashboard = () => {
         ...(scannedQrToken.trim() ? { qrToken: scannedQrToken.trim() } : {}),
       }
 
-      await apiFetch('/time/clock-in', {
-        token,
-        method: 'POST',
-        body: payload,
-      })
+      // So o erro da requisicao decide fila offline. Falha local (QR ausente,
+      // GPS negado, rosto nao detectado) nao carrega status e viraria "batida
+      // salva localmente" se caisse no mesmo catch.
+      try {
+        await apiFetch('/time/clock-in', {
+          token,
+          method: 'POST',
+          body: payload,
+        })
+      } catch (err) {
+        if (!isOfflineFailure(err)) throw err
+        queueOfflinePunch('/time/clock-in')
+        return
+      }
+
       setNotes('')
       setPin('')
       setScannedQrToken('')
@@ -1006,22 +1095,7 @@ const ColaboradorDashboard = () => {
       await loadCurrentEntry()
       setSuccess(t('Clock-in recorded successfully.', 'Clock-in registrado com sucesso.'))
     } catch (err) {
-      if (isOfflineFailure(err)) {
-        enqueue(window.localStorage, {
-          path: '/time/clock-in',
-          body: {
-            notes,
-            latitude: currentPosition?.lat,
-            longitude: currentPosition?.lng,
-            ...(pin.trim() ? { pin: pin.trim() } : {}),
-            ...(scannedQrToken.trim() ? { qrToken: scannedQrToken.trim() } : {}),
-          },
-        })
-        setPendingSyncCount(readQueue(window.localStorage).length)
-        setSuccess(t('No connection. Clock-in saved locally and pending sync.', 'Sem conexão. Clock-in salvo localmente e pendente de sincronização.'))
-      } else {
-        setError(err instanceof Error ? err.message : t('Error recording clock-in', 'Erro ao registrar entrada'))
-      }
+      setError(err instanceof Error ? err.message : t('Error recording clock-in', 'Erro ao registrar entrada'))
     } finally {
       setLoading(false)
     }
@@ -1033,6 +1107,11 @@ const ColaboradorDashboard = () => {
     setError('')
     setSuccess('')
     try {
+      if (isDeviceOffline()) {
+        const blocker = offlinePunchBlocker()
+        if (blocker) throw new Error(blocker)
+      }
+
       if (geofence?.locationValidationSource === 'TERMINAL_QR' && !scannedQrToken.trim()) {
         throw new Error(
           t(
@@ -1076,11 +1155,18 @@ const ColaboradorDashboard = () => {
         ...(scannedQrToken.trim() ? { qrToken: scannedQrToken.trim() } : {}),
       }
 
-      await apiFetch('/time/clock-out', {
-        token,
-        method: 'POST',
-        body: payload,
-      })
+      try {
+        await apiFetch('/time/clock-out', {
+          token,
+          method: 'POST',
+          body: payload,
+        })
+      } catch (err) {
+        if (!isOfflineFailure(err)) throw err
+        queueOfflinePunch('/time/clock-out')
+        return
+      }
+
       setNotes('')
       setPin('')
       setScannedQrToken('')
@@ -1089,22 +1175,7 @@ const ColaboradorDashboard = () => {
       await loadCurrentEntry()
       setSuccess(t('Clock-out recorded successfully.', 'Clock-out registrado com sucesso.'))
     } catch (err) {
-      if (isOfflineFailure(err)) {
-        enqueue(window.localStorage, {
-          path: '/time/clock-out',
-          body: {
-            notes,
-            latitude: currentPosition?.lat,
-            longitude: currentPosition?.lng,
-            ...(pin.trim() ? { pin: pin.trim() } : {}),
-            ...(scannedQrToken.trim() ? { qrToken: scannedQrToken.trim() } : {}),
-          },
-        })
-        setPendingSyncCount(readQueue(window.localStorage).length)
-        setSuccess(t('No connection. Clock-out saved locally and pending sync.', 'Sem conexão. Clock-out salvo localmente e pendente de sincronização.'))
-      } else {
-        setError(err instanceof Error ? err.message : t('Error recording clock-out', 'Erro ao registrar saida'))
-      }
+      setError(err instanceof Error ? err.message : t('Error recording clock-out', 'Erro ao registrar saida'))
     } finally {
       setLoading(false)
     }
@@ -1253,6 +1324,35 @@ const ColaboradorDashboard = () => {
 
           {error ? <p className="mt-3 text-xs text-rose-600">{error}</p> : null}
           {success ? <p className="mt-3 text-xs text-emerald-600">{success}</p> : null}
+
+          {droppedPunches.length > 0 ? (
+            <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
+              <p className="text-xs font-semibold text-rose-800">
+                {t(
+                  'Offline punches that could not be synced. Ask your supervisor to enter them:',
+                  'Batidas offline que nao puderam ser sincronizadas. Peca ao seu supervisor para lancar:'
+                )}
+              </p>
+              <ul className="mt-2 space-y-1 text-[11px] text-rose-700">
+                {droppedPunches.map((punch) => (
+                  <li key={punch.id}>
+                    {punch.path === '/time/clock-in' ? t('Clock in', 'Registrar entrada') : t('Clock out', 'Registrar saida')}
+                    {' - '}
+                    {punch.occurredAt
+                      ? formatDateTimeWithTimeZone(punch.occurredAt, viewTimeZone)
+                      : t('time not recorded', 'horario nao registrado')}
+                    {punch.message ? ` (${punch.message})` : ''}
+                  </li>
+                ))}
+              </ul>
+              <button
+                onClick={acknowledgeDroppedPunches}
+                className="mt-3 rounded-full border border-rose-300 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-rose-700"
+              >
+                {t('I wrote it down', 'Ja anotei')}
+              </button>
+            </div>
+          ) : null}
 
           <div className="mt-5 grid gap-2 sm:grid-cols-3">
             <button
