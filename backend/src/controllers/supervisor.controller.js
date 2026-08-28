@@ -1,5 +1,10 @@
 const { prisma } = require('../config/database');
-const { adjustBankHours, settleBankHoursAccruals } = require('../utils/bankHours');
+const {
+  accrueBankHours,
+  adjustBankHours,
+  isBankHoursDeferred,
+  settleBankHoursAccruals,
+} = require('../utils/bankHours');
 const { reverseEntryBankHours } = require('../utils/recalcDay');
 const { normalizeMinutes, normalizeTime, normalizeTimeZone } = require('../utils/workSettings');
 const { parseLocalDate } = require('../utils/timeCalculations');
@@ -914,6 +919,45 @@ const getTeamPendingEntries = async (req, res) => {
  * PATCH /supervisor/approve/:id
  * Aprova um registro de ponto e registra no ApprovalLog
  */
+/**
+ * Solta o crédito de banco de horas que ficou represado por ter nascido de uma
+ * batida offline (horário proposto pelo cliente). O supervisor aprovando a hora
+ * extra É o "humano olhou" que faltava — antes disso accrueBankHours recusa.
+ *
+ * Só entra para registro marcado como represado: em batida normal o crédito já
+ * saiu no clock-out e creditar de novo aqui dobraria o saldo.
+ *
+ * Chamar DEPOIS de gravar overtimeStatus: 'APPROVED', porque accrueBankHours
+ * relê o registro para decidir. Falha aqui não desfaz a aprovação — o crédito
+ * é recalculável (recalcDay), a decisão do supervisor não.
+ */
+const releaseDeferredBankHours = async (entry) => {
+  if (!isBankHoursDeferred(entry)) return null;
+
+  try {
+    const result = await accrueBankHours({
+      userId: entry.userId,
+      overtimeMinutes: entry.overtimeMinutes,
+      timeEntryId: entry.id,
+    });
+
+    if (result.accruedMinutes > 0) {
+      await prisma.timeEntry.update({
+        where: { id: entry.id },
+        data: { bankHoursAccruedMinutes: result.accruedMinutes },
+      });
+    }
+
+    return result;
+  } catch (error) {
+    console.error(
+      `⚠️ HE aprovada mas banco de horas represado falhou (entry ${entry.id}):`,
+      error
+    );
+    return null;
+  }
+};
+
 const approveEntry = async (req, res) => {
   try {
     const supervisorId = req.user.id;
@@ -1208,7 +1252,13 @@ const approveEntriesBulk = async (req, res) => {
       });
     }
 
-    // HE aprovada não mexe em banco de horas: o crédito já foi lançado no clock-out.
+    // HE aprovada não mexe em banco de horas: o crédito já foi lançado no
+    // clock-out — exceto no registro de batida offline, cujo crédito ficou
+    // represado esperando exatamente esta aprovação (ver releaseDeferredBankHours).
+    const deferredEntries = eligible.filter(
+      (entry) => entry.overtimeStatus === 'PENDING' && isBankHoursDeferred(entry)
+    );
+
     await prisma.$transaction([
       ...(overtimeIds.length
         ? [
@@ -1239,6 +1289,13 @@ const approveEntriesBulk = async (req, res) => {
         })),
       }),
     ]);
+
+    // Sequencial de propósito: accrueBankHours lê e escreve o saldo do usuário,
+    // e o lote pode ter vários registros do mesmo colaborador. Mesmo formato do
+    // laço de reverseEntryBankHours no reject em lote.
+    for (const entry of deferredEntries) {
+      await releaseDeferredBankHours(entry);
+    }
 
     console.log(
       `✅ ${validIds.length} registros aprovados em lote (${overtimeIds.length} com HE) por ${req.user.email}`
@@ -1608,12 +1665,15 @@ const approveOvertime = async (req, res) => {
       }),
     ]);
 
+    const bankHours = await releaseDeferredBankHours(entry);
+
     console.log(`✅ Horas extras do registro ${id} aprovadas por ${req.user.email}`);
 
     res.json({
       message: 'Horas extras aprovadas com sucesso',
       entry: updatedEntry,
       approvalLog,
+      ...(bankHours && { bankHours }),
     });
   } catch (error) {
     console.error('❌ Erro ao aprovar horas extras:', error);

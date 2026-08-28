@@ -392,6 +392,30 @@ const resolveBreakMinutes = (entry, now = new Date()) => {
   };
 };
 
+/**
+ * Instante mais recente já gravado na linha do tempo de pausas do registro:
+ * o início da pausa em aberto ou o fim da última pausa fechada, o que for maior.
+ * Um clock-out anterior a isso produziria intervalo de pausa negativo.
+ */
+const resolveLatestBreakBoundary = (entry) => {
+  if (!entry) return null;
+
+  const candidates = [entry.breakStartedAt];
+
+  if (Array.isArray(entry.breaks)) {
+    for (const item of entry.breaks) {
+      if (item && item.end) candidates.push(item.end);
+    }
+  }
+
+  return candidates.reduce((latest, value) => {
+    if (!value) return latest;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return latest;
+    return !latest || parsed.getTime() > latest.getTime() ? parsed : latest;
+  }, null);
+};
+
 const resolveWorkedMinutes = (entry) => {
   if (!entry || !entry.clockIn || !entry.clockOut) {
     return 0;
@@ -540,6 +564,35 @@ const clockIn = async (req, res) => {
       });
     }
 
+    // resolvePunchTimestamp limita só o intervalo absoluto (48h atrás / 60s à
+    // frente); ele é puro e não enxerga o histórico. Sem esta checagem uma
+    // entrada retroativa cai DENTRO ou ANTES de um turno já fechado, e o
+    // clock-out seguinte gera minutos trabalhados e hora extra em cima de tempo
+    // já contabilizado — folha de pagamento dobrada a partir de horário
+    // escolhido pelo cliente. Rejeita em vez de sobrepor, mesmo motivo do guard
+    // de ordem no clock-out. Não há registro aberto neste ponto (barrado acima),
+    // então basta procurar turno fechado que termine depois do instante pedido.
+    if (punch.offline) {
+      const conflictingEntry = await prisma.timeEntry.findFirst({
+        where: {
+          userId,
+          clockOut: { gt: punch.timestamp },
+        },
+        orderBy: { clockOut: 'desc' },
+        select: { id: true, clockIn: true, clockOut: true },
+      });
+
+      if (conflictingEntry) {
+        return res.status(409).json({
+          error: 'Conflict',
+          message:
+            'Já existe registro de ponto cobrindo este horário. Peça ajuste ao seu supervisor.',
+          code: 'PUNCH_OVERLAPS_EXISTING_ENTRY',
+          conflictingEntry,
+        });
+      }
+    }
+
     const authResult = await validateClockAuthFactors({
       userId,
       faceDescriptor,
@@ -598,6 +651,11 @@ const clockIn = async (req, res) => {
         occurredAt: punch.timestamp.toISOString(),
         syncedAt: new Date().toISOString(),
         skewMs: punch.skewMs,
+        // Marca lida por accrueBankHours: o intervalo deste registro depende de
+        // horário informado pelo cliente, então o crédito de banco de horas só
+        // sai quando o supervisor aprovar a hora extra. buildLocationPayload
+        // preserva este bloco no clock-out, inclusive quando a saída é online.
+        bankHoursDeferred: true,
       };
     }
 
@@ -728,37 +786,11 @@ const clockOut = async (req, res) => {
       });
     }
 
-    let terminalAuth = null;
-    if (requiresTerminalQr) {
-      terminalAuth = await consumeTerminalQrToken({ token: qrToken });
-      if (!terminalAuth.ok) {
-        return res.status(400).json({
-          error: 'Bad Request',
-          message:
-            terminalAuth.reason === 'MISSING_QR_TOKEN'
-              ? 'Neste estabelecimento o registro exige QR Code do terminal.'
-              : getQrErrorMessage(terminalAuth.reason),
-          reason: terminalAuth.reason,
-        });
-      }
-    }
-
-    const geofenceResult = evaluateGeofence(metadata.location);
-
-    if (!geofenceResult.allowed) {
-      console.warn(`🚫 Clock-out bloqueado por geofence: ${req.user.email}`, geofenceResult);
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: getGeofenceErrorMessage(geofenceResult, 'clock-out'),
-        geofence: geofenceResult,
-      });
-    }
-
-    if (geofenceResult.enabled && geofenceResult.reason === 'OUTSIDE_GEOFENCE_ALERT') {
-      console.warn(`⚠️ Clock-out fora da cerca (modo alerta): ${req.user.email}`, geofenceResult);
-    }
-
-    // Busca o último registro aberto (sem clock-out)
+    // Busca o último registro aberto (sem clock-out). Toda a validação de
+    // horário roda AQUI, antes do bloco de QR: consumeTerminalQrToken queima o
+    // token (uso único, chave de replay no Redis), então validar depois faria
+    // uma batida rejeitada custar ao colaborador uma volta ao terminal para
+    // pegar outro QR. Mesma posição que o parse de INVALID_OCCURRED_AT.
     const openEntry = await prisma.timeEntry.findFirst({
       where: {
         userId,
@@ -790,6 +822,81 @@ const clockOut = async (req, res) => {
       });
     }
 
+    // O guard acima não enxerga a pausa. Uma saída posterior ao clockIn mas
+    // ANTERIOR ao início da pausa (ou ao fim de uma pausa já fechada) grava
+    // breaks: [{ start, end }] com end < start — intervalo impossível, para
+    // sempre, numa coluna de auditoria de folha — enquanto resolveBreakMinutes
+    // clampa o delta negativo em 0 e a pausa silenciosamente deixa de ser
+    // descontada. Rejeita, não conserta: mesmo raciocínio do guard de ordem.
+    const breakBoundary = resolveLatestBreakBoundary(openEntry);
+
+    if (breakBoundary && punch.timestamp.getTime() < breakBoundary.getTime()) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message:
+          'A saída não pode ser anterior à pausa registrada neste ponto. Verifique o relógio do aparelho.',
+        code: 'OCCURRED_AT_BEFORE_BREAK',
+      });
+    }
+
+    // Simétrico ao guard de sobreposição do clock-in: fechar o registro aberto
+    // num instante que passa por cima de um registro posterior faria dois
+    // turnos contarem o mesmo tempo.
+    if (punch.offline) {
+      const conflictingEntry = await prisma.timeEntry.findFirst({
+        where: {
+          userId,
+          id: { not: openEntry.id },
+          clockIn: {
+            gt: openEntry.clockIn,
+            lt: punch.timestamp,
+          },
+        },
+        orderBy: { clockIn: 'asc' },
+        select: { id: true, clockIn: true, clockOut: true },
+      });
+
+      if (conflictingEntry) {
+        return res.status(409).json({
+          error: 'Conflict',
+          message:
+            'Já existe registro de ponto cobrindo este horário. Peça ajuste ao seu supervisor.',
+          code: 'PUNCH_OVERLAPS_EXISTING_ENTRY',
+          conflictingEntry,
+        });
+      }
+    }
+
+    let terminalAuth = null;
+    if (requiresTerminalQr) {
+      terminalAuth = await consumeTerminalQrToken({ token: qrToken });
+      if (!terminalAuth.ok) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message:
+            terminalAuth.reason === 'MISSING_QR_TOKEN'
+              ? 'Neste estabelecimento o registro exige QR Code do terminal.'
+              : getQrErrorMessage(terminalAuth.reason),
+          reason: terminalAuth.reason,
+        });
+      }
+    }
+
+    const geofenceResult = evaluateGeofence(metadata.location);
+
+    if (!geofenceResult.allowed) {
+      console.warn(`🚫 Clock-out bloqueado por geofence: ${req.user.email}`, geofenceResult);
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: getGeofenceErrorMessage(geofenceResult, 'clock-out'),
+        geofence: geofenceResult,
+      });
+    }
+
+    if (geofenceResult.enabled && geofenceResult.reason === 'OUTSIDE_GEOFENCE_ALERT') {
+      console.warn(`⚠️ Clock-out fora da cerca (modo alerta): ${req.user.email}`, geofenceResult);
+    }
+
     const clockOutTime = punch.timestamp;
     const breakSummary = resolveBreakMinutes(openEntry, clockOutTime);
 
@@ -809,6 +916,8 @@ const clockOut = async (req, res) => {
         occurredAt: punch.timestamp.toISOString(),
         syncedAt: new Date().toISOString(),
         skewMs: punch.skewMs,
+        // Ver accrueBankHours: crédito represado até a aprovação da hora extra.
+        bankHoursDeferred: true,
         ...(offlineClockIn && { clockIn: offlineClockIn }),
       };
     }
@@ -931,6 +1040,9 @@ const clockOut = async (req, res) => {
 
     // Banco de horas depois do ponto já estar fechado: crédito de HE é
     // recalculável, um clock-out perdido não. Falha aqui não derruba o registro.
+    // Registro nascido de batida offline não credita nada agora —
+    // accrueBankHours lê a marca `location.offline.bankHoursDeferred` que
+    // acabou de ser gravada e segura o crédito até a aprovação do supervisor.
     let bankHoursResult = {
       accruedMinutes: 0,
       discardedMinutes: 0,
@@ -994,6 +1106,9 @@ const clockOut = async (req, res) => {
         overtime,
         bankHours: {
           accruedMinutes: bankHoursResult.accruedMinutes,
+          // > 0 quando a batida veio da fila offline: o crédito existe mas só
+          // entra no saldo quando o supervisor aprovar a hora extra.
+          deferredMinutes: bankHoursResult.deferredMinutes || 0,
           discardedMinutes: bankHoursResult.discardedMinutes,
           expiredMinutes: bankHoursResult.expiredMinutes,
           balanceMinutes: bankHoursResult.balanceMinutes,
@@ -1596,6 +1711,12 @@ const updateMyEntryNotes = async (req, res) => {
       },
       include: {
         logs: {
+          // Só a conversa de edição. Olhar o último log de QUALQUER tipo era um
+          // acoplamento entre as duas funcionalidades: o colaborador que
+          // clicasse em "Pedir ajuste" gravava MEMBER_CORRECTION_REQUESTED por
+          // cima e trancava para sempre a resposta ao EDIT_REQUESTED do
+          // supervisor. O que importa é se ainda há solicitação sem resposta.
+          where: { action: { in: ['EDIT_REQUESTED', 'EDIT_RESPONSE'] } },
           orderBy: { timestamp: 'desc' },
           take: 1,
         },
@@ -1667,7 +1788,15 @@ const requestCorrection = async (req, res) => {
       });
     }
 
-    const entry = await prisma.timeEntry.findUnique({ where: { id } });
+    // Escopo na própria consulta, como em updateMyEntryNotes: com findUnique +
+    // 403 separado o 403 confirmava para um enumerador que o UUID existe, só
+    // não é dele. Resposta uniforme: id inexistente e id alheio dão 404 igual.
+    const entry = await prisma.timeEntry.findFirst({
+      where: {
+        id,
+        userId,
+      },
+    });
 
     if (!entry) {
       return res.status(404).json({
@@ -1676,19 +1805,30 @@ const requestCorrection = async (req, res) => {
       });
     }
 
-    // 404 x 403 separados de propósito: quem já sabe o id do registro não ganha
-    // informação nova ao descobrir que ele é de outra pessoa.
-    if (entry.userId !== userId) {
-      return res.status(403).json({
-        error: 'Forbidden',
-        message: 'Você só pode pedir ajuste nos seus próprios registros.',
-      });
-    }
-
     if (entry.status === 'APPROVED') {
       return res.status(409).json({
         error: 'Conflict',
         message: 'Registro já aprovado. Fale com seu supervisor para alterá-lo.',
+        code: 'ENTRY_ALREADY_APPROVED',
+      });
+    }
+
+    // Sem dedupe o colaborador repete o pedido à vontade, e como as telas de
+    // pendências do supervisor leem só o último log (take: 1), cada repetição
+    // esconde dele a própria última ação. "Sem resposta" = o pedido ainda é o
+    // log mais recente; qualquer ação posterior do supervisor conta como
+    // resposta e libera um novo pedido.
+    const latestLog = await prisma.approvalLog.findFirst({
+      where: { timeEntryId: entry.id },
+      orderBy: { timestamp: 'desc' },
+      select: { action: true },
+    });
+
+    if (latestLog?.action === 'MEMBER_CORRECTION_REQUESTED') {
+      return res.status(409).json({
+        error: 'Conflict',
+        message: 'Já existe um pedido de ajuste aguardando resposta neste registro.',
+        code: 'CORRECTION_ALREADY_REQUESTED',
       });
     }
 
@@ -1704,7 +1844,10 @@ const requestCorrection = async (req, res) => {
     });
 
     return res.status(201).json({
-      message: 'Pedido de ajuste registrado. Seu supervisor foi notificado.',
+      // Nada notifica ninguém aqui, e não existe caminho de notificação de
+      // aprovação neste sistema: o pedido aparece para o supervisor quando ele
+      // abre a revisão do ponto. A mensagem diz só isso.
+      message: 'Pedido de ajuste registrado. Ele aparecerá para o supervisor na revisão deste ponto.',
       log,
     });
   } catch (error) {

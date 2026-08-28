@@ -5,6 +5,7 @@
 // corrompida a partir de entrada não validada do cliente. Aqui o guard rejeita.
 
 const mockPrisma = require('../mocks/prisma.mock');
+const { stubTimeEntryFindFirst } = require('../mocks/timeEntryFindFirst');
 const { captureRequestMetadata } = require('../../src/utils/requestMetadata');
 const { evaluateGeofence } = require('../../src/utils/geofence');
 const { verifyPin } = require('../../src/utils/pinAuth');
@@ -106,7 +107,7 @@ describe('clock-out offline anterior ao clock-in', () => {
 
   it('rejects an occurredAt one hour before the open entry clockIn with 400', async () => {
     const clockInAt = new Date(Date.now() - 3 * HOUR);
-    mockPrisma.timeEntry.findFirst.mockResolvedValue(openEntry(clockInAt));
+    stubTimeEntryFindFirst(mockPrisma, { open: openEntry(clockInAt) });
     mockReq.body.occurredAt = new Date(clockInAt.getTime() - HOUR).toISOString();
 
     await clockOut(mockReq, mockRes);
@@ -126,7 +127,7 @@ describe('clock-out offline anterior ao clock-in', () => {
 
   it('rejects an occurredAt one millisecond before the clockIn', async () => {
     const clockInAt = new Date(Date.now() - 2 * HOUR);
-    mockPrisma.timeEntry.findFirst.mockResolvedValue(openEntry(clockInAt));
+    stubTimeEntryFindFirst(mockPrisma, { open: openEntry(clockInAt) });
     mockReq.body.occurredAt = new Date(clockInAt.getTime() - 1).toISOString();
 
     await clockOut(mockReq, mockRes);
@@ -139,7 +140,7 @@ describe('clock-out offline anterior ao clock-in', () => {
     // O guard não pode ser largo demais: a batida offline legítima continua passando.
     const clockInAt = new Date(Date.now() - 12 * HOUR);
     const occurredAt = new Date(Date.now() - 4 * HOUR);
-    mockPrisma.timeEntry.findFirst.mockResolvedValue(openEntry(clockInAt));
+    stubTimeEntryFindFirst(mockPrisma, { open: openEntry(clockInAt) });
     mockReq.body.occurredAt = occurredAt.toISOString();
 
     await clockOut(mockReq, mockRes);
@@ -152,7 +153,7 @@ describe('clock-out offline anterior ao clock-in', () => {
 
   it('accepts an occurredAt exactly equal to the clockIn', async () => {
     const clockInAt = new Date(Date.now() - 2 * HOUR);
-    mockPrisma.timeEntry.findFirst.mockResolvedValue(openEntry(clockInAt));
+    stubTimeEntryFindFirst(mockPrisma, { open: openEntry(clockInAt) });
     mockReq.body.occurredAt = clockInAt.toISOString();
 
     await clockOut(mockReq, mockRes);

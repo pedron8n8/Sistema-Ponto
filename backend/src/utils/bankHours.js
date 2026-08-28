@@ -79,6 +79,20 @@ const expireBankHoursIfNeeded = async (userId) => {
   };
 };
 
+/**
+ * Um registro nascido de batida offline traz timestamp escolhido pelo CLIENTE, e o
+ * crédito de banco de horas mexe no saldo do colaborador na hora
+ * (`user.bankHoursBalanceMinutes: { increment }`). Creditar antes de um humano
+ * olhar seria mover dinheiro a partir de entrada não confiável, então o crédito
+ * fica represado até o supervisor aprovar a hora extra.
+ *
+ * A marca vive no JSON de `location`, que o clock-out já grava — sem migration.
+ */
+const isBankHoursDeferred = (entry) => {
+  const offline = entry?.location?.offline;
+  return Boolean(offline && typeof offline === 'object' && offline.bankHoursDeferred === true);
+};
+
 const accrueBankHours = async ({ userId, overtimeMinutes, timeEntryId }) => {
   const minutes = Math.max(0, Math.floor(Number(overtimeMinutes) || 0));
 
@@ -89,6 +103,25 @@ const accrueBankHours = async ({ userId, overtimeMinutes, timeEntryId }) => {
       balanceMinutes: null,
       expiredMinutes: 0,
     };
+  }
+
+  // Represa aqui, e não no chamador, para que TODO caminho de crédito respeite a
+  // regra: clock-out, recálculo do dia (recalcDay) e qualquer chamador futuro.
+  if (timeEntryId) {
+    const entry = await prisma.timeEntry.findUnique({
+      where: { id: timeEntryId },
+      select: { location: true, overtimeStatus: true },
+    });
+
+    if (isBankHoursDeferred(entry) && entry.overtimeStatus !== 'APPROVED') {
+      return {
+        accruedMinutes: 0,
+        discardedMinutes: 0,
+        deferredMinutes: minutes,
+        balanceMinutes: null,
+        expiredMinutes: 0,
+      };
+    }
   }
 
   const user = await prisma.user.findUnique({
@@ -365,6 +398,7 @@ const settleBankHoursAccruals = async ({ userId, actorId, entryIds, payAllPendin
 
 module.exports = {
   accrueBankHours,
+  isBankHoursDeferred,
   adjustBankHours,
   expireBankHoursIfNeeded,
   settleBankHoursAccruals,

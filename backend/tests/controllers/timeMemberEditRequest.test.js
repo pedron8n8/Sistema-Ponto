@@ -7,7 +7,7 @@ const mockPrisma = require('../mocks/prisma.mock');
 
 jest.mock('../../src/config/database', () => ({ prisma: mockPrisma }));
 
-const { requestCorrection } = require('../../src/controllers/time.controller');
+const { requestCorrection, updateMyEntryNotes } = require('../../src/controllers/time.controller');
 
 describe('POST /time/:id/request-correction', () => {
   let mockReq;
@@ -46,7 +46,7 @@ describe('POST /time/:id/request-correction', () => {
   });
 
   it('logs a correction request against the member own entry', async () => {
-    mockPrisma.timeEntry.findUnique.mockResolvedValue(ownEntry());
+    mockPrisma.timeEntry.findFirst.mockResolvedValue(ownEntry());
 
     await requestCorrection(mockReq, mockRes);
 
@@ -67,7 +67,7 @@ describe('POST /time/:id/request-correction', () => {
   it('never moves the entry out of PENDING', async () => {
     // O colaborador registra o pedido; tirar o próprio ponto de PENDING seria
     // aprovar a si mesmo. O supervisor continua decidindo.
-    mockPrisma.timeEntry.findUnique.mockResolvedValue(ownEntry());
+    mockPrisma.timeEntry.findFirst.mockResolvedValue(ownEntry());
 
     await requestCorrection(mockReq, mockRes);
 
@@ -76,7 +76,7 @@ describe('POST /time/:id/request-correction', () => {
   });
 
   it('trims the reason before storing it', async () => {
-    mockPrisma.timeEntry.findUnique.mockResolvedValue(ownEntry());
+    mockPrisma.timeEntry.findFirst.mockResolvedValue(ownEntry());
     mockReq.body.reason = '   Cheguei às 08h, o ponto marcou 09h.   ';
 
     await requestCorrection(mockReq, mockRes);
@@ -84,17 +84,24 @@ describe('POST /time/:id/request-correction', () => {
     expect(createArgs().data.comment).toBe('Cheguei às 08h, o ponto marcou 09h.');
   });
 
-  it('rejects a request against another users entry with 403', async () => {
-    mockPrisma.timeEntry.findUnique.mockResolvedValue(ownEntry({ userId: 'outro-usuario' }));
+  it('answers 404, not 403, for an entry that belongs to someone else', async () => {
+    // O escopo está na própria consulta ({ id, userId }), então um registro de
+    // outra pessoa simplesmente não é encontrado. Um 403 aqui confirmaria para
+    // quem varre UUIDs que o id existe — só não é dele.
+    mockPrisma.timeEntry.findFirst.mockResolvedValue(null);
 
     await requestCorrection(mockReq, mockRes);
 
-    expect(mockRes.status).toHaveBeenCalledWith(403);
+    expect(mockPrisma.timeEntry.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'entry-1', userId: 'user-123' } })
+    );
+    expect(mockRes.status).toHaveBeenCalledWith(404);
+    expect(mockRes.status).not.toHaveBeenCalledWith(403);
     expect(mockPrisma.approvalLog.create).not.toHaveBeenCalled();
   });
 
   it('returns 404 when the entry does not exist', async () => {
-    mockPrisma.timeEntry.findUnique.mockResolvedValue(null);
+    mockPrisma.timeEntry.findFirst.mockResolvedValue(null);
 
     await requestCorrection(mockReq, mockRes);
 
@@ -111,7 +118,7 @@ describe('POST /time/:id/request-correction', () => {
     expect(mockRes.json).toHaveBeenCalledWith(
       expect.objectContaining({ error: 'Bad Request', message: expect.any(String) })
     );
-    expect(mockPrisma.timeEntry.findUnique).not.toHaveBeenCalled();
+    expect(mockPrisma.timeEntry.findFirst).not.toHaveBeenCalled();
     expect(mockPrisma.approvalLog.create).not.toHaveBeenCalled();
   });
 
@@ -134,7 +141,7 @@ describe('POST /time/:id/request-correction', () => {
   });
 
   it('rejects a correction request on an APPROVED entry with 409', async () => {
-    mockPrisma.timeEntry.findUnique.mockResolvedValue(ownEntry({ status: 'APPROVED' }));
+    mockPrisma.timeEntry.findFirst.mockResolvedValue(ownEntry({ status: 'APPROVED' }));
 
     await requestCorrection(mockReq, mockRes);
 
@@ -142,12 +149,137 @@ describe('POST /time/:id/request-correction', () => {
     expect(mockPrisma.approvalLog.create).not.toHaveBeenCalled();
   });
 
+  it('rejects a second correction request while the first is unanswered, with 409', async () => {
+    // Sem isto o colaborador repete o pedido à vontade; como as telas de
+    // pendências do supervisor leem só o último log (take: 1), cada repetição
+    // esconde dele a própria última ação.
+    mockPrisma.timeEntry.findFirst.mockResolvedValue(ownEntry());
+    mockPrisma.approvalLog.findFirst.mockResolvedValue({ action: 'MEMBER_CORRECTION_REQUESTED' });
+
+    await requestCorrection(mockReq, mockRes);
+
+    expect(mockRes.status).toHaveBeenCalledWith(409);
+    expect(mockRes.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'CORRECTION_ALREADY_REQUESTED' })
+    );
+    expect(mockPrisma.approvalLog.create).not.toHaveBeenCalled();
+  });
+
+  it('allows a new request once the supervisor has answered the previous one', async () => {
+    mockPrisma.timeEntry.findFirst.mockResolvedValue(ownEntry());
+    mockPrisma.approvalLog.findFirst.mockResolvedValue({ action: 'EDIT_REQUESTED' });
+
+    await requestCorrection(mockReq, mockRes);
+
+    expect(mockRes.status).toHaveBeenCalledWith(201);
+    expect(mockPrisma.approvalLog.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not claim anyone was notified', async () => {
+    // Nada notifica ninguém neste caminho e não existe rota de notificação de
+    // aprovação no sistema. A mensagem não pode prometer o que não acontece.
+    mockPrisma.timeEntry.findFirst.mockResolvedValue(ownEntry());
+
+    await requestCorrection(mockReq, mockRes);
+
+    const [payload] = mockRes.json.mock.calls[0];
+    expect(payload.message).not.toMatch(/notificad/i);
+  });
+
   it('returns 500 when the log cannot be written', async () => {
-    mockPrisma.timeEntry.findUnique.mockResolvedValue(ownEntry());
+    mockPrisma.timeEntry.findFirst.mockResolvedValue(ownEntry());
     mockPrisma.approvalLog.create.mockRejectedValue(new Error('db down'));
 
     await requestCorrection(mockReq, mockRes);
 
     expect(mockRes.status).toHaveBeenCalledWith(500);
+  });
+});
+
+// As duas funcionalidades se trancavam: updateMyEntryNotes exigia que o log
+// MAIS RECENTE fosse EDIT_REQUESTED, e o pedido do colaborador entra como log
+// mais recente. Supervisor pede edição -> colaborador clica "Pedir ajuste" ->
+// PATCH /time/:id/notes passava a responder 400 para sempre.
+describe('PATCH /time/:id/notes depois de um pedido de ajuste do colaborador', () => {
+  let mockReq;
+  let mockRes;
+
+  // Aplica o include.logs (where/orderBy/take) como o Prisma aplicaria: é
+  // exatamente esse filtro que separa a conversa de edição do resto do log.
+  const stubEntryWithLogs = (logs) => {
+    mockPrisma.timeEntry.findFirst.mockImplementation(async (args) => {
+      const logFilter = args?.include?.logs || {};
+      const actions = logFilter.where?.action?.in;
+      const visible = actions ? logs.filter((log) => actions.includes(log.action)) : [...logs];
+      visible.sort((a, b) => b.timestamp - a.timestamp);
+
+      return {
+        id: 'entry-1',
+        userId: 'user-123',
+        status: 'PENDING',
+        logs: logFilter.take ? visible.slice(0, logFilter.take) : visible,
+      };
+    });
+  };
+
+  const at = (minutesAgo) => new Date(Date.now() - minutesAgo * 60000);
+
+  beforeEach(() => {
+    mockReq = {
+      user: { id: 'user-123', email: 'member@test.com', name: 'Member', role: 'MEMBER' },
+      params: { id: 'entry-1' },
+      body: { notes: 'Saí às 18h, o registro ficou aberto.' },
+    };
+    mockRes = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+    };
+
+    mockPrisma.$transaction.mockImplementation((operations) => Promise.all(operations));
+    mockPrisma.timeEntry.update.mockResolvedValue({ id: 'entry-1', status: 'PENDING' });
+    mockPrisma.approvalLog.create.mockResolvedValue({ id: 'log-2' });
+  });
+
+  it('still accepts the notes when the member asked for a correction afterwards', async () => {
+    stubEntryWithLogs([
+      { action: 'EDIT_REQUESTED', timestamp: at(30) },
+      { action: 'MEMBER_CORRECTION_REQUESTED', timestamp: at(10) },
+    ]);
+
+    await updateMyEntryNotes(mockReq, mockRes);
+
+    expect(mockRes.status).not.toHaveBeenCalledWith(400);
+    expect(mockPrisma.timeEntry.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts the notes for a plain outstanding edit request', async () => {
+    stubEntryWithLogs([{ action: 'EDIT_REQUESTED', timestamp: at(30) }]);
+
+    await updateMyEntryNotes(mockReq, mockRes);
+
+    expect(mockPrisma.timeEntry.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('still rejects when the edit request was already answered', async () => {
+    // O guard não pode ficar largo demais: respondido é respondido.
+    stubEntryWithLogs([
+      { action: 'EDIT_REQUESTED', timestamp: at(30) },
+      { action: 'EDIT_RESPONSE', timestamp: at(20) },
+      { action: 'MEMBER_CORRECTION_REQUESTED', timestamp: at(10) },
+    ]);
+
+    await updateMyEntryNotes(mockReq, mockRes);
+
+    expect(mockRes.status).toHaveBeenCalledWith(400);
+    expect(mockPrisma.timeEntry.update).not.toHaveBeenCalled();
+  });
+
+  it('still rejects when no edit was ever requested', async () => {
+    stubEntryWithLogs([{ action: 'MEMBER_CORRECTION_REQUESTED', timestamp: at(10) }]);
+
+    await updateMyEntryNotes(mockReq, mockRes);
+
+    expect(mockRes.status).toHaveBeenCalledWith(400);
+    expect(mockPrisma.timeEntry.update).not.toHaveBeenCalled();
   });
 });
