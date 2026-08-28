@@ -84,11 +84,60 @@ describe('resolvePunchTimestamp', () => {
       ['an object', { year: 2026 }],
       ['a year-month only', '2026-08'],
       ['a space separator instead of T', '2026-08-28 08:00:00Z'],
-      ['an impossible calendar date', '2026-02-31T08:00:00.000Z'],
     ];
 
     it.each(rejected)('rejects %s', (_label, occurredAt) => {
       expect(() => resolvePunchTimestamp({ occurredAt, now })).toThrow(RangeError);
+    });
+  });
+
+  // O parser do V8 NÃO devolve Invalid Date para dia inexistente: ele
+  // transborda em silêncio. '2026-02-31T08:00:00Z' vira 3 de março. Enquanto
+  // este caso morava na lista genérica acima ele passava pelo motivo errado —
+  // 3 de março cai fora da janela de 48h a partir do `now` fixo, então o teste
+  // ficava verde mesmo sem checagem de calendário nenhuma.
+  describe('rejects a calendar date that silently rolls over', () => {
+    const rolloverMessage = /data inexistente no calendário/;
+
+    it('rejects February 31 for the rollover, not for the 48h window', () => {
+      // Ancorado em 3 de março para que a data transbordada caia DENTRO da
+      // janela: só uma checagem de calendário de verdade barra isto.
+      const marchNow = new Date('2026-03-03T12:00:00.000Z');
+
+      expect(new Date('2026-02-31T08:00:00.000Z').toISOString()).toBe('2026-03-03T08:00:00.000Z');
+      expect(() => resolvePunchTimestamp({ occurredAt: '2026-02-31T08:00:00.000Z', now: marchNow }))
+        .toThrow(rolloverMessage);
+    });
+
+    it('rejects September 31 sent on October 1, where the rollover lands on "now"', () => {
+      const octoberNow = new Date('2026-10-01T09:00:00.000Z');
+
+      expect(() => resolvePunchTimestamp({ occurredAt: '2026-09-31T08:00:00Z', now: octoberNow }))
+        .toThrow(rolloverMessage);
+      // O dia que existe, no mesmo instante, continua passando.
+      expect(resolvePunchTimestamp({ occurredAt: '2026-09-30T08:00:00Z', now: octoberNow }).offline)
+        .toBe(true);
+    });
+
+    it('rejects hour 24, which is the next day written as the previous one', () => {
+      const octoberNow = new Date('2026-10-01T09:00:00.000Z');
+
+      expect(() => resolvePunchTimestamp({ occurredAt: '2026-09-30T24:00:00Z', now: octoberNow }))
+        .toThrow(rolloverMessage);
+    });
+
+    it('keeps accepting a valid leap day', () => {
+      const leapNow = new Date('2028-02-29T12:00:00.000Z');
+      const result = resolvePunchTimestamp({ occurredAt: '2028-02-29T08:00:00.000Z', now: leapNow });
+
+      expect(result.timestamp).toEqual(new Date('2028-02-29T08:00:00.000Z'));
+    });
+
+    it('rejects February 29 in a non-leap year', () => {
+      const nonLeapNow = new Date('2026-03-01T12:00:00.000Z');
+
+      expect(() => resolvePunchTimestamp({ occurredAt: '2026-02-29T08:00:00.000Z', now: nonLeapNow }))
+        .toThrow(rolloverMessage);
     });
   });
 });
