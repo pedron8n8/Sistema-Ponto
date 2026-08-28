@@ -39,7 +39,7 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
-      # The integration + 6 controller suites below are red because of
+      # The integration + 4 controller suites below are red because of
       # controller drift (password policy hardened to 12 chars, status codes
       # rearranged, etc). They are quarantined here so CI gates new regressions
       # in the still-green suites (middlewares, utils, domain, report). When
@@ -51,8 +51,6 @@ jobs:
               tests/routes/routes.integration.test.js \
               tests/controllers/admin.controller.test.js \
               tests/controllers/finance.controller.test.js \
-              tests/controllers/supervisor.controller.test.js \
-              tests/controllers/time.controller.test.js \
               tests/controllers/user.controller.test.js \
               tests/controllers/vacation.controller.test.js
 
