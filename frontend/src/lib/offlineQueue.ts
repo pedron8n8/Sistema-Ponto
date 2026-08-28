@@ -285,9 +285,18 @@ export const rememberOfflinePunchPolicy = (
   }
 }
 
+// Sem este teto o `cachedAt` seria campo morto: gravado, validado e nunca
+// comparado. Uma politica indefinidamente velha erra nos dois sentidos — o
+// tenant que sai de TERMINAL_QR recusa batida offline para sempre num aparelho
+// que nunca mais buscou o geofence, e o que entra em TERMINAL_QR segue
+// enfileirando batida condenada. Vencido, cai no mesmo caminho de "nao sei",
+// que falha aberto.
+export const OFFLINE_PUNCH_POLICY_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
+
 export const readOfflinePunchPolicy = (
   storage: QueueStorage,
-  userId?: string | null
+  userId?: string | null,
+  now: Date = new Date()
 ): OfflinePunchPolicy | null => {
   try {
     const raw = storage.getItem(POLICY_KEY)
@@ -295,6 +304,9 @@ export const readOfflinePunchPolicy = (
     const parsed: unknown = JSON.parse(raw)
     if (!isPlainObject(parsed) || typeof parsed.cachedAt !== 'string') return null
     if (typeof parsed.userId === 'string' && parsed.userId !== (userId || '')) return null
+    const cachedAt = new Date(parsed.cachedAt).getTime()
+    if (Number.isNaN(cachedAt)) return null
+    if (now.getTime() - cachedAt > OFFLINE_PUNCH_POLICY_MAX_AGE_MS) return null
     return parsed as OfflinePunchPolicy
   } catch {
     return null
@@ -487,6 +499,32 @@ export const syncQueue = async ({
         if (typeof errorStatus(error) === 'number') {
           // Alguem respondeu (5xx/429/408): transitorio, nao gasta tentativa e
           // prova que o transporte funciona — zera o contador sem veredito.
+          //
+          // Excecao: item legado sem occurredAt. Nele o isTooOld nunca dispara,
+          // entao um 5xx deterministico (corpo legado que sempre derruba o
+          // servidor) travaria a fila para sempre — e nada atras dele chega a
+          // ser avaliado. So neste caso o status tambem gasta ciclo.
+          if (!action.occurredAt) {
+            const legacyCycles = (action.offlineAttempts ?? 0) + 1
+            if (legacyCycles >= MAX_UNVERIFIED_OFFLINE_ATTEMPTS) {
+              dropped.push(
+                recordDroppedPunch(
+                  storage,
+                  action,
+                  'UNSENDABLE',
+                  message || 'O servidor recusou esta batida antiga repetidamente.',
+                  now
+                )
+              )
+              record(removeFromQueue(storage, action.id))
+              continue
+            }
+            const legacyHead = withOfflineAttempts(action, legacyCycles)
+            remaining = [legacyHead, ...queue.slice(i + 1)]
+            record(patchInQueue(storage, legacyHead))
+            break
+          }
+
           const head = withOfflineAttempts(action, 0)
           remaining = [head, ...queue.slice(i + 1)]
           record(patchInQueue(storage, head))

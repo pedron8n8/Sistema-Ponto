@@ -8,6 +8,7 @@ import {
   mergeDroppedPunches,
   readCorruptQueueRecords,
   readDroppedPunches,
+  OFFLINE_PUNCH_POLICY_MAX_AGE_MS,
   readOfflinePunchPolicy,
   readQueue,
   rememberOfflinePunchPolicy,
@@ -407,9 +408,12 @@ describe('offlineQueue', () => {
     // 5xx: um contador que NUNCA existisse passaria igual. Agora o mesmo teste
     // prova as duas metades — falha sem status INCREMENTA, 5xx ZERA — entao
     // some com o contador e ele quebra, deixe de zerar e ele quebra tambem.
-    const legacy = { id: 'jam', path: '/time/clock-in', body: {} }
+    // Item COM occurredAt: aqui zerar e seguro, porque o isTooOld ja termina a
+    // batida em 48h. O item legado sem occurredAt segue outra regra (teste
+    // abaixo): nele nada mais limita, entao o status tambem gasta ciclo.
+    const timestamped = punch({ id: 'jam' })
     const storage = memoryStorage({
-      'omnipunt.offlineClockQueue': JSON.stringify([legacy]),
+      'omnipunt.offlineClockQueue': JSON.stringify([timestamped]),
     })
 
     const statusless = await syncQueue({
@@ -431,6 +435,30 @@ describe('offlineQueue', () => {
     // falhas "sem veredito nenhum" volta a zero.
     expect(afterServerError.remaining[0].offlineAttempts).toBeUndefined()
     expect(readQueue(storage)[0].offlineAttempts).toBeUndefined()
+  })
+
+  it('bounds a legacy punch that keeps getting a server error, instead of jamming the queue', async () => {
+    // Sem occurredAt o isTooOld nunca dispara. Se um 5xx deterministico zerasse
+    // o contador, este item travaria a fila para sempre e nada atras dele
+    // chegaria a ser avaliado.
+    const legacy = { id: 'jam', path: '/time/clock-in', body: {}, attempts: 0 }
+    const storage = memoryStorage({
+      'omnipunt.offlineClockQueue': JSON.stringify([legacy]),
+    })
+
+    let last
+    for (let cycle = 0; cycle < MAX_UNVERIFIED_OFFLINE_ATTEMPTS; cycle += 1) {
+      last = await syncQueue({
+        storage,
+        send: vi.fn().mockRejectedValue(httpError('Internal Server Error', 500)),
+        now: NOW,
+        deviceOffline: deviceOnline,
+      })
+    }
+
+    expect(readQueue(storage)).toEqual([])
+    expect(last!.dropped).toHaveLength(1)
+    expect(readDroppedPunches(storage)[0].reason).toBe('UNSENDABLE')
   })
 
   it('never lets the ceiling destroy a punch that carries occurredAt', async () => {
@@ -655,6 +683,28 @@ describe('offlineQueue', () => {
     rememberOfflinePunchPolicy(storage, { userId: 'u1', locationValidationSource: 'TERMINAL_QR' })
     expect(readOfflinePunchPolicy(storage, 'u2')).toBeNull()
     expect(requiresTerminalQr(undefined, readOfflinePunchPolicy(storage, 'u2'))).toBe(false)
+  })
+
+  it('discards a policy older than the max age instead of trusting it forever', () => {
+    // Politica velha erra nos dois sentidos: quem saiu de TERMINAL_QR recusaria
+    // batida offline para sempre, quem entrou seguiria enfileirando condenada.
+    // Vencida, cai no caminho de "nao sei", que falha aberto.
+    const storage = memoryStorage()
+    const cachedAt = new Date('2026-01-01T00:00:00.000Z')
+    rememberOfflinePunchPolicy(
+      storage,
+      { userId: 'u1', locationValidationSource: 'TERMINAL_QR' },
+      cachedAt
+    )
+
+    const stillFresh = new Date(cachedAt.getTime() + OFFLINE_PUNCH_POLICY_MAX_AGE_MS)
+    expect(readOfflinePunchPolicy(storage, 'u1', stillFresh)?.locationValidationSource).toBe(
+      'TERMINAL_QR'
+    )
+
+    const expired = new Date(cachedAt.getTime() + OFFLINE_PUNCH_POLICY_MAX_AGE_MS + 1)
+    expect(readOfflinePunchPolicy(storage, 'u1', expired)).toBeNull()
+    expect(requiresTerminalQr(null, readOfflinePunchPolicy(storage, 'u1', expired))).toBe(false)
   })
 
   it('survives a storage that refuses to remember the policy', () => {
