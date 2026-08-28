@@ -392,7 +392,13 @@ describe('Supervisor Controller', () => {
         ops.push({ __model: model, __method: method, ...args });
         return Promise.resolve(result);
       };
-      mockPrisma.timeEntry.updateMany.mockImplementation(record('timeEntry', 'updateMany', { count: 0 }));
+      // `count` tem que sair das linhas que casam com o WHERE, nao ser fixo: o
+      // controller passou a reportar approvedCount/rejectedCount a partir dele,
+      // e um count fixo faria o teste passar com qualquer indice errado.
+      mockPrisma.timeEntry.updateMany.mockImplementation((args) => {
+        ops.push({ __model: 'timeEntry', __method: 'updateMany', ...args });
+        return Promise.resolve(countMatching(args));
+      });
       // O approve em lote passou a usar updateManyAndReturn na HE: a lista de
       // soltura do banco de horas sai do que o UPDATE escreveu, não da leitura
       // feita antes da transação.
@@ -413,7 +419,25 @@ describe('Supervisor Controller', () => {
       return ops;
     };
 
+    // Conta as linhas que casam com o WHERE, como o banco faria. Fica no
+    // beforeEach (e nao so no captureOps) para que um teste que nao instrumenta
+    // as operacoes ainda receba uma contagem real em vez de 0 silencioso.
+    const countMatching = (args) => {
+      const ids = args.where?.id?.in || [];
+      const matched = bulkEntries.filter((entry) => {
+        if (!ids.includes(entry.id)) return false;
+        if (args.where?.status && entry.status !== args.where.status) return false;
+        if (args.where?.overtimeStatus && entry.overtimeStatus !== args.where.overtimeStatus)
+          return false;
+        return true;
+      });
+      return { count: matched.length };
+    };
+
     beforeEach(() => {
+      mockPrisma.timeEntry.updateMany.mockImplementation((args) =>
+        Promise.resolve(countMatching(args))
+      );
       mockPrisma.timeEntry.findMany.mockResolvedValue(bulkEntries);
       // O controller agora lê o RESULTADO da transação, então o mock precisa
       // devolvê-lo em vez de undefined.
@@ -446,6 +470,25 @@ describe('Supervisor Controller', () => {
         'entry-plain',
         'entry-ot',
       ]);
+    });
+
+    it('reporta o que o UPDATE escreveu, nao o que a leitura previa achou', async () => {
+      // Corrida: os dois supervisores leem entry-plain e entry-ot como PENDING,
+      // mas o UPDATE do perdedor tem predicado `status: 'PENDING'` e so escreve
+      // uma linha. Reportar validIds.length diria "2 aprovados" para quem
+      // aprovou 1 — e o supervisor iria embora achando o lote resolvido.
+      captureOps();
+      mockPrisma.timeEntry.updateMany.mockResolvedValue({ count: 1 });
+      mockReq.body = { entryIds: allIds };
+
+      await approveEntriesBulk(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          approvedCount: 1,
+          message: '1 registro(s) aprovado(s) com sucesso',
+        })
+      );
     });
 
     it('nega o lote, zera a HE e reverte o banco de horas', async () => {

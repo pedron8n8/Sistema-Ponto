@@ -1297,6 +1297,10 @@ const approveEntriesBulk = async (req, res) => {
     // clock-out — exceto no registro de batida offline, cujo crédito ficou
     // represado esperando exatamente esta aprovação (ver releaseDeferredBankHours).
     // A lista sai do que o UPDATE realmente escreveu, nunca da leitura anterior.
+    // Mesmo raciocinio do overtimeApprovedCount: o updateMany de status tambem
+    // tem predicado `status: 'PENDING'`, entao quem perde a corrida escreve
+    // menos linhas do que leu. `count` e o que o banco escreveu de fato.
+    const approvedCount = results[overtimeUpdate.length]?.count ?? 0;
     const approvedOvertimeEntries = overtimeUpdate.length ? results[0] || [] : [];
     const deferredEntries = approvedOvertimeEntries.filter(isBankHoursDeferred);
 
@@ -1308,12 +1312,12 @@ const approveEntriesBulk = async (req, res) => {
     }
 
     console.log(
-      `✅ ${validIds.length} registros aprovados em lote (${overtimeIds.length} com HE) por ${req.user.email}`
+      `✅ ${approvedCount} registros aprovados em lote (${approvedOvertimeEntries.length} com HE) por ${req.user.email}`
     );
 
     res.json({
-      message: `${validIds.length} registro(s) aprovado(s) com sucesso`,
-      approvedCount: validIds.length,
+      message: `${approvedCount} registro(s) aprovado(s) com sucesso`,
+      approvedCount,
       // O que o UPDATE escreveu, não a leitura anterior. Com o predicado
       // `overtimeStatus: 'PENDING'`, quem perde a corrida atualiza menos linhas
       // (ou nenhuma) — devolver `overtimeIds.length` diria "12 horas extras
@@ -1504,7 +1508,7 @@ const rejectEntriesBulk = async (req, res) => {
       await reverseEntryBankHours(id);
     }
 
-    await prisma.$transaction([
+    const rejectResults = await prisma.$transaction([
       ...(overtimeIds.length
         ? [
             prisma.timeEntry.updateMany({
@@ -1542,13 +1546,17 @@ const rejectEntriesBulk = async (req, res) => {
       }),
     ]);
 
+    // Ver approvedCount: o updateMany de status filtra por `status: 'PENDING'`,
+    // entao a contagem pre-leitura mente para quem perde uma corrida.
+    const rejectedCount = rejectResults[overtimeIds.length ? 2 : 0]?.count ?? 0;
+
     console.log(
-      `❌ ${validIds.length} registros rejeitados em lote (${overtimeIds.length} com HE) por ${req.user.email}`
+      `❌ ${rejectedCount} registros rejeitados em lote (${overtimeIds.length} com HE) por ${req.user.email}`
     );
 
     res.json({
-      message: `${validIds.length} registro(s) rejeitado(s)`,
-      rejectedCount: validIds.length,
+      message: `${rejectedCount} registro(s) rejeitado(s)`,
+      rejectedCount,
       overtimeRejectedCount: overtimeIds.length,
       skipped,
     });

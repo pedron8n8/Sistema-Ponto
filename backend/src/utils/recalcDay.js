@@ -148,17 +148,30 @@ const recalculateUserDay = async ({ userId, date }) => {
       },
     });
 
-    const bankHoursResult = await accrueBankHours({
-      userId,
-      overtimeMinutes: overtime.overtimeMinutes,
-      timeEntryId: entry.id,
-    });
-
-    if (bankHoursResult.accruedMinutes > 0) {
-      await prisma.timeEntry.update({
-        where: { id: entry.id },
-        data: { bankHoursAccruedMinutes: bankHoursResult.accruedMinutes },
+    // O update acima ja commitou. Se o credito estourar aqui sem protecao, o
+    // registro fica APPROVED, uncredited e com o marcador de represado — e toda
+    // rota de supervisor passa a devolver 409 nele. O estado se recupera no
+    // proximo recalculo, mas ate la a hora extra some da vista. Mesmo try/catch
+    // de releaseDeferredBankHours, que protege exatamente esta chamada.
+    let bankHoursResult = { accruedMinutes: 0, deferredMinutes: 0 };
+    try {
+      bankHoursResult = await accrueBankHours({
+        userId,
+        overtimeMinutes: overtime.overtimeMinutes,
+        timeEntryId: entry.id,
       });
+
+      if (bankHoursResult.accruedMinutes > 0) {
+        await prisma.timeEntry.update({
+          where: { id: entry.id },
+          data: { bankHoursAccruedMinutes: bankHoursResult.accruedMinutes },
+        });
+      }
+    } catch (error) {
+      console.error(
+        `⚠️ Recalculo concluido mas banco de horas falhou (entry ${entry.id}):`,
+        error
+      );
     }
 
     workedMinutesBeforeEntry += overtime.workedMinutes;
