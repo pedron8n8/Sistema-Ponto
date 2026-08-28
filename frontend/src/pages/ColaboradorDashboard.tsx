@@ -9,11 +9,15 @@ import * as faceapi from 'face-api.js'
 import { formatDateTimeWithTimeZone, formatTimeWithTimeZone } from '../lib/timezone'
 import {
   clearDroppedPunches,
+  createPunchNonce,
   enqueue,
   isDeviceOffline,
   isOfflineFailure,
   readDroppedPunches,
+  readOfflinePunchPolicy,
   readQueue,
+  rememberOfflinePunchPolicy,
+  requiresTerminalQr,
   syncQueue,
   type DroppedPunch,
   type OfflineClockPath,
@@ -171,8 +175,13 @@ const ColaboradorDashboard = () => {
   const qrScannerActiveRef = useRef(false)
   const dailyTargetNotifiedRef = useRef(false)
   const syncingQueueRef = useRef(false)
+  // Nonce da tentativa de batida em curso. Sobrevive ao erro (retentar a MESMA
+  // tentativa continua deduplicado) e e descartado no sucesso (a proxima batida
+  // e outra batida). Ver startPunchAttempt.
+  const punchAttemptRef = useRef<{ path: OfflineClockPath; nonce: string } | null>(null)
 
   const token = session?.access_token
+  const userId = session?.user?.id ?? null
 
   const resolveBreakMs = (entry: CurrentEntryResponse['entry'] | null, nowMs: number) => {
     if (!entry?.clockIn) return 0
@@ -253,22 +262,38 @@ const ColaboradorDashboard = () => {
 
     try {
       // Idempotencia LIGADA no replay: buildIdempotencyHeaders faz hash de
-      // `data | body` e o body carrega occurredAt, unico por batida, entao a
-      // colisao que justificava skipIdempotency nao existe mais. Se o app morrer
+      // `data | body`, e o body de uma batida enfileirada carrega occurredAt
+      // (unico por batida) alem do clientNonce da tentativa. Se o app morrer
       // depois do POST e antes de gravar a fila, o reenvio volta 202 duplicado
-      // em vez de abrir um segundo registro.
-      const { synced, remaining, dropped } = await syncQueue({
+      // em vez de abrir um segundo registro. A colisao de chave continua
+      // existindo no caminho ONLINE direto, que nunca teve occurredAt: e o
+      // clientNonce, e so ele, que separa a batida da manha da batida da tarde
+      // quando o corpo e identico (PIN, sem GPS, sem notas).
+      const { synced, remaining, dropped, persisted } = await syncQueue({
         storage: window.localStorage,
         send: (path, body) => apiFetch(path, { token, method: 'POST', body }),
       })
-      setPendingSyncCount(remaining.length)
+      // Se a gravacao final falhou (Safari privado recusa todo setItem), o
+      // storage ainda guarda o que ja foi enviado: mostrar "0 pendentes" seria
+      // mentira e o proximo ciclo de 15s reenviaria tudo de novo.
+      setPendingSyncCount(persisted ? remaining.length : readQueue(window.localStorage).length)
 
       if (dropped.length > 0) {
         // Descarte nao pode viver so num <p> transitorio: fica gravado ate ter ciencia.
         setDroppedPunches(readDroppedPunches(window.localStorage))
       }
+      if (!persisted) {
+        setError(
+          t(
+            'Pending punches were sent but could not be cleared from this device (storage unavailable or full). They may be re-sent; check your history with your supervisor.',
+            'As pendencias foram enviadas mas nao puderam ser limpas deste aparelho (armazenamento indisponivel ou cheio). Elas podem ser reenviadas; confira seu historico com o supervisor.'
+          )
+        )
+      }
       if (synced > 0) {
-        setSuccess(t('Offline pending items synced successfully.', 'Pendencias offline sincronizadas com sucesso.'))
+        if (persisted) {
+          setSuccess(t('Offline pending items synced successfully.', 'Pendencias offline sincronizadas com sucesso.'))
+        }
         await loadEntries()
         await loadCurrentEntry()
       }
@@ -280,13 +305,39 @@ const ColaboradorDashboard = () => {
     }
   }
 
+  // A chave de idempotencia do servidor e sha256(data | corpo) por rota+ator. Um
+  // usuario de PIN com GPS negado e sem notas manda `{notes:"",pin:"1234"}` de
+  // manha e o MESMO byte a byte a tarde: mesma chave, e a segunda batida volta
+  // 202 "duplicada ignorada" com res.ok true — o turno da tarde nunca e gravado.
+  // O nonce nasce com a tentativa e SOBREVIVE ao erro (clicar de novo depois de
+  // uma falha de rede e a mesma tentativa e precisa continuar deduplicada); so o
+  // sucesso encerra a tentativa, e a batida seguinte ganha nonce novo.
+  const startPunchAttempt = (path: OfflineClockPath) => {
+    const current = punchAttemptRef.current
+    if (current?.path === path) return current.nonce
+
+    const nonce = createPunchNonce()
+    punchAttemptRef.current = { path, nonce }
+    return nonce
+  }
+
+  const finishPunchAttempt = () => {
+    punchAttemptRef.current = null
+  }
+
   // Uma batida enfileirada so consegue ser reenviada com PIN. O descriptor facial
   // nao ajuda: a prova de vida exige capturedAt com menos de 15s (backend/src/utils/liveness.js),
   // entao qualquer replay chega vencido. O QR do terminal e de uso unico e curta
   // duracao (consumeTerminalQrToken), entao tambem chega vencido. Decisao de
   // produto: bater ponto sem sinal exige PIN.
   const offlinePunchBlocker = () => {
-    if (geofence?.locationValidationSource === 'TERMINAL_QR') {
+    // Em partida a frio sem rede o GET /time/geofence nunca respondeu e
+    // `geofence` e null: a comparacao direta curto-circuitava e a recusa
+    // abaixo — feita exatamente para o caso offline — nunca disparava. A ultima
+    // config conhecida deste usuario decide quando a viva nao existe; sem
+    // nenhuma das duas segue liberado, porque recusar batida offline em tenant
+    // que nunca usou QR seria pior.
+    if (requiresTerminalQr(geofence?.locationValidationSource, readOfflinePunchPolicy(window.localStorage, userId))) {
       return t(
         'This site validates punches by terminal QR, which cannot be revalidated later. Punching here requires a connection.',
         'Este local valida o ponto pelo QR do terminal, que nao pode ser revalidado depois. Aqui o registro exige conexao.'
@@ -318,6 +369,7 @@ const ColaboradorDashboard = () => {
         notes,
         ...(currentPosition ? { latitude: currentPosition.lat, longitude: currentPosition.lng } : {}),
         pin: pin.trim(),
+        clientNonce: startPunchAttempt(path),
       },
     })
 
@@ -331,6 +383,9 @@ const ColaboradorDashboard = () => {
       return
     }
 
+    // Batida guardada: a tentativa terminou aqui. O replay reusa o corpo
+    // gravado, entao continua carregando este mesmo nonce.
+    finishPunchAttempt()
     setPendingSyncCount(readQueue(window.localStorage).length)
     setSuccess(
       path === '/time/clock-in'
@@ -372,6 +427,12 @@ const ColaboradorDashboard = () => {
     if (!token) return null
     const response = await apiFetch<GeofenceResponse>('/time/geofence', { token })
     setGeofence(response.geofence)
+    // Config publica e minuscula, sem segredo: guardada para a proxima abertura
+    // do app sem rede saber se este local exige QR do terminal.
+    rememberOfflinePunchPolicy(window.localStorage, {
+      userId,
+      locationValidationSource: response.geofence?.locationValidationSource,
+    })
     return response.geofence
   }
 
@@ -1070,6 +1131,7 @@ const ColaboradorDashboard = () => {
         ...(faceDescriptor ? { faceDescriptor } : {}),
         ...(livenessData ? { livenessData } : {}),
         ...(scannedQrToken.trim() ? { qrToken: scannedQrToken.trim() } : {}),
+        clientNonce: startPunchAttempt('/time/clock-in'),
       }
 
       // So o erro da requisicao decide fila offline. Falha local (QR ausente,
@@ -1087,6 +1149,8 @@ const ColaboradorDashboard = () => {
         return
       }
 
+      // Tentativa concluida: a proxima batida e outra batida e leva outro nonce.
+      finishPunchAttempt()
       setNotes('')
       setPin('')
       setScannedQrToken('')
@@ -1153,6 +1217,7 @@ const ColaboradorDashboard = () => {
         ...(faceDescriptor ? { faceDescriptor } : {}),
         ...(livenessData ? { livenessData } : {}),
         ...(scannedQrToken.trim() ? { qrToken: scannedQrToken.trim() } : {}),
+        clientNonce: startPunchAttempt('/time/clock-out'),
       }
 
       try {
@@ -1167,6 +1232,7 @@ const ColaboradorDashboard = () => {
         return
       }
 
+      finishPunchAttempt()
       setNotes('')
       setPin('')
       setScannedQrToken('')
