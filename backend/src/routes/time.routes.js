@@ -74,6 +74,12 @@ router.get('/bank-hours/me', timeController.getMyBankHours);
 router.patch('/:id/notes', timeController.updateMyEntryNotes);
 
 /**
+ * POST /api/v1/time/:id/request-correction
+ * Colaborador solicita ajuste no próprio registro (sem alterar o status)
+ */
+router.post('/:id/request-correction', timeController.requestCorrection);
+
+/**
  * GET /api/v1/time/:id
  * Retorna detalhes de um registro específico
  */

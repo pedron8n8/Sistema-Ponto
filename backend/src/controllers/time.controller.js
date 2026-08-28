@@ -28,6 +28,10 @@ const {
 const { emitPunch } = require('../utils/presenceBus');
 const { resolvePunchTimestamp } = require('../utils/offlinePunch');
 
+// Justificativa do pedido de ajuste feito pelo colaborador.
+const CORRECTION_REASON_MIN_LENGTH = 5;
+const CORRECTION_REASON_MAX_LENGTH = 500;
+
 const buildLocationPayload = ({ existingLocation, currentLocation, eventType, geofenceResult }) => {
   const isStructuredLocation =
     existingLocation &&
@@ -769,6 +773,20 @@ const clockOut = async (req, res) => {
       return res.status(400).json({
         error: 'Bad Request',
         message: 'Não há registro de ponto aberto. Faça clock-in primeiro.',
+      });
+    }
+
+    // resolvePunchTimestamp é puro e não conhece o registro aberto, então
+    // sozinho ele aceitaria uma saída ANTERIOR à entrada — intervalo negativo
+    // descendo para workedMinutes, hora extra 50/100 e banco de horas. Rejeita
+    // em vez de arredondar: o estado ruim do cliente precisa aparecer, não ser
+    // lavado em número plausível. Roda antes de qualquer consumidor do horário.
+    if (punch.timestamp.getTime() < new Date(openEntry.clockIn).getTime()) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message:
+          'A saída não pode ser anterior à entrada do registro aberto. Verifique o relógio do aparelho.',
+        code: 'OCCURRED_AT_BEFORE_CLOCK_IN',
       });
     }
 
@@ -1631,6 +1649,74 @@ const updateMyEntryNotes = async (req, res) => {
   }
 };
 
+/**
+ * POST /time/:id/request-correction
+ * Colaborador pede ajuste no próprio registro, sem depender de o supervisor
+ * abrir a edição antes (o caminho contrário já existe em PATCH /time/:id/notes)
+ */
+const requestCorrection = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+
+    if (reason.length < CORRECTION_REASON_MIN_LENGTH || reason.length > CORRECTION_REASON_MAX_LENGTH) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: `Descreva o ajuste em ${CORRECTION_REASON_MIN_LENGTH} a ${CORRECTION_REASON_MAX_LENGTH} caracteres.`,
+      });
+    }
+
+    const entry = await prisma.timeEntry.findUnique({ where: { id } });
+
+    if (!entry) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Registro de ponto não encontrado.',
+      });
+    }
+
+    // 404 x 403 separados de propósito: quem já sabe o id do registro não ganha
+    // informação nova ao descobrir que ele é de outra pessoa.
+    if (entry.userId !== userId) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você só pode pedir ajuste nos seus próprios registros.',
+      });
+    }
+
+    if (entry.status === 'APPROVED') {
+      return res.status(409).json({
+        error: 'Conflict',
+        message: 'Registro já aprovado. Fale com seu supervisor para alterá-lo.',
+      });
+    }
+
+    // O status do registro NÃO muda: o colaborador registra o pedido, o
+    // supervisor continua sendo quem tira o ponto de PENDING.
+    const log = await prisma.approvalLog.create({
+      data: {
+        timeEntryId: entry.id,
+        reviewerId: userId,
+        action: 'MEMBER_CORRECTION_REQUESTED',
+        comment: reason,
+      },
+    });
+
+    return res.status(201).json({
+      message: 'Pedido de ajuste registrado. Seu supervisor foi notificado.',
+      log,
+    });
+  } catch (error) {
+    console.error('❌ Erro ao registrar pedido de ajuste:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao registrar pedido de ajuste',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
 module.exports = {
   issueTerminalQr,
   clockIn,
@@ -1644,4 +1730,5 @@ module.exports = {
   getTodayEntries,
   getTimeEntryById,
   updateMyEntryNotes,
+  requestCorrection,
 };
