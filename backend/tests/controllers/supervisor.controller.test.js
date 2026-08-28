@@ -388,17 +388,26 @@ describe('Supervisor Controller', () => {
     // chamadas do Prisma para inspecionar o que cada operação do lote recebeu.
     const captureOps = () => {
       const ops = [];
-      const record = (model, method) => (args) => {
+      const record = (model, method, result) => (args) => {
         ops.push({ __model: model, __method: method, ...args });
-        return Promise.resolve({ count: 0 });
+        return Promise.resolve(result);
       };
-      mockPrisma.timeEntry.updateMany.mockImplementation(record('timeEntry', 'updateMany'));
-      mockPrisma.approvalLog.createMany.mockImplementation(record('approvalLog', 'createMany'));
+      mockPrisma.timeEntry.updateMany.mockImplementation(record('timeEntry', 'updateMany', { count: 0 }));
+      // O approve em lote passou a usar updateManyAndReturn na HE: a lista de
+      // soltura do banco de horas sai do que o UPDATE escreveu, não da leitura
+      // feita antes da transação.
+      mockPrisma.timeEntry.updateManyAndReturn.mockImplementation(
+        record('timeEntry', 'updateManyAndReturn', [])
+      );
+      mockPrisma.approvalLog.createMany.mockImplementation(record('approvalLog', 'createMany', { count: 0 }));
       return ops;
     };
 
     beforeEach(() => {
       mockPrisma.timeEntry.findMany.mockResolvedValue(bulkEntries);
+      // O controller agora lê o RESULTADO da transação, então o mock precisa
+      // devolvê-lo em vez de undefined.
+      mockPrisma.$transaction.mockImplementation((operations) => Promise.all(operations));
     });
 
     it('aprova o lote e decide a HE pendente junto', async () => {

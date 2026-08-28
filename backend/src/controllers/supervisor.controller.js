@@ -1252,30 +1252,33 @@ const approveEntriesBulk = async (req, res) => {
       });
     }
 
-    // HE aprovada não mexe em banco de horas: o crédito já foi lançado no
-    // clock-out — exceto no registro de batida offline, cujo crédito ficou
-    // represado esperando exatamente esta aprovação (ver releaseDeferredBankHours).
-    const deferredEntries = eligible.filter(
-      (entry) => entry.overtimeStatus === 'PENDING' && isBankHoursDeferred(entry)
-    );
+    // `overtimeStatus: 'PENDING'` no WHERE + updateManyAndReturn: é o predicado
+    // que decide quem soltou o crédito represado, e ele é avaliado pelo banco,
+    // não pela leitura feita antes da transação. Sem isso, dois supervisores
+    // aprovando o mesmo lote ao mesmo tempo passavam os dois pelo filtro em
+    // memória e chamavam releaseDeferredBankHours duas vezes — duas linhas
+    // ACCRUAL e dois increments no saldo. Em READ COMMITTED o segundo UPDATE
+    // espera o commit do primeiro, reavalia a linha já APPROVED e devolve
+    // ZERO registros: só um lado credita.
+    const overtimeUpdate = overtimeIds.length
+      ? [
+          prisma.timeEntry.updateManyAndReturn({
+            where: { id: { in: overtimeIds }, overtimeStatus: 'PENDING' },
+            data: { overtimeStatus: 'APPROVED' },
+          }),
+          prisma.approvalLog.createMany({
+            data: overtimeIds.map((timeEntryId) => ({
+              timeEntryId,
+              reviewerId: supervisorId,
+              action: 'OVERTIME_APPROVED',
+              comment: comment || null,
+            })),
+          }),
+        ]
+      : [];
 
-    await prisma.$transaction([
-      ...(overtimeIds.length
-        ? [
-            prisma.timeEntry.updateMany({
-              where: { id: { in: overtimeIds } },
-              data: { overtimeStatus: 'APPROVED' },
-            }),
-            prisma.approvalLog.createMany({
-              data: overtimeIds.map((timeEntryId) => ({
-                timeEntryId,
-                reviewerId: supervisorId,
-                action: 'OVERTIME_APPROVED',
-                comment: comment || null,
-              })),
-            }),
-          ]
-        : []),
+    const results = await prisma.$transaction([
+      ...overtimeUpdate,
       prisma.timeEntry.updateMany({
         where: { id: { in: validIds }, status: 'PENDING' },
         data: { status: 'APPROVED' },
@@ -1289,6 +1292,13 @@ const approveEntriesBulk = async (req, res) => {
         })),
       }),
     ]);
+
+    // HE aprovada não mexe em banco de horas: o crédito já foi lançado no
+    // clock-out — exceto no registro de batida offline, cujo crédito ficou
+    // represado esperando exatamente esta aprovação (ver releaseDeferredBankHours).
+    // A lista sai do que o UPDATE realmente escreveu, nunca da leitura anterior.
+    const approvedOvertimeEntries = overtimeUpdate.length ? results[0] || [] : [];
+    const deferredEntries = approvedOvertimeEntries.filter(isBankHoursDeferred);
 
     // Sequencial de propósito: accrueBankHours lê e escreve o saldo do usuário,
     // e o lote pode ter vários registros do mesmo colaborador. Mesmo formato do

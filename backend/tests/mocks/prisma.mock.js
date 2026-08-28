@@ -41,7 +41,12 @@ const mockPrisma = {
     create: jest.fn(),
     update: jest.fn(),
     updateMany: jest.fn(),
+    // Devolve as linhas que o UPDATE realmente escreveu. É o que deixa o
+    // approve em lote soltar o banco de horas represado só para quem venceu o
+    // predicado no banco, em vez de para o que a leitura anterior mostrava.
+    updateManyAndReturn: jest.fn(),
     delete: jest.fn(),
+    deleteMany: jest.fn(),
     count: jest.fn(),
     groupBy: jest.fn(),
   },
@@ -64,6 +69,7 @@ const mockPrisma = {
     update: jest.fn(),
     updateMany: jest.fn(),
     delete: jest.fn(),
+    deleteMany: jest.fn(),
     count: jest.fn(),
     groupBy: jest.fn(),
   },

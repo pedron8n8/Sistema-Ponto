@@ -112,12 +112,19 @@ const recalculateUserDay = async ({ userId, date }) => {
       continue;
     }
 
-    const bankHoursResult = await accrueBankHours({
-      userId,
-      overtimeMinutes: overtime.overtimeMinutes,
-      timeEntryId: entry.id,
-    });
-
+    // GRAVA PRIMEIRO, CREDITA DEPOIS. accrueBankHours relê o registro no banco
+    // para decidir se o crédito está represado (batida offline aguardando o
+    // supervisor). Creditando antes deste update, um registro represado que
+    // ESTE update promove a APPROVED era lido ainda como PENDING: o crédito
+    // ficava represado e nada mais o soltava — as rotas de decisão de HE
+    // recusam registro que já saiu de PENDING. Cenário real: colaborador
+    // sincroniza turno offline com HE, o RH corrige o registro antes de o
+    // supervisor decidir, e as horas somem do banco sem erro nenhum.
+    //
+    // Escolhido em vez de passar o status alvo por parâmetro para accrueBankHours:
+    // o guard continua decidindo só a partir do que está COMMITADO no banco, sem
+    // um parâmetro "confie em mim" que um chamador futuro possa passar sem nunca
+    // gravar a aprovação. Mesma ordem de releaseDeferredBankHours no supervisor.
     await prisma.timeEntry.update({
       where: { id: entry.id },
       data: {
@@ -126,7 +133,10 @@ const recalculateUserDay = async ({ userId, date }) => {
         overtimeMinutes50: overtime.overtimeMinutes50,
         overtimeMinutes100: overtime.overtimeMinutes100,
         overtimePercent: overtime.overtimePercent,
-        bankHoursAccruedMinutes: bankHoursResult.accruedMinutes,
+        // Zera aqui e carimba o valor real depois: reverseEntryBankHours acabou
+        // de apagar o crédito anterior, então deixar o número velho na coluna
+        // enquanto o crédito novo não sai mostraria banco que não existe.
+        bankHoursAccruedMinutes: 0,
         // Decisão de HE: aprovação sobrevive a mudanças de valor; registros já aprovados
         // (edição/criação do HR) auto-aprovam a HE; sem HE, limpa a pendência.
         overtimeStatus:
@@ -137,6 +147,19 @@ const recalculateUserDay = async ({ userId, date }) => {
             : null,
       },
     });
+
+    const bankHoursResult = await accrueBankHours({
+      userId,
+      overtimeMinutes: overtime.overtimeMinutes,
+      timeEntryId: entry.id,
+    });
+
+    if (bankHoursResult.accruedMinutes > 0) {
+      await prisma.timeEntry.update({
+        where: { id: entry.id },
+        data: { bankHoursAccruedMinutes: bankHoursResult.accruedMinutes },
+      });
+    }
 
     workedMinutesBeforeEntry += overtime.workedMinutes;
     results.push({
