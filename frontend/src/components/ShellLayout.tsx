@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTimeZone } from '../context/TimezoneContext'
@@ -14,21 +14,21 @@ import DualClock from './DualClock'
 const iconClassName = 'h-5 w-5 shrink-0'
 
 const OverviewIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={iconClassName}>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true" focusable="false" className={iconClassName}>
     <path d="M3 12L12 4L21 12" />
     <path d="M5 10.5V20H19V10.5" />
   </svg>
 )
 
 const TimeClockIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={iconClassName}>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true" focusable="false" className={iconClassName}>
     <circle cx="12" cy="12" r="8.5" />
     <path d="M12 7.5V12L15.5 14" />
   </svg>
 )
 
 const HistoryIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={iconClassName}>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true" focusable="false" className={iconClassName}>
     <path d="M12 8V12L14.8 13.8" />
     <path d="M20 12A8 8 0 1 1 17.7 6.3" />
     <path d="M20 4V8H16" />
@@ -36,7 +36,7 @@ const HistoryIcon = () => (
 )
 
 const SupervisorIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={iconClassName}>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true" focusable="false" className={iconClassName}>
     <circle cx="9" cy="8.5" r="2.3" />
     <circle cx="16" cy="9.5" r="2" />
     <path d="M4.5 18C5 15.6 6.9 14.2 9 14.2C11.1 14.2 13 15.6 13.5 18" />
@@ -45,7 +45,7 @@ const SupervisorIcon = () => (
 )
 
 const TeamVacationIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={iconClassName}>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true" focusable="false" className={iconClassName}>
     <path d="M3.5 18.5H20.5" />
     <path d="M6 18.5C6.2 15 8.3 13 11 13C13.7 13 15.8 15 16 18.5" />
     <circle cx="11" cy="9" r="2.2" />
@@ -54,7 +54,7 @@ const TeamVacationIcon = () => (
 )
 
 const AdminIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={iconClassName}>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true" focusable="false" className={iconClassName}>
     <circle cx="12" cy="12" r="8.5" />
     <path d="M12 7.2V16.8" />
     <path d="M7.2 12H16.8" />
@@ -62,7 +62,7 @@ const AdminIcon = () => (
 )
 
 const McpIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={iconClassName}>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true" focusable="false" className={iconClassName}>
     <circle cx="12" cy="12" r="2.4" />
     <circle cx="5" cy="6.5" r="1.8" />
     <circle cx="19" cy="6.5" r="1.8" />
@@ -74,14 +74,14 @@ const McpIcon = () => (
 )
 
 const SuperAdminIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={iconClassName}>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true" focusable="false" className={iconClassName}>
     <path d="M12 3.8L19.2 6.8V12.5C19.2 16.5 16.3 20.1 12 21.2C7.7 20.1 4.8 16.5 4.8 12.5V6.8L12 3.8Z" />
     <path d="M9.3 12.1L11.2 14L14.9 10.3" />
   </svg>
 )
 
 const ReportsIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={iconClassName}>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true" focusable="false" className={iconClassName}>
     <path d="M6 3.8H14.8L18 7V20.2H6V3.8Z" />
     <path d="M14.5 3.8V7.3H18" />
     <path d="M8.5 11.5H15.5" />
@@ -90,7 +90,7 @@ const ReportsIcon = () => (
 )
 
 const MoreIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={iconClassName}>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true" focusable="false" className={iconClassName}>
     <circle cx="5.5" cy="12" r="1.4" />
     <circle cx="12" cy="12" r="1.4" />
     <circle cx="18.5" cy="12" r="1.4" />
@@ -125,6 +125,8 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
   const { viewTimeZone, setViewTimeZone } = useTimeZone()
   const location = useLocation()
   const [moreOpen, setMoreOpen] = useState(false)
+  const moreButtonRef = useRef<HTMLButtonElement>(null)
+  const moreSheetRef = useRef<HTMLDivElement>(null)
   const { t: i18nT, i18n } = useTranslation()
   const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
   const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
@@ -371,6 +373,58 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
     item.end ? location.pathname === item.to : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)
   const moreIsActive = moreSections.some((section) => section.items.some(isItemActive))
 
+  // Fechar sempre devolve o foco para a aba "Mais": sem isso o foco volta para o
+  // <body> e o leitor de tela recomeca a pagina do zero.
+  const closeMore = useCallback(() => {
+    setMoreOpen(false)
+    moreButtonRef.current?.focus()
+  }, [])
+
+  // Enquanto a folha esta aberta ela e o unico conteudo alcancavel: Escape fecha,
+  // o foco entra no primeiro item e o Tab circula dentro dela.
+  useEffect(() => {
+    if (!moreOpen) return
+
+    const sheet = moreSheetRef.current
+    if (!sheet) return
+
+    const focusables = () =>
+      Array.from(
+        sheet.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])')
+      )
+
+    const firstFocusable = focusables()[0]
+    if (firstFocusable) firstFocusable.focus()
+    else sheet.focus()
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeMore()
+        return
+      }
+      if (event.key !== 'Tab') return
+
+      const items = focusables()
+      if (items.length === 0) return
+
+      const first = items[0]
+      const last = items[items.length - 1]
+      const active = document.activeElement
+
+      if (event.shiftKey && (active === first || !sheet.contains(active))) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && (active === last || !sheet.contains(active))) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [moreOpen, closeMore])
+
   return (
     <div className="min-h-screen bg-transparent text-slate-900">
       <div className="flex">
@@ -507,8 +561,11 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
                 {moreSections.length > 0 ? (
                   <button
                     type="button"
+                    ref={moreButtonRef}
                     onClick={() => setMoreOpen(true)}
                     aria-expanded={moreOpen}
+                    aria-haspopup="dialog"
+                    aria-label={t('More navigation', 'Mais navegacao')}
                     className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1 py-2 text-[10px] font-semibold transition ${
                       moreIsActive ? 'text-teal-700' : 'text-slate-500'
                     }`}
@@ -523,12 +580,19 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
                 <div className="fixed inset-0 z-40 md:hidden">
                   <button
                     type="button"
-                    aria-label={t('Close', 'Fechar')}
-                    onClick={() => setMoreOpen(false)}
+                    aria-label={t('Close the more-navigation sheet', 'Fechar a folha de navegacao')}
+                    onClick={closeMore}
                     className="absolute inset-0 h-full w-full bg-slate-900/40"
                   />
-                  <div className="absolute inset-x-0 bottom-0 max-h-[75vh] overflow-y-auto rounded-t-3xl border-t border-white/80 bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-18px_35px_-25px_rgba(15,23,42,0.55)]">
-                    <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-200" />
+                  <div
+                    ref={moreSheetRef}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={t('More navigation', 'Mais navegacao')}
+                    tabIndex={-1}
+                    className="absolute inset-x-0 bottom-0 max-h-[75vh] overflow-y-auto rounded-t-3xl border-t border-white/80 bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-18px_35px_-25px_rgba(15,23,42,0.55)]"
+                  >
+                    <div aria-hidden="true" className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-200" />
                     <div className="space-y-4">
                       {moreSections.map((section) => (
                         <div key={`more-${section.title}`} className="space-y-1">
@@ -540,9 +604,9 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
                               key={`more-${item.to}`}
                               to={item.to}
                               end={item.end}
-                              onClick={() => setMoreOpen(false)}
+                              onClick={closeMore}
                               className={({ isActive }) =>
-                                `flex items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium transition ${
+                                `flex min-h-[44px] items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium transition ${
                                   isActive ? 'bg-teal-700 text-white' : 'text-slate-600 hover:bg-slate-100'
                                 }`
                               }

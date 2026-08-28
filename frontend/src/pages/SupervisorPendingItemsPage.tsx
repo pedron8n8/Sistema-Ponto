@@ -550,8 +550,12 @@ const SupervisorPendingItemsPage = () => {
    * lugares (filtros no desktop, topo da lista no celular). O contador vem de
    * `periodTotal` (pagination.total do servidor), nunca de `entries.length`, e o
    * escopo continua sendo resolvido pelo servidor via `handleGlobalApprove/Deny`.
+   *
+   * `idPrefix` existe porque a barra e renderizada duas vezes (desktop e celular)
+   * e as duas ficam no DOM ao mesmo tempo: o id do campo tem que ser unico para o
+   * <label htmlFor> apontar para o campo certo.
    */
-  const renderPeriodBulkBar = (className: string) =>
+  const renderPeriodBulkBar = (className: string, idPrefix: string) =>
     filters.status === 'PENDING' && periodTotal > 0 ? (
       <div className={className}>
         <span className="text-xs font-medium text-slate-700">
@@ -569,7 +573,14 @@ const SupervisorPendingItemsPage = () => {
           </span>
         ) : (
           <>
+            <label htmlFor={`${idPrefix}-period-bulk-comment`} className="sr-only">
+              {t(
+                'Comment for the whole-period action (required to deny)',
+                'Comentario da acao do periodo inteiro (obrigatorio para negar)'
+              )}
+            </label>
             <input
+              id={`${idPrefix}-period-bulk-comment`}
               value={bulkCommentByUser[GLOBAL_BULK_KEY] || ''}
               onChange={(event) =>
                 setBulkCommentByUser((prev) => ({ ...prev, [GLOBAL_BULK_KEY]: event.target.value }))
@@ -622,6 +633,7 @@ const SupervisorPendingItemsPage = () => {
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <select
+            aria-label={t('Filter by status', 'Filtrar por situacao')}
             value={filters.status}
             onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))}
             className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
@@ -634,6 +646,7 @@ const SupervisorPendingItemsPage = () => {
 
           {groups.length > 0 ? (
             <select
+              aria-label={t('Filter by group', 'Filtrar por grupo')}
               value={filters.groupId}
               // Troca de grupo zera o colaborador: escolhe-se o grupo e depois a pessoa dentro dele.
               onChange={(event) => setFilters((prev) => ({ ...prev, groupId: event.target.value, userId: '' }))}
@@ -649,6 +662,7 @@ const SupervisorPendingItemsPage = () => {
           ) : null}
 
           <select
+            aria-label={t('Filter by employee', 'Filtrar por colaborador')}
             value={filters.userId}
             onChange={(event) => setFilters((prev) => ({ ...prev, userId: event.target.value }))}
             className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
@@ -662,6 +676,7 @@ const SupervisorPendingItemsPage = () => {
           </select>
 
           <select
+            aria-label={t('Period type', 'Tipo de periodo')}
             value={periodType}
             onChange={(event) => setPeriodType(event.target.value as PeriodType)}
             className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
@@ -674,6 +689,7 @@ const SupervisorPendingItemsPage = () => {
 
           <input
             type="date"
+            aria-label={t('Reference date', 'Data de referencia')}
             value={anchorDate}
             onChange={(event) => event.target.value && setAnchorDate(event.target.value)}
             className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
@@ -704,7 +720,7 @@ const SupervisorPendingItemsPage = () => {
 
         {/* Desktop: barra do periodo dentro dos filtros, como sempre. No celular ela
             reaparece fixada no topo da lista de cartoes (mesma funcao, mesmos handlers). */}
-        {renderPeriodBulkBar('mt-3 hidden flex-wrap items-center gap-2 rounded-2xl bg-slate-50 px-3 py-3 md:flex')}
+        {renderPeriodBulkBar('mt-3 hidden flex-wrap items-center gap-2 rounded-2xl bg-slate-50 px-3 py-3 md:flex', 'desktop')}
 
         {loading ? <p className="mt-3 text-sm text-slate-500">{t('Loading pending items...', 'Carregando pendencias...')}</p> : null}
         {error ? <p className="mt-3 text-xs text-rose-600">{error}</p> : null}
@@ -719,7 +735,8 @@ const SupervisorPendingItemsPage = () => {
             periodTotal), o teto de MAX_PERIOD_BULK e o gate de 5 caracteres para negar
             sao literalmente o mesmo codigo — nao ha um segundo caminho para divergir. */}
         {renderPeriodBulkBar(
-          'sticky top-2 z-20 mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 shadow-sm md:hidden'
+          'sticky top-2 z-20 mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 shadow-sm md:hidden',
+          'card'
         )}
 
         {/* Celular: um cartao por registro. Todo botao chama os MESMOS handlers da
@@ -750,20 +767,27 @@ const SupervisorPendingItemsPage = () => {
                       ) : null}
                     </div>
 
+                    <label
+                      htmlFor={`card-bulk-comment-${userKey}`}
+                      className="mt-3 block text-[11px] font-semibold text-slate-700"
+                    >
+                      {t('Comment (required to deny all)', 'Comentario (obrigatorio para negar tudo)')}
+                    </label>
                     <input
+                      id={`card-bulk-comment-${userKey}`}
                       value={bulkCommentByUser[userKey] || ''}
                       onChange={(event) =>
                         setBulkCommentByUser((prev) => ({ ...prev, [userKey]: event.target.value }))
                       }
                       placeholder={t('Comment (required to deny all)', 'Comentario (obrigatorio para negar tudo)')}
-                      className="mt-2 w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
+                      className="mt-1 min-h-[44px] w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm"
                     />
 
                     <div className="mt-2 grid grid-cols-2 gap-2">
                       <button
                         onClick={() => handleBulkApprove(group)}
                         disabled={group.approvableIds.length === 0 || Boolean(bulkLoadingByUser[userKey])}
-                        className="rounded-full bg-teal-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                        className="min-h-[44px] rounded-full bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                       >
                         {t(`Approve all (${group.approvableIds.length})`, `Aprovar tudo (${group.approvableIds.length})`)}
                       </button>
@@ -774,7 +798,7 @@ const SupervisorPendingItemsPage = () => {
                           Boolean(bulkLoadingByUser[userKey]) ||
                           (bulkCommentByUser[userKey] || '').trim().length < 5
                         }
-                        className="rounded-full border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
+                        className="min-h-[44px] rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 disabled:opacity-50"
                       >
                         {t(`Deny all (${group.approvableIds.length})`, `Negar tudo (${group.approvableIds.length})`)}
                       </button>
@@ -784,11 +808,16 @@ const SupervisorPendingItemsPage = () => {
                   {group.sortedDays.flatMap(([dayKey, day]) =>
                     day.entries.map((entry) => (
                       <article key={entry.id} className={entryRowClass(entry)}>
+                        {/* O nome do colaborador nao se repete aqui: o cabecalho do grupo,
+                            sempre renderizado acima destes cartoes, ja o mostra. O total do
+                            dia acompanha a data, como na listagem de desktop. */}
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-900">{entry.user.name}</p>
                             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                               {formatDayLabel(dayKey)}
+                            </p>
+                            <p className="text-xs text-slate-600">
+                              {t('Day total:', 'Total do dia:')} {fmtHM(day.totalMinutes)}
                             </p>
                           </div>
                           <span className="shrink-0 rounded-full bg-white/80 px-2 py-1 text-[11px] font-semibold text-slate-600">
@@ -849,7 +878,17 @@ const SupervisorPendingItemsPage = () => {
                               </p>
                             ) : null}
 
+                            <label
+                              htmlFor={`card-entry-comment-${entry.id}`}
+                              className="mt-3 block text-[11px] font-semibold text-slate-700"
+                            >
+                              {t(
+                                'Comment (required to reject/request edit)',
+                                'Comentario (obrigatorio para rejeitar/solicitar ajuste)'
+                              )}
+                            </label>
                             <textarea
+                              id={`card-entry-comment-${entry.id}`}
                               value={commentByEntry[entry.id] || ''}
                               onChange={(event) =>
                                 setCommentByEntry((prev) => ({ ...prev, [entry.id]: event.target.value }))
@@ -858,7 +897,7 @@ const SupervisorPendingItemsPage = () => {
                                 'Comment (required to reject/request edit)',
                                 'Comentario (obrigatorio para rejeitar/solicitar ajuste)'
                               )}
-                              className="mt-3 h-20 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs"
+                              className="mt-1 h-20 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
                             />
 
                             {/* HE primeiro: enquanto a HE estiver PENDING, aprovar/rejeitar
@@ -869,14 +908,14 @@ const SupervisorPendingItemsPage = () => {
                                   <button
                                     onClick={() => handleOvertimeReview(entry.id, 'APPROVE')}
                                     disabled={Boolean(actionLoadingByEntry[entry.id])}
-                                    className="rounded-full bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                                    className="min-h-[44px] rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                                   >
                                     {t('Approve OT', 'Aprovar HE')}
                                   </button>
                                   <button
                                     onClick={() => handleOvertimeReview(entry.id, 'REJECT')}
                                     disabled={Boolean(actionLoadingByEntry[entry.id])}
-                                    className="rounded-full border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
+                                    className="min-h-[44px] rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 disabled:opacity-50"
                                   >
                                     {t('Deny OT', 'Negar HE')}
                                   </button>
@@ -896,7 +935,7 @@ const SupervisorPendingItemsPage = () => {
                                 disabled={
                                   Boolean(actionLoadingByEntry[entry.id]) || entry.overtimeStatus === 'PENDING'
                                 }
-                                className="rounded-full bg-teal-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                                className="min-h-[44px] rounded-full bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                               >
                                 {t('Approve', 'Aprovar')}
                               </button>
@@ -905,14 +944,14 @@ const SupervisorPendingItemsPage = () => {
                                 disabled={
                                   Boolean(actionLoadingByEntry[entry.id]) || entry.overtimeStatus === 'PENDING'
                                 }
-                                className="rounded-full border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
+                                className="min-h-[44px] rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 disabled:opacity-50"
                               >
                                 {t('Reject', 'Rejeitar')}
                               </button>
                               <button
                                 onClick={() => handleReview(entry.id, 'REQUEST_EDIT')}
                                 disabled={Boolean(actionLoadingByEntry[entry.id])}
-                                className="col-span-2 rounded-full border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-700 disabled:opacity-50"
+                                className="col-span-2 min-h-[44px] rounded-full border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-700 disabled:opacity-50"
                               >
                                 {t('Request edit', 'Solicitar ajuste')}
                               </button>
@@ -960,7 +999,12 @@ const SupervisorPendingItemsPage = () => {
                           {t('Pending OT:', 'HE pendente:')} {fmtHM(group.pendingOtMinutes)}
                         </span>
                       ) : null}
+                      {/* Rotulo apenas para leitor de tela: o layout de desktop nao muda. */}
+                      <label htmlFor={`desktop-bulk-comment-${userKey}`} className="sr-only">
+                        {t('Comment (required to deny all)', 'Comentario (obrigatorio para negar tudo)')}
+                      </label>
                       <input
+                        id={`desktop-bulk-comment-${userKey}`}
                         value={bulkCommentByUser[userKey] || ''}
                         onChange={(event) =>
                           setBulkCommentByUser((prev) => ({ ...prev, [userKey]: event.target.value }))
@@ -1044,7 +1088,15 @@ const SupervisorPendingItemsPage = () => {
                                     </p>
                                   ) : null}
 
+                                  {/* Rotulo apenas para leitor de tela: o layout de desktop nao muda. */}
+                                  <label htmlFor={`desktop-entry-comment-${entry.id}`} className="sr-only">
+                                    {t(
+                                      'Comment (required to reject/request edit)',
+                                      'Comentario (obrigatorio para rejeitar/solicitar ajuste)'
+                                    )}
+                                  </label>
                                   <textarea
+                                    id={`desktop-entry-comment-${entry.id}`}
                                     value={commentByEntry[entry.id] || ''}
                                     onChange={(event) =>
                                       setCommentByEntry((prev) => ({
