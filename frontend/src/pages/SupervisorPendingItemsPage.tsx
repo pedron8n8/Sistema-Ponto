@@ -586,12 +586,12 @@ const SupervisorPendingItemsPage = () => {
                 setBulkCommentByUser((prev) => ({ ...prev, [GLOBAL_BULK_KEY]: event.target.value }))
               }
               placeholder={t('Comment (required to deny)', 'Comentario (obrigatorio para negar)')}
-              className="min-w-[16rem] flex-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs"
+              className="min-h-[44px] min-w-[16rem] flex-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs md:min-h-0"
             />
             <button
               onClick={() => handleGlobalApprove()}
               disabled={bulkLoadingByUser[GLOBAL_BULK_KEY]}
-              className="rounded-full bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+              className="min-h-[44px] rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50 md:min-h-0 md:px-3"
             >
               {t(`Approve everyone (${periodTotal})`, `Aprovar todos (${periodTotal})`)}
             </button>
@@ -601,7 +601,7 @@ const SupervisorPendingItemsPage = () => {
                 bulkLoadingByUser[GLOBAL_BULK_KEY] ||
                 (bulkCommentByUser[GLOBAL_BULK_KEY] || '').trim().length < 5
               }
-              className="rounded-full bg-rose-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+              className="min-h-[44px] rounded-full bg-rose-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50 md:min-h-0 md:px-3"
             >
               {t(`Deny everyone (${periodTotal})`, `Negar todos (${periodTotal})`)}
             </button>
@@ -1116,7 +1116,7 @@ const SupervisorPendingItemsPage = () => {
                                       <button
                                         onClick={() => handleOvertimeReview(entry.id, 'APPROVE')}
                                         disabled={Boolean(actionLoadingByEntry[entry.id])}
-                                        className="rounded-full bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                                        className="min-h-[44px] rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50 md:min-h-0 md:px-3"
                                       >
                                         {t('Approve OT', 'Aprovar HE')}
                                       </button>
