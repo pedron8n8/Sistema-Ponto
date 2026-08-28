@@ -22,6 +22,12 @@ backend/scripts/pentest-phase2.js
 backend/scripts/create-demo-seed.js
 backend/demo-users.json
 
+# Build nativo do Capacitor (os fontes de frontend/android e frontend/ios VAO pro git)
+frontend/android/app/build
+frontend/android/.gradle
+frontend/ios/App/Pods
+frontend/ios/App/build
+
 # Captura de brainstorms / notas locais
 brainstorms/
 grill-me skill.md
