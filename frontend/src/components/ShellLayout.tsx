@@ -154,6 +154,7 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
       items: [
         { to: '/app/colaborador', label: t('Time clock', 'Ponto'), icon: <TimeClockIcon /> },
         { to: '/app/colaborador/historico', label: t('History', 'Historico'), icon: <HistoryIcon /> },
+        { to: '/app/colaborador/saldo', label: t('Balance', 'Saldo'), icon: <ReportsIcon /> }, // Usando o icone de relatorios
         ...(isGrowthOrBetter
           ? [
               {
@@ -304,8 +305,8 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
   const memberTabSlots: TabSlot[] = [
     [{ to: '/app/colaborador', label: t('Clock', 'Ponto') }],
     [{ to: '/app/colaborador/historico', label: t('History', 'Historico') }],
-    // Saldo (banco de horas do colaborador) ainda nao tem item de menu; enquanto
-    // nao tiver, a vaga cai para Relatorios.
+    // Saldo resolve contra o item de menu do banco de horas; Relatorios fica
+    // como fallback caso esse item saia de navSections.
     [
       { to: '/app/colaborador/saldo', label: t('Balance', 'Saldo') },
       { to: '/app/relatorios', label: t('Reports', 'Relatorios') },
