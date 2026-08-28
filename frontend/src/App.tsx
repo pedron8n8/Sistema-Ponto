@@ -17,6 +17,7 @@ import PlanSelectionPage from './pages/PlanSelectionPage'
 import Overview from './pages/Overview'
 import ColaboradorDashboard from './pages/ColaboradorDashboard'
 import ColaboradorHistoryPage from './pages/ColaboradorHistoryPage'
+import ColaboradorBalancePage from './pages/ColaboradorBalancePage'
 import SupervisorDashboard from './pages/SupervisorDashboard'
 import AdminUsersPage from './pages/AdminUsersPage'
 import AdminBankHoursPage from './pages/AdminBankHoursPage'
@@ -150,6 +151,16 @@ const App = () => {
                     <ProtectedRoute>
                       <ShellLayout>
                         <ColaboradorHistoryPage />
+                      </ShellLayout>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/colaborador/saldo"
+                  element={
+                    <ProtectedRoute>
+                      <ShellLayout>
+                        <ColaboradorBalancePage />
                       </ShellLayout>
                     </ProtectedRoute>
                   }

@@ -3,7 +3,18 @@ import { apiFetch } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTimeZone } from '../context/TimezoneContext'
 import { useTranslation } from 'react-i18next'
-import { formatDateWithTimeZone, formatTimeWithTimeZone } from '../lib/timezone'
+import { formatDateTimeWithTimeZone, formatDateWithTimeZone, formatTimeWithTimeZone } from '../lib/timezone'
+
+const CORRECTION_ACTION = 'MEMBER_CORRECTION_REQUESTED'
+const REASON_MIN_LENGTH = 5
+const REASON_MAX_LENGTH = 500
+
+type ApprovalLog = {
+  id: string
+  action: string
+  comment?: string | null
+  timestamp: string
+}
 
 type TimeEntry = {
   id: string
@@ -13,6 +24,7 @@ type TimeEntry = {
   workedMinutes?: number
   overtimeMinutes50?: number
   overtimeMinutes100?: number
+  logs?: ApprovalLog[]
 }
 
 type CompleteProfile = {
@@ -57,11 +69,15 @@ const ColaboradorHistoryPage = () => {
   const { t: i18nT, i18n } = useTranslation()
   const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
   const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
+  const locale = isPt ? 'pt-BR' : 'en-US'
+
+  const correctionRequestsOf = (entry: TimeEntry) =>
+    (entry.logs || []).filter((log) => log.action === CORRECTION_ACTION)
 
   const formatCurrency = (value: number) =>
-    new Intl.NumberFormat(isPt ? 'pt-BR' : 'en-US', {
+    new Intl.NumberFormat(locale, {
       style: 'currency',
-      currency: 'BRL',
+      currency: 'USD',
       minimumFractionDigits: 2,
     }).format(value)
 
@@ -85,6 +101,82 @@ const ColaboradorHistoryPage = () => {
   const [hourlyRate, setHourlyRate] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  const [correctionEntryId, setCorrectionEntryId] = useState<string | null>(null)
+  const [correctionReason, setCorrectionReason] = useState('')
+  const [correctionError, setCorrectionError] = useState('')
+  const [correctionSubmitting, setCorrectionSubmitting] = useState(false)
+
+  const trimmedReason = correctionReason.trim()
+  const reasonTooShort = trimmedReason.length < REASON_MIN_LENGTH
+  const reasonTooLong = trimmedReason.length > REASON_MAX_LENGTH
+  const reasonIsValid = !reasonTooShort && !reasonTooLong
+
+  const openCorrectionForm = (entryId: string) => {
+    setCorrectionEntryId(entryId)
+    setCorrectionReason('')
+    setCorrectionError('')
+  }
+
+  const closeCorrectionForm = () => {
+    setCorrectionEntryId(null)
+    setCorrectionReason('')
+    setCorrectionError('')
+  }
+
+  const submitCorrection = async (entryId: string) => {
+    if (!token || correctionSubmitting) return
+
+    // Mesma regra do backend (5 a 500 caracteres): valida aqui para o
+    // colaborador receber o aviso na hora, sem gastar um 400 de ida e volta.
+    if (!reasonIsValid) {
+      setCorrectionError(
+        t(
+          `Describe the adjustment in ${REASON_MIN_LENGTH} to ${REASON_MAX_LENGTH} characters.`,
+          `Descreva o ajuste em ${REASON_MIN_LENGTH} a ${REASON_MAX_LENGTH} caracteres.`
+        )
+      )
+      return
+    }
+
+    setCorrectionSubmitting(true)
+    setCorrectionError('')
+
+    try {
+      await apiFetch<{ message: string; log?: ApprovalLog }>(`/time/${entryId}/request-correction`, {
+        token,
+        method: 'POST',
+        body: { reason: trimmedReason },
+      })
+
+      closeCorrectionForm()
+      // Recarrega em vez de inserir o log otimisticamente: GET /time/me ja devolve
+      // os `logs` do registro, e um reenvio identico volta como 202 sem `log`.
+      await loadData()
+    } catch (err) {
+      const status = (err as { status?: number })?.status
+
+      if (status === 409) {
+        // O supervisor aprovou o registro enquanto o formulario estava aberto:
+        // recarrega para o status na tela refletir o que o servidor ja decidiu.
+        await loadData().catch(() => undefined)
+        setCorrectionError(
+          t(
+            'This entry was approved in the meantime. Talk to your supervisor to change it.',
+            'Este registro foi aprovado nesse meio-tempo. Fale com seu supervisor para alterá-lo.'
+          )
+        )
+      } else {
+        setCorrectionError(
+          err instanceof Error
+            ? err.message
+            : t('Failed to send the adjustment request', 'Erro ao enviar o pedido de ajuste')
+        )
+      }
+    } finally {
+      setCorrectionSubmitting(false)
+    }
+  }
 
   const loadData = async () => {
     if (!token) return
@@ -233,7 +325,7 @@ const ColaboradorHistoryPage = () => {
                 <div className="mt-3 space-y-2">
                   {day.entries.map((entry) => (
                     <div key={entry.id} className="rounded-xl border border-slate-100 bg-white px-3 py-2 text-xs text-slate-600">
-                      <div className="flex items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         <p>
                           {entry.clockIn ? formatTimeWithTimeZone(entry.clockIn, viewTimeZone) : '--'} -{' '}
                           {entry.clockOut ? formatTimeWithTimeZone(entry.clockOut, viewTimeZone) : t('Open', 'Em aberto')}
@@ -245,6 +337,91 @@ const ColaboradorHistoryPage = () => {
                       <p className="mt-1 text-[11px] text-slate-500">
                         {t('Earnings in entry:', 'Ganho no registro:')} {formatCurrency(calculateGain(entry, hourlyRate))}
                       </p>
+
+                      {correctionRequestsOf(entry).map((log) => (
+                        <div
+                          key={log.id}
+                          className="mt-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-[11px] text-amber-900"
+                        >
+                          <p className="font-semibold uppercase tracking-[0.15em]">
+                            {t('Adjustment requested', 'Ajuste solicitado')}
+                          </p>
+                          <p className="mt-1">{log.comment || t('No description.', 'Sem descrição.')}</p>
+                          <p className="mt-1 text-[10px] text-amber-700">
+                            {formatDateTimeWithTimeZone(log.timestamp, viewTimeZone, locale)}
+                          </p>
+                        </div>
+                      ))}
+
+                      {entry.status !== 'APPROVED' && correctionEntryId !== entry.id ? (
+                        <div className="mt-2">
+                          <button
+                            type="button"
+                            onClick={() => openCorrectionForm(entry.id)}
+                            className="rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-700"
+                          >
+                            {t('Request adjustment', 'Pedir ajuste')}
+                          </button>
+                        </div>
+                      ) : null}
+
+                      {correctionEntryId === entry.id ? (
+                        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <label
+                            htmlFor={`correction-${entry.id}`}
+                            className="text-[11px] font-semibold text-slate-700"
+                          >
+                            {t('What needs to be fixed?', 'O que precisa ser corrigido?')}
+                          </label>
+                          <textarea
+                            id={`correction-${entry.id}`}
+                            value={correctionReason}
+                            onChange={(event) => {
+                              setCorrectionReason(event.target.value)
+                              setCorrectionError('')
+                            }}
+                            maxLength={REASON_MAX_LENGTH}
+                            rows={3}
+                            placeholder={t(
+                              'e.g. I clocked out at 6pm but forgot to register it.',
+                              'ex: saí às 18h mas esqueci de registrar.'
+                            )}
+                            className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
+                          />
+                          <p className="mt-1 text-[10px] text-slate-500">
+                            {trimmedReason.length}/{REASON_MAX_LENGTH}{' '}
+                            {reasonTooShort
+                              ? t(
+                                  `(at least ${REASON_MIN_LENGTH} characters)`,
+                                  `(mínimo de ${REASON_MIN_LENGTH} caracteres)`
+                                )
+                              : ''}
+                          </p>
+
+                          {correctionError ? (
+                            <p className="mt-2 text-[11px] text-rose-600">{correctionError}</p>
+                          ) : null}
+
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => submitCorrection(entry.id).catch(() => undefined)}
+                              disabled={!reasonIsValid || correctionSubmitting}
+                              className="rounded-full bg-slate-900 px-4 py-2 text-[11px] font-medium text-white disabled:opacity-50"
+                            >
+                              {correctionSubmitting ? t('Sending...', 'Enviando...') : t('Send request', 'Enviar pedido')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={closeCorrectionForm}
+                              disabled={correctionSubmitting}
+                              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-[11px] text-slate-700 disabled:opacity-50"
+                            >
+                              {t('Cancel', 'Cancelar')}
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>
