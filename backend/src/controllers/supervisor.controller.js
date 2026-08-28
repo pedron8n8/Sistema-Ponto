@@ -1314,7 +1314,11 @@ const approveEntriesBulk = async (req, res) => {
     res.json({
       message: `${validIds.length} registro(s) aprovado(s) com sucesso`,
       approvedCount: validIds.length,
-      overtimeApprovedCount: overtimeIds.length,
+      // O que o UPDATE escreveu, não a leitura anterior. Com o predicado
+      // `overtimeStatus: 'PENDING'`, quem perde a corrida atualiza menos linhas
+      // (ou nenhuma) — devolver `overtimeIds.length` diria "12 horas extras
+      // aprovadas" para o supervisor cujo lote aprovou 3.
+      overtimeApprovedCount: approvedOvertimeEntries.length,
       skipped,
     });
   } catch (error) {
@@ -1651,9 +1655,21 @@ const approveOvertime = async (req, res) => {
     const entry = await loadEntryForOvertimeDecision(req, res);
     if (!entry) return;
 
+    // `overtimeStatus: 'PENDING'` no WHERE — mesmo predicado que o approve em
+    // lote usa. A checagem de loadEntryForOvertimeDecision é uma LEITURA: dois
+    // aprovadores simultâneos (duplo toque no botão, retry de request que deu
+    // timeout, dois supervisores na mesma fila) passam os dois por ela. Sem
+    // predicado no UPDATE não há contra quem perder: os dois gravam APPROVED,
+    // os dois chamam releaseDeferredBankHours, e accrueBankHours — que relê o
+    // registro e vê 'APPROVED' nas duas vezes — cria DUAS linhas ACCRUAL e faz
+    // DOIS increments no saldo. 240min trabalhados viram 480min creditados, e
+    // reverseEntryBankHours reverte cada linha só uma vez.
+    // Em READ COMMITTED o segundo UPDATE espera o commit do primeiro, reavalia
+    // a linha já APPROVED e não encontra nada: Prisma levanta P2025 e a
+    // transação inteira (incluindo o ApprovalLog) volta atrás.
     const [updatedEntry, approvalLog] = await prisma.$transaction([
       prisma.timeEntry.update({
-        where: { id },
+        where: { id, overtimeStatus: 'PENDING' },
         data: { overtimeStatus: 'APPROVED' },
         include: {
           user: {
@@ -1686,6 +1702,20 @@ const approveOvertime = async (req, res) => {
       ...(bankHours && { bankHours }),
     });
   } catch (error) {
+    // P2025 = o UPDATE não achou linha PENDING: alguém aprovou primeiro. Não é
+    // erro do servidor, é o resultado correto da corrida — o perdedor NÃO
+    // credita banco de horas. Mesmo 409/código que loadEntryForOvertimeDecision
+    // devolve quando a leitura já pega o registro fora de PENDING, para o
+    // cliente tratar os dois casos igual.
+    if (error?.code === 'P2025') {
+      console.warn(`⚠️ Aprovação de HE concorrente perdida no registro ${req.params.id}`);
+      return res.status(409).json({
+        error: 'Conflict',
+        code: 'OVERTIME_NOT_PENDING',
+        message: 'Este registro não possui horas extras aguardando decisão.',
+      });
+    }
+
     console.error('❌ Erro ao aprovar horas extras:', error);
     res.status(500).json({
       error: 'Internal Server Error',

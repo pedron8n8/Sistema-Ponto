@@ -165,6 +165,95 @@ describe('soltura do banco de horas represado', () => {
       expect(mockRes.status).toHaveBeenCalledWith(409);
       expect(accrueBankHours).not.toHaveBeenCalled();
     });
+
+    // A checagem de overtimeStatus em loadEntryForOvertimeDecision é uma
+    // LEITURA. O predicado no WHERE do UPDATE é o que o banco avalia, e é ele
+    // que decide quem soltou o crédito represado.
+    it('scopes the approval update with overtimeStatus PENDING', async () => {
+      mockPrisma.timeEntry.findUnique.mockResolvedValue(deferredEntry());
+
+      await approveOvertime(mockReq, mockRes);
+
+      expect(mockPrisma.timeEntry.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'entry-offline', overtimeStatus: 'PENDING' },
+          data: { overtimeStatus: 'APPROVED' },
+        })
+      );
+    });
+
+    // A CORRIDA. Duplo toque no botão "aprovar HE", retry de request que deu
+    // timeout, dois supervisores na mesma fila: os dois passam pela leitura
+    // vendo PENDING. Sem predicado no UPDATE os dois gravam APPROVED, os dois
+    // chamam releaseDeferredBankHours e accrueBankHours — que relê o registro e
+    // vê 'APPROVED' nas duas vezes — cria DUAS linhas ACCRUAL e faz DOIS
+    // increments: 240min trabalhados viram 480min de saldo, e
+    // reverseEntryBankHours reverte cada linha só uma vez.
+    it('credits exactly one ACCRUAL when two approvals race on the same entry', async () => {
+      // Estado da linha no banco. É contra ele que o predicado do UPDATE é
+      // avaliado, como o Postgres faria em READ COMMITTED: o segundo UPDATE
+      // reavalia a linha já APPROVED e não encontra nada.
+      const row = { overtimeStatus: 'PENDING' };
+
+      // Os dois lados leem PENDING: é o que torna a corrida possível.
+      mockPrisma.timeEntry.findUnique.mockResolvedValue(deferredEntry());
+      mockPrisma.timeEntry.update.mockImplementation(async ({ where, data }) => {
+        // Só o update da aprovação traz o predicado; o carimbo de
+        // bankHoursAccruedMinutes vem depois, com where só de id.
+        if (where.overtimeStatus) {
+          if (row.overtimeStatus !== where.overtimeStatus) {
+            const notFound = new Error(
+              'An operation failed because it depends on one or more records that were required but not found.'
+            );
+            notFound.code = 'P2025';
+            throw notFound;
+          }
+          row.overtimeStatus = data.overtimeStatus;
+        }
+        return { id: 'entry-offline', user: member };
+      });
+
+      const loserRes = { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() };
+      const loserReq = { ...mockReq, params: { id: 'entry-offline' } };
+
+      await Promise.all([approveOvertime(mockReq, mockRes), approveOvertime(loserReq, loserRes)]);
+
+      // Uma linha ACCRUAL e um increment no saldo — não dois.
+      expect(accrueBankHours).toHaveBeenCalledTimes(1);
+      expect(row.overtimeStatus).toBe('APPROVED');
+
+      // Exatamente um lado aprovou; o outro levou 409, não 500.
+      const statuses = [mockRes, loserRes].map((r) => r.status.mock.calls.map(([code]) => code));
+      const conflicts = statuses.filter((calls) => calls.includes(409));
+      expect(conflicts).toHaveLength(1);
+      expect(statuses.flat()).not.toContain(500);
+
+      const winner = mockRes.status.mock.calls.length ? loserRes : mockRes;
+      expect(winner.json).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Horas extras aprovadas com sucesso' })
+      );
+    });
+
+    it('answers the loser of the race with 409 OVERTIME_NOT_PENDING, not 500', async () => {
+      // Mesmo código que loadEntryForOvertimeDecision devolve quando a leitura
+      // já pega o registro fora de PENDING: o cliente trata os dois igual.
+      mockPrisma.timeEntry.findUnique.mockResolvedValue(deferredEntry());
+      const notFound = new Error('Record to update not found.');
+      notFound.code = 'P2025';
+      mockPrisma.timeEntry.update.mockRejectedValue(notFound);
+
+      await approveOvertime(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(409);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Conflict',
+          code: 'OVERTIME_NOT_PENDING',
+          message: 'Este registro não possui horas extras aguardando decisão.',
+        })
+      );
+      expect(accrueBankHours).not.toHaveBeenCalled();
+    });
   });
 
   describe('approveEntriesBulk (lote)', () => {
@@ -208,6 +297,30 @@ describe('soltura do banco de horas represado', () => {
       await approveEntriesBulk(mockReq, mockRes);
 
       expect(accrueBankHours).not.toHaveBeenCalled();
+    });
+
+    // O número que o supervisor lê na tela tem que ser o que o banco escreveu.
+    // `overtimeIds.length` é a contagem da LEITURA anterior: quem perde a
+    // corrida via "2 horas extras aprovadas" tendo aprovado nenhuma.
+    it('reports the overtimes actually updated, not the pre-read count', async () => {
+      mockPrisma.timeEntry.updateManyAndReturn.mockResolvedValue([deferredEntry()]);
+
+      await approveEntriesBulk(mockReq, mockRes);
+
+      // A leitura anterior viu 2 registros com HE pendente; o UPDATE escreveu 1.
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({ overtimeApprovedCount: 1 })
+      );
+    });
+
+    it('reports zero overtimes approved when a concurrent approval took the whole batch', async () => {
+      mockPrisma.timeEntry.updateManyAndReturn.mockResolvedValue([]);
+
+      await approveEntriesBulk(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({ overtimeApprovedCount: 0 })
+      );
     });
 
     it('does not take the release list from the pre-transaction read', async () => {

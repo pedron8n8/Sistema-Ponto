@@ -396,9 +396,19 @@ describe('Supervisor Controller', () => {
       // O approve em lote passou a usar updateManyAndReturn na HE: a lista de
       // soltura do banco de horas sai do que o UPDATE escreveu, não da leitura
       // feita antes da transação.
-      mockPrisma.timeEntry.updateManyAndReturn.mockImplementation(
-        record('timeEntry', 'updateManyAndReturn', [])
-      );
+      // Devolve as linhas que o UPDATE de fato escreveu (as que ainda estavam
+      // com HE PENDING), como o banco devolveria. `overtimeApprovedCount` sai
+      // daqui: reportar `overtimeIds.length` diria "N horas extras aprovadas"
+      // para o supervisor que perdeu a corrida e não escreveu nenhuma.
+      mockPrisma.timeEntry.updateManyAndReturn.mockImplementation((args) => {
+        ops.push({ __model: 'timeEntry', __method: 'updateManyAndReturn', ...args });
+        const ids = args.where?.id?.in || [];
+        return Promise.resolve(
+          bulkEntries.filter(
+            (entry) => ids.includes(entry.id) && entry.overtimeStatus === args.where?.overtimeStatus
+          )
+        );
+      });
       mockPrisma.approvalLog.createMany.mockImplementation(record('approvalLog', 'createMany', { count: 0 }));
       return ops;
     };
