@@ -1,6 +1,7 @@
 // Testes para time.controller
 
 const mockPrisma = require('../mocks/prisma.mock');
+const { stubTimeEntryFindFirst } = require('../mocks/timeEntryFindFirst');
 const { captureRequestMetadata } = require('../../src/utils/requestMetadata');
 const { evaluateGeofence } = require('../../src/utils/geofence');
 
@@ -232,7 +233,9 @@ describe('Time Controller', () => {
         },
       };
 
-      mockPrisma.timeEntry.findFirst.mockResolvedValue(openEntry);
+      // Rotear pela cláusula where (e não devolver o mesmo registro para toda
+      // consulta): o clock-out também roda a checagem de sobreposição agora.
+      stubTimeEntryFindFirst(mockPrisma, { open: openEntry });
       mockPrisma.timeEntry.update.mockResolvedValue(closedEntry);
       mockReq.body = {
         notes: 'Finished work',
@@ -253,7 +256,7 @@ describe('Time Controller', () => {
       const clockInAt = new Date(Date.now() - 10 * 60 * 60 * 1000);
       const openEntry = { id: 'entry-123', userId: 'user-123', clockIn: clockInAt, clockOut: null };
 
-      mockPrisma.timeEntry.findFirst.mockResolvedValue(openEntry);
+      stubTimeEntryFindFirst(mockPrisma, { open: openEntry });
       mockPrisma.timeEntry.findMany.mockResolvedValue([]);
       mockPrisma.timeEntry.update.mockResolvedValue({ ...openEntry, clockOut: new Date() });
       // 10h trabalhadas => 120min de HE => entra no caminho de banco de horas.
@@ -290,7 +293,7 @@ describe('Time Controller', () => {
         clockOut: null,
       };
 
-      mockPrisma.timeEntry.findFirst.mockResolvedValue(openEntry);
+      stubTimeEntryFindFirst(mockPrisma, { open: openEntry });
       mockPrisma.timeEntry.findMany.mockResolvedValue([]);
       mockPrisma.timeEntry.update.mockResolvedValue({ ...openEntry, clockOut: new Date() });
 

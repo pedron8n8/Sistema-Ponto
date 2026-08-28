@@ -572,25 +572,29 @@ const clockIn = async (req, res) => {
     // escolhido pelo cliente. Rejeita em vez de sobrepor, mesmo motivo do guard
     // de ordem no clock-out. Não há registro aberto neste ponto (barrado acima),
     // então basta procurar turno fechado que termine depois do instante pedido.
-    if (punch.offline) {
-      const conflictingEntry = await prisma.timeEntry.findFirst({
-        where: {
-          userId,
-          clockOut: { gt: punch.timestamp },
-        },
-        orderBy: { clockOut: 'desc' },
-        select: { id: true, clockIn: true, clockOut: true },
-      });
+    //
+    // Roda SEMPRE, e não só quando punch.offline: o RH cria e edita registros
+    // com horário arbitrário e não faz checagem de sobreposição nenhuma, então
+    // uma batida online também pode cair dentro de um turno já gravado. A
+    // consulta é um índice-scan por colaborador; correção vale mais do que a
+    // consulta economizada por batida.
+    const conflictingEntry = await prisma.timeEntry.findFirst({
+      where: {
+        userId,
+        clockOut: { gt: punch.timestamp },
+      },
+      orderBy: { clockOut: 'desc' },
+      select: { id: true, clockIn: true, clockOut: true },
+    });
 
-      if (conflictingEntry) {
-        return res.status(409).json({
-          error: 'Conflict',
-          message:
-            'Já existe registro de ponto cobrindo este horário. Peça ajuste ao seu supervisor.',
-          code: 'PUNCH_OVERLAPS_EXISTING_ENTRY',
-          conflictingEntry,
-        });
-      }
+    if (conflictingEntry) {
+      return res.status(409).json({
+        error: 'Conflict',
+        message:
+          'Já existe registro de ponto cobrindo este horário. Peça ajuste ao seu supervisor.',
+        code: 'PUNCH_OVERLAPS_EXISTING_ENTRY',
+        conflictingEntry,
+      });
     }
 
     const authResult = await validateClockAuthFactors({
@@ -842,29 +846,35 @@ const clockOut = async (req, res) => {
     // Simétrico ao guard de sobreposição do clock-in: fechar o registro aberto
     // num instante que passa por cima de um registro posterior faria dois
     // turnos contarem o mesmo tempo.
-    if (punch.offline) {
-      const conflictingEntry = await prisma.timeEntry.findFirst({
-        where: {
-          userId,
-          id: { not: openEntry.id },
-          clockIn: {
-            gt: openEntry.clockIn,
-            lt: punch.timestamp,
-          },
+    //
+    // Roda SEMPRE, e não só quando punch.offline: o registro aberto pode ter
+    // nascido de uma ENTRADA retroativa (offline) e ser fechado online. Aí o
+    // intervalo vai de ontem 08:00 até agora e engole o registro que o RH criou
+    // no meio — o guard gateado em punch.offline nunca via esse caso, e o
+    // hr.controller não valida sobreposição em nenhuma criação/edição. Pior: a
+    // mensagem do 409 manda o colaborador falar com o supervisor, ou seja,
+    // empurra para o único caminho sem guard.
+    const conflictingEntry = await prisma.timeEntry.findFirst({
+      where: {
+        userId,
+        id: { not: openEntry.id },
+        clockIn: {
+          gt: openEntry.clockIn,
+          lt: punch.timestamp,
         },
-        orderBy: { clockIn: 'asc' },
-        select: { id: true, clockIn: true, clockOut: true },
-      });
+      },
+      orderBy: { clockIn: 'asc' },
+      select: { id: true, clockIn: true, clockOut: true },
+    });
 
-      if (conflictingEntry) {
-        return res.status(409).json({
-          error: 'Conflict',
-          message:
-            'Já existe registro de ponto cobrindo este horário. Peça ajuste ao seu supervisor.',
-          code: 'PUNCH_OVERLAPS_EXISTING_ENTRY',
-          conflictingEntry,
-        });
-      }
+    if (conflictingEntry) {
+      return res.status(409).json({
+        error: 'Conflict',
+        message:
+          'Já existe registro de ponto cobrindo este horário. Peça ajuste ao seu supervisor.',
+        code: 'PUNCH_OVERLAPS_EXISTING_ENTRY',
+        conflictingEntry,
+      });
     }
 
     let terminalAuth = null;
@@ -1730,6 +1740,20 @@ const updateMyEntryNotes = async (req, res) => {
       });
     }
 
+    // O filtro de logs acima enxerga só a conversa de edição, então um
+    // APPROVED posterior ao EDIT_REQUESTED é invisível aqui: sem esta
+    // checagem o supervisor que pede ajuste e depois muda de ideia e aprova
+    // deixa o colaborador reabrir o próprio ponto aprovado (o update abaixo
+    // grava status: 'PENDING'). Mesma regra do requestCorrection: a decisão
+    // de tirar o ponto de APPROVED é do supervisor, não do colaborador.
+    if (entry.status === 'APPROVED') {
+      return res.status(409).json({
+        error: 'Conflict',
+        message: 'Registro já aprovado. Fale com seu supervisor para alterá-lo.',
+        code: 'ENTRY_ALREADY_APPROVED',
+      });
+    }
+
     const latestAction = entry.logs?.[0]?.action || null;
     if (latestAction !== 'EDIT_REQUESTED') {
       return res.status(400).json({
@@ -1818,9 +1842,15 @@ const requestCorrection = async (req, res) => {
     // esconde dele a própria última ação. "Sem resposta" = o pedido ainda é o
     // log mais recente; qualquer ação posterior do supervisor conta como
     // resposta e libera um novo pedido.
+    //
+    // Desempate por id: `timestamp` tem precisão de milissegundo e as ações em
+    // lote gravam vários logs no mesmo instante. Só com `timestamp: 'desc'` o
+    // Postgres pode devolver qualquer um dos empatados, e "há pedido sem
+    // resposta?" passaria a depender do plano de execução — o mesmo registro
+    // aceitaria ou recusaria o pedido de ajuste de forma alternada.
     const latestLog = await prisma.approvalLog.findFirst({
       where: { timeEntryId: entry.id },
-      orderBy: { timestamp: 'desc' },
+      orderBy: [{ timestamp: 'desc' }, { id: 'desc' }],
       select: { action: true },
     });
 

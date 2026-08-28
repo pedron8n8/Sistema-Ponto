@@ -204,15 +204,81 @@ describe('batida offline (occurredAt)', () => {
         expect(createArgs().data.clockIn.getTime()).toBe(occurredAt.getTime());
       });
 
-      it('does not run the overlap query for an online clock-in', async () => {
-        // Batida online carrega o relógio do servidor: não há como sobrepor
-        // nada, e a consulta extra sairia caro em todo clock-in do sistema.
+      // Este teste fixava o gate `if (punch.offline)`: a consulta de
+      // sobreposição não rodava em batida online. O gate estava errado — o RH
+      // cria e edita registros com horário arbitrário e não valida sobreposição
+      // nenhuma, então uma batida online também cai dentro de turno já gravado.
+      it('runs the overlap query for an online clock-in too', async () => {
         stubTimeEntryFindFirst(mockPrisma, { open: null, others: [closedShift] });
 
         await clockIn(mockReq, mockRes);
 
-        expect(mockPrisma.timeEntry.findFirst).toHaveBeenCalledTimes(1);
+        // Registro aberto + sobreposição.
+        expect(mockPrisma.timeEntry.findFirst).toHaveBeenCalledTimes(2);
+        // closedShift terminou 2h atrás; a batida online é agora, então passa.
         expect(mockRes.status).toHaveBeenCalledWith(201);
+      });
+
+      it('rejects an online clock-in that lands inside an entry HR created into the future', async () => {
+        // hr.controller não valida sobreposição em create/edit, então um
+        // registro que termina no futuro chega ao banco. Sem o guard, o
+        // clock-out seguinte conta o mesmo tempo duas vezes.
+        stubTimeEntryFindFirst(mockPrisma, {
+          open: null,
+          others: [
+            {
+              id: 'entry-rh',
+              userId: 'user-123',
+              clockIn: new Date(Date.now() - 2 * HOUR),
+              clockOut: new Date(Date.now() + 2 * HOUR),
+            },
+          ],
+        });
+
+        await clockIn(mockReq, mockRes);
+
+        expect(mockRes.status).toHaveBeenCalledWith(409);
+        expect(mockRes.json).toHaveBeenCalledWith(
+          expect.objectContaining({ code: 'PUNCH_OVERLAPS_EXISTING_ENTRY' })
+        );
+        expect(mockPrisma.timeEntry.create).not.toHaveBeenCalled();
+      });
+
+      // O stub roteia pela cláusula where, então este teste fica vermelho se
+      // `userId` sumir do where do guard: sem ele a consulta enxerga o turno de
+      // outro colaborador e 409 uma batida legítima.
+      it('ignores an overlapping entry that belongs to someone else', async () => {
+        stubTimeEntryFindFirst(mockPrisma, {
+          open: null,
+          others: [{ ...closedShift, id: 'entry-alheio', userId: 'outro-colaborador' }],
+        });
+        mockReq.body.occurredAt = new Date(Date.now() - 6 * HOUR).toISOString();
+
+        await clockIn(mockReq, mockRes);
+
+        expect(mockRes.status).toHaveBeenCalledWith(201);
+        expect(mockPrisma.timeEntry.create).toHaveBeenCalled();
+      });
+
+      // O 409 ecoa `conflictingEntry` para a tela. Com vários candidatos, o
+      // orderBy decide qual — e é o que o Postgres devolveria.
+      it('echoes the entry the orderBy would pick, not the first in the list', async () => {
+        const older = {
+          id: 'entry-antigo',
+          userId: 'user-123',
+          clockIn: new Date(Date.now() - 20 * HOUR),
+          clockOut: new Date(Date.now() - 14 * HOUR),
+        };
+        stubTimeEntryFindFirst(mockPrisma, { open: null, others: [older, closedShift] });
+        mockReq.body.occurredAt = new Date(Date.now() - 24 * HOUR).toISOString();
+
+        await clockIn(mockReq, mockRes);
+
+        expect(mockRes.status).toHaveBeenCalledWith(409);
+        // orderBy: { clockOut: 'desc' } -> o que termina por último.
+        expect(mockRes.json).toHaveBeenCalledWith(
+          expect.objectContaining({ conflictingEntry: expect.objectContaining({ id: 'entry-0' }) })
+        );
       });
     });
 
@@ -391,6 +457,54 @@ describe('batida offline (occurredAt)', () => {
         );
         expect(mockPrisma.timeEntry.update).not.toHaveBeenCalled();
         expect(accrueBankHours).not.toHaveBeenCalled();
+      });
+
+      // O cenário que o gate `if (punch.offline)` deixava passar inteiro: a
+      // ENTRADA veio retroativa da fila offline e a SAÍDA é online. O registro
+      // aberto vai de ontem 08:00 até agora e engole o turno que o RH criou no
+      // meio — 8h contadas duas vezes, sem erro em lugar nenhum.
+      it('rejects an ONLINE clock-out that runs over an entry HR created inside the shift', async () => {
+        const hrEntry = {
+          id: 'entry-rh',
+          userId: 'user-123',
+          clockIn: new Date(Date.now() - 6 * HOUR),
+          clockOut: new Date(Date.now() - 2 * HOUR),
+        };
+        stubTimeEntryFindFirst(mockPrisma, {
+          open: openEntry(new Date(Date.now() - 20 * HOUR)),
+          others: [hrEntry],
+        });
+        // Sem occurredAt: batida online, relógio do servidor.
+
+        await clockOut(mockReq, mockRes);
+
+        expect(mockRes.status).toHaveBeenCalledWith(409);
+        expect(mockRes.json).toHaveBeenCalledWith(
+          expect.objectContaining({ code: 'PUNCH_OVERLAPS_EXISTING_ENTRY' })
+        );
+        expect(mockPrisma.timeEntry.update).not.toHaveBeenCalled();
+        expect(accrueBankHours).not.toHaveBeenCalled();
+      });
+
+      // Vermelho se `userId` sumir do where do guard do clock-out.
+      it('ignores an entry inside the shift that belongs to someone else', async () => {
+        stubTimeEntryFindFirst(mockPrisma, {
+          open: openEntry(new Date(Date.now() - 10 * HOUR)),
+          others: [
+            {
+              id: 'entry-alheio',
+              userId: 'outro-colaborador',
+              clockIn: new Date(Date.now() - 3 * HOUR),
+              clockOut: new Date(Date.now() - HOUR),
+            },
+          ],
+        });
+        mockReq.body.occurredAt = new Date(Date.now() - 2 * HOUR).toISOString();
+
+        await clockOut(mockReq, mockRes);
+
+        expect(mockRes.status).not.toHaveBeenCalledWith(409);
+        expect(mockPrisma.timeEntry.update).toHaveBeenCalled();
       });
 
       it('accepts an offline clock-out that stops before the later entry starts', async () => {

@@ -206,7 +206,7 @@ describe('PATCH /time/:id/notes depois de um pedido de ajuste do colaborador', (
 
   // Aplica o include.logs (where/orderBy/take) como o Prisma aplicaria: é
   // exatamente esse filtro que separa a conversa de edição do resto do log.
-  const stubEntryWithLogs = (logs) => {
+  const stubEntryWithLogs = (logs, status = 'PENDING') => {
     mockPrisma.timeEntry.findFirst.mockImplementation(async (args) => {
       const logFilter = args?.include?.logs || {};
       const actions = logFilter.where?.action?.in;
@@ -216,7 +216,7 @@ describe('PATCH /time/:id/notes depois de um pedido de ajuste do colaborador', (
       return {
         id: 'entry-1',
         userId: 'user-123',
-        status: 'PENDING',
+        status,
         logs: logFilter.take ? visible.slice(0, logFilter.take) : visible,
       };
     });
@@ -281,5 +281,39 @@ describe('PATCH /time/:id/notes depois de um pedido de ajuste do colaborador', (
 
     expect(mockRes.status).toHaveBeenCalledWith(400);
     expect(mockPrisma.timeEntry.update).not.toHaveBeenCalled();
+  });
+
+  // O filtro de logs enxerga só EDIT_REQUESTED/EDIT_RESPONSE, então um APPROVED
+  // posterior é invisível para ele. Sem uma checagem do próprio entry.status, o
+  // colaborador reabria o ponto já aprovado — o update grava status: 'PENDING'.
+  it('rejects the notes on an APPROVED entry with 409, even with an outstanding edit request', async () => {
+    // Sequência real: supervisor pede ajuste, muda de ideia e aprova o ponto,
+    // e só então o colaborador responde ao pedido.
+    stubEntryWithLogs(
+      [
+        { action: 'EDIT_REQUESTED', timestamp: at(30) },
+        { action: 'APPROVED', timestamp: at(10) },
+      ],
+      'APPROVED'
+    );
+
+    await updateMyEntryNotes(mockReq, mockRes);
+
+    expect(mockRes.status).toHaveBeenCalledWith(409);
+    expect(mockRes.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'ENTRY_ALREADY_APPROVED' })
+    );
+    expect(mockPrisma.timeEntry.update).not.toHaveBeenCalled();
+    expect(mockPrisma.approvalLog.create).not.toHaveBeenCalled();
+  });
+
+  // Mesma regra que requestCorrection já aplicava: as duas escritas do
+  // colaborador tratam um ponto aprovado do mesmo jeito.
+  it('matches requestCorrection: both member-facing writes refuse an APPROVED entry', async () => {
+    stubEntryWithLogs([{ action: 'EDIT_REQUESTED', timestamp: at(30) }], 'APPROVED');
+
+    await updateMyEntryNotes(mockReq, mockRes);
+
+    expect(mockRes.status).toHaveBeenCalledWith(409);
   });
 });
