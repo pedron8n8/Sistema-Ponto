@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { Circle, CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet'
 import * as faceapi from 'face-api.js'
 import { formatDateTimeWithTimeZone, formatTimeWithTimeZone } from '../lib/timezone'
+import { enqueue, readQueue, syncQueue } from '../lib/offlineQueue'
 import DualClock from '../components/DualClock'
 
 type TimeEntry = {
@@ -76,13 +77,6 @@ type LivenessData = {
   capturedAt: string
 }
 
-type OfflineClockAction = {
-  id: string
-  path: '/time/clock-in' | '/time/clock-out'
-  body: Record<string, unknown>
-  createdAt: string
-}
-
 type BarcodeDetectorCode = {
   rawValue?: string
 }
@@ -112,8 +106,17 @@ const FACE_TURN_DELTA = 0.08
 const FACE_VERTICAL_CENTER_MIN = 0.44
 const FACE_VERTICAL_CENTER_MAX = 0.56
 const FACE_VERTICAL_TURN_DELTA = 0.06
-const OFFLINE_CLOCK_QUEUE_KEY = 'omnipunt.offlineClockQueue'
-const LEGACY_OFFLINE_CLOCK_QUEUE_KEY = 'systemaponto.offlineClockQueue'
+// So enfileira quando a requisicao realmente nao chegou ao servidor (ou o servidor
+// falhou em 5xx). Um 4xx e rejeicao de regra de negocio: enfileirar viraria uma
+// batida envenenada, descartada so depois de 3 tentativas. Mesmo criterio que o
+// isNetworkError de ../lib/offlineQueue, para o que entra na fila e o que fica nela
+// concordarem.
+const isOfflineFailure = (error: unknown) => {
+  const status = (error as { status?: number } | null | undefined)?.status
+  if (typeof status === 'number') return status >= 500
+  const message = error instanceof Error ? error.message : String(error)
+  return /failed to fetch|network|tempo de resposta excedido|networkerror|abort/i.test(message)
+}
 
 const getBarcodeDetector = () =>
   (window as Window & { BarcodeDetector?: BarcodeDetectorStatic }).BarcodeDetector
@@ -241,84 +244,27 @@ const ColaboradorDashboard = () => {
     setEntries(response.entries)
   }
 
-  const readOfflineQueue = (): OfflineClockAction[] => {
-    try {
-      const currentRaw = window.localStorage.getItem(OFFLINE_CLOCK_QUEUE_KEY)
-      const legacyRaw = currentRaw ? null : window.localStorage.getItem(LEGACY_OFFLINE_CLOCK_QUEUE_KEY)
-      const raw = currentRaw || legacyRaw
-      if (!raw) return []
-      const parsed = JSON.parse(raw)
-      if (!Array.isArray(parsed)) return []
-      const sanitized = parsed.filter((item) => item?.id && item?.path && item?.body)
-
-      if (!currentRaw && legacyRaw) {
-        window.localStorage.setItem(OFFLINE_CLOCK_QUEUE_KEY, JSON.stringify(sanitized))
-        window.localStorage.removeItem(LEGACY_OFFLINE_CLOCK_QUEUE_KEY)
-      }
-
-      return sanitized
-    } catch (_error) {
-      return []
-    }
-  }
-
-  const writeOfflineQueue = (queue: OfflineClockAction[]) => {
-    window.localStorage.setItem(OFFLINE_CLOCK_QUEUE_KEY, JSON.stringify(queue))
-    window.localStorage.removeItem(LEGACY_OFFLINE_CLOCK_QUEUE_KEY)
-    setPendingSyncCount(queue.length)
-  }
-
-  const enqueueOfflineClockAction = (action: Omit<OfflineClockAction, 'id' | 'createdAt'>) => {
-    const currentQueue = readOfflineQueue()
-    const nextQueue = [
-      ...currentQueue,
-      {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        createdAt: new Date().toISOString(),
-        ...action,
-      },
-    ]
-    writeOfflineQueue(nextQueue)
-  }
-
-  const isLikelyNetworkError = (error: unknown) => {
-    if (!error) return false
-    const message = error instanceof Error ? error.message : String(error)
-    return (
-      !navigator.onLine ||
-      /failed to fetch|network|tempo de resposta excedido|networkerror/i.test(message)
-    )
-  }
-
   const syncOfflineClockQueue = async () => {
     if (!token || syncingOfflineQueue) return
-    const currentQueue = readOfflineQueue()
-    if (currentQueue.length === 0) {
-      setPendingSyncCount(0)
-      return
-    }
-
     setSyncingOfflineQueue(true)
-    const remaining: OfflineClockAction[] = []
+    // skipIdempotency e obrigatorio: buildIdempotencyHeaders faz hash de
+    // `data | body`, entao duas batidas offline do mesmo dia colidiriam na mesma
+    // chave e a segunda voltaria como 202 duplicado — uma batida perdida em silencio.
+    const { synced, remaining, dropped } = await syncQueue({
+      storage: window.localStorage,
+      send: (path, body) => apiFetch(path, { token, method: 'POST', body, skipIdempotency: true }),
+    })
+    setPendingSyncCount(remaining.length)
 
-    for (const action of currentQueue) {
-      try {
-        await apiFetch(action.path, {
-          token,
-          method: 'POST',
-          body: action.body,
-        })
-      } catch (err) {
-        remaining.push(action)
-        if (isLikelyNetworkError(err)) {
-          remaining.push(...currentQueue.slice(currentQueue.indexOf(action) + 1))
-          break
-        }
-      }
+    if (dropped.length > 0) {
+      setError(
+        t(
+          `${dropped.length} offline punch(es) could not be synced and were discarded. Ask your supervisor to add them.`,
+          `${dropped.length} batida(s) offline nao puderam ser sincronizadas e foram descartadas. Peca ao seu supervisor para lancar.`
+        )
+      )
     }
-
-    writeOfflineQueue(remaining)
-    if (remaining.length === 0) {
+    if (synced > 0) {
       setSuccess(t('Offline pending items synced successfully.', 'Pendencias offline sincronizadas com sucesso.'))
       await loadEntries()
       await loadCurrentEntry()
@@ -809,7 +755,7 @@ const ColaboradorDashboard = () => {
         )
       )
     })
-    setPendingSyncCount(readOfflineQueue().length)
+    setPendingSyncCount(readQueue(window.localStorage).length)
   }, [token])
 
   useEffect(() => {
@@ -1060,8 +1006,8 @@ const ColaboradorDashboard = () => {
       await loadCurrentEntry()
       setSuccess(t('Clock-in recorded successfully.', 'Clock-in registrado com sucesso.'))
     } catch (err) {
-      if (isLikelyNetworkError(err)) {
-        enqueueOfflineClockAction({
+      if (isOfflineFailure(err)) {
+        enqueue(window.localStorage, {
           path: '/time/clock-in',
           body: {
             notes,
@@ -1071,6 +1017,7 @@ const ColaboradorDashboard = () => {
             ...(scannedQrToken.trim() ? { qrToken: scannedQrToken.trim() } : {}),
           },
         })
+        setPendingSyncCount(readQueue(window.localStorage).length)
         setSuccess(t('No connection. Clock-in saved locally and pending sync.', 'Sem conexão. Clock-in salvo localmente e pendente de sincronização.'))
       } else {
         setError(err instanceof Error ? err.message : t('Error recording clock-in', 'Erro ao registrar entrada'))
@@ -1142,8 +1089,8 @@ const ColaboradorDashboard = () => {
       await loadCurrentEntry()
       setSuccess(t('Clock-out recorded successfully.', 'Clock-out registrado com sucesso.'))
     } catch (err) {
-      if (isLikelyNetworkError(err)) {
-        enqueueOfflineClockAction({
+      if (isOfflineFailure(err)) {
+        enqueue(window.localStorage, {
           path: '/time/clock-out',
           body: {
             notes,
@@ -1153,6 +1100,7 @@ const ColaboradorDashboard = () => {
             ...(scannedQrToken.trim() ? { qrToken: scannedQrToken.trim() } : {}),
           },
         })
+        setPendingSyncCount(readQueue(window.localStorage).length)
         setSuccess(t('No connection. Clock-out saved locally and pending sync.', 'Sem conexão. Clock-out salvo localmente e pendente de sincronização.'))
       } else {
         setError(err instanceof Error ? err.message : t('Error recording clock-out', 'Erro ao registrar saida'))
