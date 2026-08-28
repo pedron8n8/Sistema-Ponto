@@ -34,15 +34,17 @@ const MAX_DROPPED_RECORDS = 50
 const MAX_CORRUPT_RECORDS = 5
 const TERMINAL_QR = 'TERMINAL_QR'
 // Teto de falhas seguidas sem NENHUMA resposta HTTP tendo o aparelho se
-// declarado online. Retentar para sempre e a direcao segura para folha, entao o
-// teto e generoso: a ~15s por ciclo sao ~5 minutos ininterruptos de "estou
-// online e toda requisicao explode sem status". Qualquer sucesso ou qualquer
-// resposta com status zera o contador, e com navigator.onLine === false nada e
-// contado — celular sem sinal continua enfileirando indefinidamente. Na pratica
-// so dispara com defeito do proprio cliente (crypto.subtle indefinido em origem
-// insegura, JSON malformado em 200), que nao se cura sozinho: sem teto a batida
-// ficaria presa ate o TOO_OLD de 48h — ou para sempre, no item legado sem
-// occurredAt, onde o TOO_OLD nunca dispara.
+// declarado online. Vale SO para item legado sem occurredAt — ver o gate em
+// syncQueue. Nesse item o TOO_OLD de 48h nunca dispara, entao sem teto a fila
+// trava para sempre e a batida some sem nunca virar registro visivel. Em item
+// com occurredAt o teto e proibido: `navigator.onLine === true` + zero status e
+// a assinatura de QUALQUER queda de transporte (nginx fora, backend
+// reiniciando, deploy, cert TLS vencido, DNS, firewall corporativo, portal
+// cativo respondendo cross-origin), e o contador e monotonico e persistido —
+// vinte piscadas de sinal ao longo de um dia destruiriam uma batida que
+// sincronizaria sozinha. Em WKWebView/Android WebView `navigator.onLine` diz
+// "tem interface de rede", nao "alcanco a API", entao o sinal e ainda mais
+// fraco no alvo real.
 export const MAX_UNVERIFIED_OFFLINE_ATTEMPTS = 20
 // Espelha backend/src/utils/offlinePunch.js: acima disso o servidor responde 400
 // INVALID_OCCURRED_AT e a batida nunca vai passar, por mais que se tente.
@@ -66,10 +68,31 @@ export const errorStatus = (error: unknown): number | undefined => {
 // uma batida que passaria assim que o bloqueio/limite expirasse.
 const RETRYABLE_STATUSES = new Set([408, 429])
 
-export const isOfflineFailure = (error: unknown): boolean => {
+// PERGUNTA 1 — "esta batida JA ENFILEIRADA merece outra tentativa?".
+// So syncQueue usa. Aqui 429/408 sao retentaveis: o item ja esta guardado, o
+// colaborador ja foi avisado, e o replay so precisa esperar o bloqueio expirar.
+export const isRetryableReplayFailure = (error: unknown): boolean => {
   const status = errorStatus(error)
   if (typeof status === 'number') return status >= 500 || RETRYABLE_STATUSES.has(status)
   return true
+}
+
+// PERGUNTA 2 — "a batida que o colaborador ACABOU de fazer, olhando a tela,
+// deve virar pendencia offline em vez de erro?". So os dois catch do caminho
+// online direto usam. A resposta e DIFERENTE da pergunta 1 e por isso tem nome
+// proprio: as duas dividiam uma funcao so, e foi exatamente isso que fez
+// 429/408 vazarem para ca.
+//
+// Enfileirar so quando NAO houve veredito nenhum (sem status: fetch estourou,
+// DNS, TLS, WebView suspensa, timeout) ou quando o proprio servidor quebrou
+// (5xx). 429 PIN_LOCKED e 408 sao veredito sobre ESTA tentativa e o colaborador
+// precisa ler o motivo: dizer "salvo localmente" com sinal cheio manda ele
+// embora, e o corpo enfileirado ainda carrega o PIN errado que gerou o
+// bloqueio — ele morre no replay e vira um pedido de lancamento manual para um
+// turno que ja foi registrado (entrada duplicada, turno pago duas vezes).
+export const shouldQueueOfflinePunch = (error: unknown): boolean => {
+  const status = errorStatus(error)
+  return status === undefined || status >= 500
 }
 
 // Sinal corroborante, so onde existe DOM: se o proprio aparelho ja se declara
@@ -329,11 +352,31 @@ const recordDroppedPunch = (
     const next = [...readDroppedPunches(storage), entry].slice(-MAX_DROPPED_RECORDS)
     storage.setItem(DROPPED_KEY, JSON.stringify(next))
   } catch {
-    // storage cheio: o retorno de syncQueue ainda leva o item para a UI.
+    // storage cheio: a gravacao falhou e o item ja saiu da fila. A unica copia
+    // que sobra e a que vai no retorno de syncQueue — a UI TEM de usar esse
+    // array (mergeDroppedPunches), nunca so reler o storage, ou a batida some
+    // sem deixar rastro nenhum.
   }
 
   return entry
 }
+
+// Fonte da verdade da UI: o que o storage guarda MAIS o que syncQueue acabou de
+// devolver. Reler so o storage perde exatamente o caso em que o registro de
+// descarte nao coube; usar so o retorno perde os descartes de ciclos passados.
+export const mergeDroppedPunches = (
+  stored: DroppedPunch[],
+  justDropped: DroppedPunch[]
+): DroppedPunch[] => {
+  const known = new Set(stored.map((item) => item.id))
+  return [...stored, ...justDropped.filter((item) => !known.has(item.id))].slice(-MAX_DROPPED_RECORDS)
+}
+
+// A UI so pode falar em "pendencias enviadas mas nao limpas" se ALGO saiu. Com
+// synced === 0 a gravacao que falhou e a da propria fila intacta: o aviso seria
+// falso, reapareceria a cada 15s e apagaria o erro real da tela.
+export const syncNeedsStorageWarning = (result: { synced: number; persisted: boolean }): boolean =>
+  !result.persisted && result.synced > 0
 
 // Identificador de UMA tentativa de batida, carregado no corpo da requisicao.
 // A chave de idempotencia do servidor e sha256(data | body) por rota+ator: com
@@ -360,6 +403,21 @@ export const enqueue = (
   ]
 
   return { persisted: writeQueue(storage, queue), queue }
+}
+
+// syncQueue trabalha sobre um SNAPSHOT, mas cada await de `send` dura ate 15s e
+// o colaborador pode bater ponto nesse meio-tempo. Gravar uma fatia do snapshot
+// (`queue.slice(i + 1)`) apagaria em silencio a batida recem-enfileirada, logo
+// depois da tela ter dito "salvo localmente". Toda escrita do loop passa por
+// aqui: rele o storage vivo e mexe SO no id em questao.
+const removeFromQueue = (storage: QueueStorage, id: string): boolean =>
+  writeQueue(storage, readQueue(storage).filter((item) => item.id !== id))
+
+const patchInQueue = (storage: QueueStorage, updated: OfflineClockAction): boolean => {
+  const live = readQueue(storage)
+  // Sumiu do storage entre a leitura e agora: nao ressuscita nada.
+  if (!live.some((item) => item.id === updated.id)) return true
+  return writeQueue(storage, live.map((item) => (item.id === updated.id ? updated : item)))
 }
 
 const isTooOld = (action: OfflineClockAction, now: Date) => {
@@ -389,6 +447,13 @@ export const syncQueue = async ({
   const dropped: DroppedPunch[] = []
   let remaining: OfflineClockAction[] = []
   let synced = 0
+  // Agrega TODAS as escritas do ciclo, e nao so a ultima: com o storage
+  // recusando setItem (Safari privado, cota estourada) a divergencia comeca na
+  // primeira remocao, nao no fim.
+  let persisted = true
+  const record = (written: boolean) => {
+    persisted = written && persisted
+  }
 
   for (let i = 0; i < queue.length; i += 1) {
     const action = queue[i]
@@ -404,7 +469,7 @@ export const syncQueue = async ({
         )
       )
       // Progresso gravado item a item: um crash aqui nao reenvia o que ja saiu.
-      writeQueue(storage, queue.slice(i + 1))
+      record(removeFromQueue(storage, action.id))
       continue
     }
 
@@ -414,15 +479,17 @@ export const syncQueue = async ({
         ...(action.occurredAt ? { occurredAt: action.occurredAt } : {}),
       })
       synced += 1
-      writeQueue(storage, queue.slice(i + 1))
+      record(removeFromQueue(storage, action.id))
     } catch (error) {
       const message = error instanceof Error ? error.message : undefined
 
-      if (isOfflineFailure(error)) {
+      if (isRetryableReplayFailure(error)) {
         if (typeof errorStatus(error) === 'number') {
           // Alguem respondeu (5xx/429/408): transitorio, nao gasta tentativa e
           // prova que o transporte funciona — zera o contador sem veredito.
-          remaining = [withOfflineAttempts(action, 0), ...queue.slice(i + 1)]
+          const head = withOfflineAttempts(action, 0)
+          remaining = [head, ...queue.slice(i + 1)]
+          record(patchInQueue(storage, head))
           break
         }
 
@@ -430,15 +497,22 @@ export const syncQueue = async ({
         // offline nao ha duvida, e retentar para sempre e o comportamento certo.
         if (deviceOffline()) {
           remaining = queue.slice(i)
+          // Nada mudou neste item: nao se escreve no storage a cada 15s.
           break
         }
 
-        // Aparelho diz estar online e mesmo assim nada volta com status. Pode ser
-        // rede ruim (proximo ciclo resolve) ou defeito permanente do cliente que
-        // nunca se cura. Retentar continua sendo a direcao segura, mas com teto:
-        // sem ele a fila trava e a batida some sem nunca virar registro visivel.
+        // Aparelho diz estar online e mesmo assim nada volta com status.
         const offlineAttempts = (action.offlineAttempts ?? 0) + 1
-        if (offlineAttempts >= MAX_UNVERIFIED_OFFLINE_ATTEMPTS) {
+
+        // O teto SO vale onde nada mais limita o item. Com occurredAt, o
+        // isTooOld la em cima ja termina a batida em 48h com registro duravel
+        // TOO_OLD — o teto nao acrescentaria nada e so adiantaria a destruicao
+        // de uma batida valida em qualquer queda de transporte corriqueira, que
+        // tem exatamente esta assinatura (online, sem status). Sem occurredAt
+        // (fila legada) o TOO_OLD nunca dispara: aqui, e so aqui, o teto e o
+        // unico jeito de a batida virar registro visivel em vez de travar a
+        // fila para sempre.
+        if (!action.occurredAt && offlineAttempts >= MAX_UNVERIFIED_OFFLINE_ATTEMPTS) {
           dropped.push(
             recordDroppedPunch(
               storage,
@@ -449,11 +523,13 @@ export const syncQueue = async ({
               now
             )
           )
-          writeQueue(storage, queue.slice(i + 1))
+          record(removeFromQueue(storage, action.id))
           continue
         }
 
-        remaining = [withOfflineAttempts(action, offlineAttempts), ...queue.slice(i + 1)]
+        const head = withOfflineAttempts(action, offlineAttempts)
+        remaining = [head, ...queue.slice(i + 1)]
+        record(patchInQueue(storage, head))
         break
       }
 
@@ -461,18 +537,23 @@ export const syncQueue = async ({
       if (attempts >= MAX_ATTEMPTS) {
         dropped.push(recordDroppedPunch(storage, action, 'REJECTED', message, now))
         // Item efetivamente descartado: a fila pode seguir sem quebrar a ordem.
-        writeQueue(storage, queue.slice(i + 1))
+        record(removeFromQueue(storage, action.id))
         continue
       }
 
       // Falha nao definitiva: a batida i continua pendente, entao nada depois
       // dela pode ser aplicado antes — um clock-out aplicado antes do clock-in
       // atrasado fecharia o registro errado.
-      remaining = [withOfflineAttempts({ ...action, attempts }, 0), ...queue.slice(i + 1)]
+      const head = withOfflineAttempts({ ...action, attempts }, 0)
+      remaining = [head, ...queue.slice(i + 1)]
+      record(patchInQueue(storage, head))
       break
     }
   }
 
-  const persisted = writeQueue(storage, remaining)
+  // CUIDADO: `remaining` e a cauda nao processada do SNAPSHOT, util para
+  // assertiva de ordem e de contador. Nao e a fila viva — ela nao conhece a
+  // batida enfileirada durante este ciclo. Quem precisa do numero de pendentes
+  // le o storage (readQueue), que e a fonte da verdade.
   return { synced, remaining, dropped, persisted }
 }

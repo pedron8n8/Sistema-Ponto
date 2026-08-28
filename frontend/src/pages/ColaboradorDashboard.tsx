@@ -12,12 +12,14 @@ import {
   createPunchNonce,
   enqueue,
   isDeviceOffline,
-  isOfflineFailure,
+  mergeDroppedPunches,
   readDroppedPunches,
   readOfflinePunchPolicy,
   readQueue,
   rememberOfflinePunchPolicy,
   requiresTerminalQr,
+  shouldQueueOfflinePunch,
+  syncNeedsStorageWarning,
   syncQueue,
   type DroppedPunch,
   type OfflineClockPath,
@@ -269,20 +271,28 @@ const ColaboradorDashboard = () => {
       // existindo no caminho ONLINE direto, que nunca teve occurredAt: e o
       // clientNonce, e so ele, que separa a batida da manha da batida da tarde
       // quando o corpo e identico (PIN, sem GPS, sem notas).
-      const { synced, remaining, dropped, persisted } = await syncQueue({
+      const { synced, dropped, persisted } = await syncQueue({
         storage: window.localStorage,
         send: (path, body) => apiFetch(path, { token, method: 'POST', body }),
       })
-      // Se a gravacao final falhou (Safari privado recusa todo setItem), o
-      // storage ainda guarda o que ja foi enviado: mostrar "0 pendentes" seria
-      // mentira e o proximo ciclo de 15s reenviaria tudo de novo.
-      setPendingSyncCount(persisted ? remaining.length : readQueue(window.localStorage).length)
+      // O storage e a fonte da verdade, sempre: se a gravacao falhou (Safari
+      // privado recusa todo setItem) ele ainda guarda o que ja foi enviado, e
+      // mostrar "0 pendentes" seria mentira; se deu certo, ele ja inclui a
+      // batida que o colaborador enfileirou DURANTE este ciclo, que o
+      // `remaining` do snapshot nao conhece.
+      setPendingSyncCount(readQueue(window.localStorage).length)
 
       if (dropped.length > 0) {
-        // Descarte nao pode viver so num <p> transitorio: fica gravado ate ter ciencia.
-        setDroppedPunches(readDroppedPunches(window.localStorage))
+        // Descarte nao pode viver so num <p> transitorio: fica gravado ate ter
+        // ciencia. Se o storage estava cheio o registro de descarte nao coube, e
+        // o array devolvido por syncQueue e a UNICA copia que sobrou — reler so
+        // o storage faria a batida sumir sem rastro nenhum.
+        setDroppedPunches(mergeDroppedPunches(readDroppedPunches(window.localStorage), dropped))
       }
-      if (!persisted) {
+      // So avisa "enviadas mas nao limpas" se algo REALMENTE saiu. Com synced
+      // === 0 (o loop parou no item 0) o aviso era falso, reaparecia a cada 15s
+      // e apagava da tela o erro de verdade.
+      if (syncNeedsStorageWarning({ synced, persisted })) {
         setError(
           t(
             'Pending punches were sent but could not be cleared from this device (storage unavailable or full). They may be re-sent; check your history with your supervisor.',
@@ -1144,7 +1154,12 @@ const ColaboradorDashboard = () => {
           body: payload,
         })
       } catch (err) {
-        if (!isOfflineFailure(err)) throw err
+        // shouldQueueOfflinePunch, NAO o classificador da fila: 429 (PIN_LOCKED,
+        // rate limit) e 408 sao veredito sobre esta tentativa e tem de chegar na
+        // cara do colaborador. Enfileirar aqui diria "salvo localmente" com
+        // sinal cheio, guardaria o PIN errado e terminaria pedindo lancamento
+        // manual de um turno que ele ja registrou.
+        if (!shouldQueueOfflinePunch(err)) throw err
         queueOfflinePunch('/time/clock-in')
         return
       }
@@ -1227,7 +1242,9 @@ const ColaboradorDashboard = () => {
           body: payload,
         })
       } catch (err) {
-        if (!isOfflineFailure(err)) throw err
+        // Mesma regra do clock-in: so ausencia de veredito (sem status) ou
+        // falha do proprio servidor (5xx) viram pendencia offline.
+        if (!shouldQueueOfflinePunch(err)) throw err
         queueOfflinePunch('/time/clock-out')
         return
       }

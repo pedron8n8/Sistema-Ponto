@@ -4,15 +4,19 @@ import {
   clearDroppedPunches,
   createPunchNonce,
   enqueue,
-  isOfflineFailure,
+  isRetryableReplayFailure,
+  mergeDroppedPunches,
   readCorruptQueueRecords,
   readDroppedPunches,
   readOfflinePunchPolicy,
   readQueue,
   rememberOfflinePunchPolicy,
   requiresTerminalQr,
+  shouldQueueOfflinePunch,
+  syncNeedsStorageWarning,
   syncQueue,
   writeQueue,
+  type DroppedPunch,
   type OfflineClockAction,
 } from './offlineQueue'
 
@@ -134,7 +138,7 @@ describe('offlineQueue', () => {
 
   it('treats the Safari/WKWebView "Load failed" error as a network failure', async () => {
     // Sem isto, um iPhone sem sinal nao enfileira a batida: ela some.
-    expect(isOfflineFailure(new TypeError('Load failed'))).toBe(true)
+    expect(isRetryableReplayFailure(new TypeError('Load failed'))).toBe(true)
 
     const storage = memoryStorage({
       'omnipunt.offlineClockQueue': JSON.stringify([punch({ attempts: 2 })]),
@@ -151,14 +155,14 @@ describe('offlineQueue', () => {
 
   it('treats an English-locale timeout message as a network failure', () => {
     // apiFetch traduz o AbortError; a frase em ingles nao casava com nenhum regex.
-    expect(isOfflineFailure(new Error('Request timed out. Please check your internet connection.'))).toBe(true)
-    expect(isOfflineFailure(new Error('Tempo de resposta excedido. Verifique sua conexão com a internet.'))).toBe(true)
+    expect(isRetryableReplayFailure(new Error('Request timed out. Please check your internet connection.'))).toBe(true)
+    expect(isRetryableReplayFailure(new Error('Tempo de resposta excedido. Verifique sua conexão com a internet.'))).toBe(true)
   })
 
   it('only lets a real HTTP response decide: 5xx retries, 4xx is a verdict', async () => {
-    expect(isOfflineFailure(httpError('boom', 503))).toBe(true)
-    expect(isOfflineFailure(httpError('invalido', 400))).toBe(false)
-    expect(isOfflineFailure(httpError('nao autorizado', 401))).toBe(false)
+    expect(isRetryableReplayFailure(httpError('boom', 503))).toBe(true)
+    expect(isRetryableReplayFailure(httpError('invalido', 400))).toBe(false)
+    expect(isRetryableReplayFailure(httpError('nao autorizado', 401))).toBe(false)
 
     const storage = memoryStorage({
       'omnipunt.offlineClockQueue': JSON.stringify([punch({ id: 'a1', attempts: 2 }), punch({ id: 'a2' })]),
@@ -370,9 +374,9 @@ describe('offlineQueue', () => {
   // --- veredito HTTP transitorio: 429 e 408 nao sao definitivos ---
 
   it('treats 429 and 408 as retryable, not as a verdict', () => {
-    expect(isOfflineFailure(httpError('muitas requisicoes', 429))).toBe(true)
-    expect(isOfflineFailure(httpError('request timeout', 408))).toBe(true)
-    expect(isOfflineFailure(httpError('conflito', 409))).toBe(false)
+    expect(isRetryableReplayFailure(httpError('muitas requisicoes', 429))).toBe(true)
+    expect(isRetryableReplayFailure(httpError('request timeout', 408))).toBe(true)
+    expect(isRetryableReplayFailure(httpError('conflito', 409))).toBe(false)
   })
 
   it('does not destroy a punch after three PIN_LOCKED 429s', async () => {
@@ -399,19 +403,82 @@ describe('offlineQueue', () => {
   })
 
   it('does not count a 5xx against the status-less ceiling', async () => {
-    // Uma resposta com status prova que o transporte funciona: o contador de
-    // falhas "sem veredito nenhum" tem de voltar a zero.
+    // A versao anterior deste teste so afirmava `toBeUndefined()` depois de um
+    // 5xx: um contador que NUNCA existisse passaria igual. Agora o mesmo teste
+    // prova as duas metades — falha sem status INCREMENTA, 5xx ZERA — entao
+    // some com o contador e ele quebra, deixe de zerar e ele quebra tambem.
+    const legacy = { id: 'jam', path: '/time/clock-in', body: {} }
     const storage = memoryStorage({
-      'omnipunt.offlineClockQueue': JSON.stringify([punch({ id: 'a1', offlineAttempts: 7 })]),
+      'omnipunt.offlineClockQueue': JSON.stringify([legacy]),
     })
-    const result = await syncQueue({
+
+    const statusless = await syncQueue({
+      storage,
+      send: vi.fn().mockRejectedValue(new TypeError('Failed to fetch')),
+      now: NOW,
+      deviceOffline: deviceOnline,
+    })
+    expect(statusless.remaining[0].offlineAttempts).toBe(1)
+    expect(readQueue(storage)[0].offlineAttempts).toBe(1)
+
+    const afterServerError = await syncQueue({
       storage,
       send: vi.fn().mockRejectedValue(httpError('Internal Server Error', 500)),
       now: NOW,
       deviceOffline: deviceOnline,
     })
-    expect(result.remaining[0].offlineAttempts).toBeUndefined()
+    // Uma resposta com status prova que o transporte funciona: o contador de
+    // falhas "sem veredito nenhum" volta a zero.
+    expect(afterServerError.remaining[0].offlineAttempts).toBeUndefined()
     expect(readQueue(storage)[0].offlineAttempts).toBeUndefined()
+  })
+
+  it('never lets the ceiling destroy a punch that carries occurredAt', async () => {
+    // `navigator.onLine === true` + zero status e a assinatura de toda queda de
+    // transporte comum (nginx fora, deploy, cert vencido, DNS, portal cativo) e
+    // de toda piscada de sinal numa WebView, onde onLine so diz "tenho
+    // interface de rede". O contador e monotonico e persistido: com teto, vinte
+    // piscadas ao longo de um dia apagavam de vez uma batida que sincronizaria
+    // sozinha. Com occurredAt quem termina o item e o TOO_OLD de 48h.
+    const storage = memoryStorage({
+      'omnipunt.offlineClockQueue': JSON.stringify([punch({ id: 'flaky' })]),
+    })
+    const send = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'))
+
+    for (let cycle = 0; cycle < MAX_UNVERIFIED_OFFLINE_ATTEMPTS * 3; cycle += 1) {
+      const result = await syncQueue({ storage, send, now: NOW, deviceOffline: deviceOnline })
+      expect(result.dropped).toEqual([])
+      expect(result.remaining.map((a) => a.id)).toEqual(['flaky'])
+    }
+
+    expect(readQueue(storage).map((a) => a.id)).toEqual(['flaky'])
+    expect(readDroppedPunches(storage)).toEqual([])
+
+    // E quando a rede volta, a batida que teria sido destruida sincroniza.
+    send.mockResolvedValueOnce(undefined)
+    const recovered = await syncQueue({ storage, send, now: NOW, deviceOffline: deviceOnline })
+    expect(recovered.synced).toBe(1)
+    expect(readQueue(storage)).toEqual([])
+  })
+
+  it('still ends a punch with occurredAt in a durable record, at the 48h line', async () => {
+    // O teto sumiu para este item, mas ele nao pode ficar em loop silencioso
+    // para sempre: quem o termina e o TOO_OLD, com registro visivel.
+    const storage = memoryStorage({
+      'omnipunt.offlineClockQueue': JSON.stringify([punch({ id: 'flaky' })]),
+    })
+    const send = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'))
+
+    for (let cycle = 0; cycle < MAX_UNVERIFIED_OFFLINE_ATTEMPTS + 5; cycle += 1) {
+      await syncQueue({ storage, send, now: NOW, deviceOffline: deviceOnline })
+    }
+    expect(readQueue(storage).map((a) => a.id)).toEqual(['flaky'])
+
+    const later = new Date('2026-08-31T08:00:00.000Z') // > 48h depois de occurredAt
+    const result = await syncQueue({ storage, send, now: later, deviceOffline: deviceOnline })
+    expect(result.dropped.map((a) => a.reason)).toEqual(['TOO_OLD'])
+    expect(readDroppedPunches(storage).map((a) => a.id)).toEqual(['flaky'])
+    expect(readQueue(storage)).toEqual([])
   })
 
   // --- erro permanente SEM status: retenta, mas nao para sempre ---
@@ -464,7 +531,14 @@ describe('offlineQueue', () => {
   it('lets the queue move on after an unsendable punch is recorded', async () => {
     const storage = memoryStorage({
       'omnipunt.offlineClockQueue': JSON.stringify([
-        punch({ id: 'jam', offlineAttempts: MAX_UNVERIFIED_OFFLINE_ATTEMPTS - 1 }),
+        // Sem occurredAt: e o unico item em que o teto vale (o TOO_OLD de 48h
+        // nunca o alcanca).
+        {
+          id: 'jam',
+          path: '/time/clock-in',
+          body: {},
+          offlineAttempts: MAX_UNVERIFIED_OFFLINE_ATTEMPTS - 1,
+        },
         punch({ id: 'good' }),
       ]),
     })
@@ -587,6 +661,160 @@ describe('offlineQueue', () => {
     const storage = readOnlyStorage()
     expect(rememberOfflinePunchPolicy(storage, { userId: 'u1', locationValidationSource: 'TERMINAL_QR' })).toBe(false)
     expect(readOfflinePunchPolicy(storage, 'u1')).toBeNull()
+  })
+
+  // --- caminho ONLINE direto: outra pergunta, outro predicado ---
+
+  it('does not turn a 429 or 408 on the direct path into "saved offline"', () => {
+    // 429 e PIN_LOCKED (backend/src/controllers/time.controller.js: 5 erros de
+    // PIN, 15 min) e tambem o rate limiter. Enfileirar aqui dizia "Sem conexao.
+    // Ponto salvo localmente" com sinal cheio, num erro de autenticacao, e
+    // guardava o PIN errado: o replay morre e o colaborador acaba pedindo ao
+    // supervisor um lancamento manual de um turno que ele ja registrou —
+    // entrada duplicada, turno pago duas vezes.
+    expect(shouldQueueOfflinePunch(httpError('PIN temporariamente bloqueado', 429))).toBe(false)
+    expect(shouldQueueOfflinePunch(httpError('request timeout', 408))).toBe(false)
+    expect(shouldQueueOfflinePunch(httpError('nao autorizado', 401))).toBe(false)
+    expect(shouldQueueOfflinePunch(httpError('invalido', 400))).toBe(false)
+  })
+
+  it('still saves offline when there was no verdict at all, or the server broke', () => {
+    expect(shouldQueueOfflinePunch(new TypeError('Failed to fetch'))).toBe(true)
+    expect(shouldQueueOfflinePunch(new TypeError('Load failed'))).toBe(true)
+    expect(shouldQueueOfflinePunch(new Error('Tempo de resposta excedido.'))).toBe(true)
+    expect(shouldQueueOfflinePunch(httpError('Bad Gateway', 502))).toBe(true)
+    expect(shouldQueueOfflinePunch(httpError('Internal Server Error', 500))).toBe(true)
+  })
+
+  it('keeps the two predicates deliberately different on 429 and 408', () => {
+    // Compartilhar UMA funcao entre a fila e a tela foi a causa do defeito: o
+    // 429 tem de continuar retentavel DENTRO da fila e nao-enfileiravel FORA.
+    for (const status of [429, 408]) {
+      expect(isRetryableReplayFailure(httpError('x', status))).toBe(true)
+      expect(shouldQueueOfflinePunch(httpError('x', status))).toBe(false)
+    }
+    // E onde as duas concordam, elas concordam.
+    for (const error of [new TypeError('Failed to fetch'), httpError('boom', 503)]) {
+      expect(isRetryableReplayFailure(error)).toBe(true)
+      expect(shouldQueueOfflinePunch(error)).toBe(true)
+    }
+  })
+
+  // --- enfileirar durante o sync nao pode apagar a batida nova ---
+
+  it('does not erase a punch enqueued while a send is in flight', async () => {
+    // syncQueue trabalha sobre um snapshot e o await de send dura ate 15s. Se a
+    // gravacao do fim usasse a fatia do snapshot, a batida feita nesse intervalo
+    // sumiria logo depois da tela dizer "salvo localmente".
+    const storage = memoryStorage({
+      'omnipunt.offlineClockQueue': JSON.stringify([punch({ id: 'a1' })]),
+    })
+    const send = vi.fn().mockImplementation(async () => {
+      enqueue(storage, { path: '/time/clock-out', body: {} }, new Date('2026-08-28T17:00:00.000Z'))
+    })
+
+    const result = await syncQueue({ storage, send, now: NOW, deviceOffline: deviceOnline })
+    expect(result.synced).toBe(1)
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(readQueue(storage).map((a) => a.path)).toEqual(['/time/clock-out'])
+  })
+
+  it('does not erase a punch enqueued while a failing send is in flight', async () => {
+    const storage = memoryStorage({
+      'omnipunt.offlineClockQueue': JSON.stringify([punch({ id: 'a1' })]),
+    })
+    const send = vi.fn().mockImplementation(async () => {
+      enqueue(storage, { path: '/time/clock-out', body: {} }, new Date('2026-08-28T17:00:00.000Z'))
+      throw httpError('Internal Server Error', 500)
+    })
+
+    await syncQueue({ storage, send, now: NOW, deviceOffline: deviceOnline })
+    // A pendente antiga continua na frente e a nova sobreviveu atras dela.
+    expect(readQueue(storage).map((a) => a.path)).toEqual(['/time/clock-in', '/time/clock-out'])
+  })
+
+  it('does not erase a punch enqueued while a dropped item is being discarded', async () => {
+    const storage = memoryStorage({
+      'omnipunt.offlineClockQueue': JSON.stringify([punch({ id: 'bad', attempts: 2 })]),
+    })
+    const send = vi.fn().mockImplementation(async () => {
+      enqueue(storage, { path: '/time/clock-out', body: {} }, new Date('2026-08-28T17:00:00.000Z'))
+      throw httpError('invalido', 400)
+    })
+
+    const result = await syncQueue({ storage, send, now: NOW, deviceOffline: deviceOnline })
+    expect(result.dropped.map((a) => a.id)).toEqual(['bad'])
+    expect(readQueue(storage).map((a) => a.path)).toEqual(['/time/clock-out'])
+  })
+
+  // --- decisoes que a tela toma, testadas fora da tela ---
+
+  it('only warns about an uncleared queue when something was actually sent', async () => {
+    // O componente ignorava `synced`: com o loop parando no item 0 e a gravacao
+    // final falhando, ele dizia "as pendencias foram enviadas mas nao puderam
+    // ser limpas" sem NADA ter sido enviado — a cada 15s, por cima do erro real.
+    expect(syncNeedsStorageWarning({ synced: 0, persisted: false })).toBe(false)
+    expect(syncNeedsStorageWarning({ synced: 1, persisted: false })).toBe(true)
+    expect(syncNeedsStorageWarning({ synced: 0, persisted: true })).toBe(false)
+    expect(syncNeedsStorageWarning({ synced: 2, persisted: true })).toBe(false)
+
+    // E o cenario de ponta a ponta: storage que recusa toda escrita, item 0
+    // falhando. Nada saiu, entao nao ha aviso de "enviadas mas nao limpas".
+    const storage = readOnlyStorage({
+      'omnipunt.offlineClockQueue': JSON.stringify([punch({ id: 'a1' })]),
+    })
+    const result = await syncQueue({
+      storage,
+      send: vi.fn().mockRejectedValue(httpError('Internal Server Error', 500)),
+      now: NOW,
+      deviceOffline: deviceOnline,
+    })
+    expect(result.synced).toBe(0)
+    expect(result.persisted).toBe(false)
+    expect(syncNeedsStorageWarning(result)).toBe(false)
+  })
+
+  it('keeps a dropped punch visible even when the drop record itself could not be stored', async () => {
+    // Sob pressao de cota o item sai da fila e o registro de descarte nao cabe.
+    // Se a tela so relesse o storage, a batida sumiria sem rastro nenhum.
+    const storage = readOnlyStorage({
+      'omnipunt.offlineClockQueue': JSON.stringify([punch({ id: 'bad', attempts: 2 })]),
+    })
+    const result = await syncQueue({
+      storage,
+      send: vi.fn().mockRejectedValue(httpError('ja existe um registro aberto', 400)),
+      now: NOW,
+      deviceOffline: deviceOnline,
+    })
+    expect(readDroppedPunches(storage)).toEqual([])
+    expect(result.dropped.map((a) => a.id)).toEqual(['bad'])
+
+    const shown = mergeDroppedPunches(readDroppedPunches(storage), result.dropped)
+    expect(shown.map((a) => a.id)).toEqual(['bad'])
+    expect(shown[0].occurredAt).toBe('2026-08-28T08:00:00.000Z')
+  })
+
+  it('merges the stored drop history with this cycle without duplicating it', async () => {
+    const storage = memoryStorage({
+      'omnipunt.offlineClockQueue': JSON.stringify([punch({ id: 'bad', attempts: 2 })]),
+    })
+    const older: DroppedPunch = {
+      ...punch({ id: 'ontem' }),
+      reason: 'TOO_OLD',
+      droppedAt: '2026-08-27T10:00:00.000Z',
+    }
+    storage.setItem('omnipunt.droppedPunches', JSON.stringify([older]))
+
+    const result = await syncQueue({
+      storage,
+      send: vi.fn().mockRejectedValue(httpError('invalido', 400)),
+      now: NOW,
+      deviceOffline: deviceOnline,
+    })
+    // O storage aceitou a gravacao, entao 'bad' esta nos dois lados: merge nao
+    // pode mostrar a mesma batida duas vezes.
+    const shown = mergeDroppedPunches(readDroppedPunches(storage), result.dropped)
+    expect(shown.map((a) => a.id)).toEqual(['ontem', 'bad'])
   })
 
   // --- nonce por tentativa de batida ---
