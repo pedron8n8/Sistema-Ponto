@@ -31,3 +31,6 @@ frontend/ios/App/build
 # Captura de brainstorms / notas locais
 brainstorms/
 grill-me skill.md
+
+# Artefato incremental do tsc
+frontend/tsconfig.tsbuildinfo
