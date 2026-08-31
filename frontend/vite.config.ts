@@ -61,6 +61,18 @@ export default defineConfig(({ mode }) => {
       devOptions: {
         enabled: true,
       },
+      workbox: {
+        // Workbox's default globPatterns only match {js,wasm,css,html}, and its
+        // default maximumFileSizeToCacheInBytes is 2 MiB. The face-api.js model
+        // files in public/models (*.json manifests + *.bin weights, up to ~6.1 MiB
+        // for face_recognition_model.bin) miss both defaults and would silently
+        // fall out of the precache, forcing every install onto the CDN fallback
+        // and defeating the offline punch queue. Keep the default extension set
+        // for the rest of the app and add the models folder explicitly, scoped to
+        // just those two extensions so nothing else gets swept in.
+        globPatterns: ['**/*.{js,wasm,css,html}', 'models/*.{json,bin}'],
+        maximumFileSizeToCacheInBytes: 7 * 1024 * 1024,
+      },
     }),
   ],
   }
