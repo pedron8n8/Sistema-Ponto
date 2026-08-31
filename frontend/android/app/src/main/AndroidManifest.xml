@@ -38,4 +38,32 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Camera: os dois getUserMedia de ColaboradorDashboard.tsx - captura facial
+         (facingMode 'user') e leitura do QR do terminal (facingMode 'environment').
+         Ambos passam audio:false, entao NAO declaramos RECORD_AUDIO: o bridge do
+         Capacitor so pede em runtime o que esta declarado aqui, e pedir microfone
+         que o app nunca usa e permissao a mais na revisao da Play Store. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Geofence do ponto: getCurrentPosition com enableHighAccuracy:true, comparado
+         contra um raio em metros. FINE e a que entrega essa precisao; COARSE vai junto
+         porque a partir do Android 12 o usuario pode conceder so a localizacao
+         aproximada, e sem ela declarada esse caminho vira negacao seca em vez de
+         posicao degradada. Nada de ACCESS_BACKGROUND_LOCATION: a leitura acontece
+         com o app em primeiro plano, no momento da batida. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- Declarar CAMERA e ACCESS_FINE_LOCATION faz o Play Store inferir
+         android.hardware.camera e android.hardware.location.gps como required=true e
+         esconder o app de quem nao tem esse hardware. Aqui os dois sao opcionais: o
+         admin escolhe locationValidationSource entre MOBILE (GPS) e TERMINAL_QR
+         (camera), e o codigo ja trata a ausencia em runtime. Marcamos required="false"
+         para nao perder aparelhos compativeis por um recurso que pode nem ser usado. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.front" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 </manifest>
