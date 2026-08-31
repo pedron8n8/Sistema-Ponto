@@ -7,6 +7,7 @@ const rateLimitMiddleware = require('./middlewares/rateLimit.middleware');
 const idempotencyMiddleware = require('./middlewares/idempotency.middleware');
 const { ensureUserPhotoDir } = require('./utils/userPhoto');
 const { initGeofenceConfig } = require('./utils/geofence');
+const { parseAllowedOrigins, isAllowedOrigin } = require('./utils/corsOrigin');
 
 // Import routes
 const routes = require('./routes');
@@ -26,43 +27,17 @@ const permissionsPolicyHeader =
   'camera=(), microphone=(), geolocation=(), payment=(), usb=(), midi=()';
 
 
-const defaultAllowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'http://localhost:3001',
-  'https://omnipunt.com',
-  'https://www.omnipunt.com',
-  'https://app.omnipunt.com',
-  // Clientes MCP. O Claude.ai chama o /mcp pelo backend dele, entao isso e
-  // cinturao e suspensorio para o caso de a descoberta partir do navegador.
-  'https://claude.ai',
-  'https://claude.com',
-];
-const allowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || defaultAllowedOrigins.join(','))
-  .split(',')
-  .map((origin) => origin.trim().replace(/^['"]|['"]$/g, '').replace(/\/$/, ''))
-  .filter(Boolean);
+const allowedOrigins = parseAllowedOrigins(process.env.CORS_ALLOWED_ORIGINS);
 
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin) {
+    const isProduction = process.env.NODE_ENV === 'production';
+
+    if (isAllowedOrigin(origin, allowedOrigins, { isProduction })) {
       return callback(null, true);
     }
 
     const cleanOrigin = origin.trim().replace(/\/$/, '');
-
-    if (allowedOrigins.includes(cleanOrigin)) {
-      return callback(null, true);
-    }
-
-    // Em dev, libera qualquer origem localhost/127.0.0.1 (qualquer porta) para
-    // que testar local sempre passe no CORS mesmo que o Vite suba em outra porta.
-    const isDev = process.env.NODE_ENV !== 'production';
-    const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(cleanOrigin);
-    if (isDev && isLocalhost) {
-      return callback(null, true);
-    }
-
     console.warn(`[CORS] Rejected origin: '${origin}'. Clean origin: '${cleanOrigin}'. Allowed origins:`, allowedOrigins);
     return callback(new Error('Origin nao permitida por CORS'));
   },
