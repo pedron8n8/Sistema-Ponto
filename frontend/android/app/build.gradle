@@ -1,5 +1,26 @@
 apply plugin: 'com.android.application'
 
+// Credenciais de assinatura ficam em frontend/android/keystore.properties, que NAO vai
+// pro git (veja keystore.properties.example ao lado). O arquivo nao existe no clone
+// limpo nem no CI, entao tudo aqui e condicional: sem ele, keystoreProperties fica null,
+// nenhum signingConfig e criado e o build segue normal - assembleDebug nao pode quebrar
+// por falta de credencial de release.
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = null
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties = new Properties()
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+    // Um keystore.properties preenchido pela metade quebraria a assinatura de um jeito
+    // dificil de ler la no final do build; melhor descartar agora e cair no fallback.
+    def missing = ['storeFile', 'storePassword', 'keyAlias', 'keyPassword'].findAll {
+        !keystoreProperties.getProperty(it)
+    }
+    if (missing) {
+        logger.warn("keystore.properties encontrado mas incompleto (faltam: ${missing.join(', ')}). Release sai sem assinatura.")
+        keystoreProperties = null
+    }
+}
+
 android {
     namespace = "com.omnipunt.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,10 +37,30 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (keystoreProperties != null) {
+            release {
+                // storeFile e relativo a frontend/android/, para o .properties nao
+                // carregar caminho absoluto da maquina de quem gerou o keystore.
+                storeFile rootProject.file(keystoreProperties.getProperty('storeFile'))
+                storePassword keystoreProperties.getProperty('storePassword')
+                keyAlias keystoreProperties.getProperty('keyAlias')
+                keyPassword keystoreProperties.getProperty('keyPassword')
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // Sem keystore.properties o bloco release acima nem existe, entao nao da
+            // pra referenciar signingConfigs.release direto: o release sai sem assinar
+            // (util para CI compilar) e so vira artefato publicavel na maquina que tem
+            // as credenciais.
+            if (keystoreProperties != null) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

@@ -28,6 +28,14 @@ frontend/android/.gradle
 frontend/ios/App/Pods
 frontend/ios/App/build
 
+# Assinatura de release do app nativo - keystore e senhas nunca vao pro git.
+# frontend/android/.gitignore ja cobre a pasta do Android; estes padroes sao a rede de
+# seguranca para um .jks que caia em qualquer outro lugar da arvore.
+# O modelo versionado e frontend/android/keystore.properties.example.
+*.jks
+*.keystore
+keystore.properties
+
 # Captura de brainstorms / notas locais
 brainstorms/
 grill-me skill.md
