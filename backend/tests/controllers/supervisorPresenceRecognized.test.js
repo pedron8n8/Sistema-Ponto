@@ -42,6 +42,21 @@ describe('select das marcacoes do dia no snapshot de presenca', () => {
   });
 });
 
+describe('rejectOvertime e a corrida', () => {
+  it('leva o predicado de estado no proprio UPDATE', () => {
+    const { getRejectOvertimeWhere } = require('../../src/controllers/supervisor.controller');
+
+    // Convencao do projeto: a concorrencia vive no predicado do UPDATE, nao
+    // numa leitura anterior. O caminho em LOTE ja fazia isso; o de UMA entrada
+    // escrevia com `where: { id }`, e nada impedia o perdedor de uma corrida
+    // de sobrescrever a decisao de quem chegou primeiro.
+    expect(getRejectOvertimeWhere('entry-1')).toEqual({
+      id: 'entry-1',
+      overtimeStatus: 'PENDING',
+    });
+  });
+});
+
 describe('a asercao pega a regressao que existia antes', () => {
   it('explode com a forma antiga do select', () => {
     // Exatamente o que a query devolvia antes da correcao.

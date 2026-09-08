@@ -40,6 +40,12 @@ const TODAY_ENTRIES_SELECT = {
 
 const getTodayEntriesSelect = () => TODAY_ENTRIES_SELECT;
 
+// Predicado de estado da negacao de HE de UMA entrada. Mesma convencao do
+// caminho em lote (rejectEntriesBulk), que ja levava
+// `overtimeStatus: 'PENDING'` no proprio UPDATE: a concorrencia vive no
+// predicado, nao numa leitura anterior.
+const getRejectOvertimeWhere = (id) => ({ id, overtimeStatus: 'PENDING' });
+
 const PRESENCE_REFRESH_MS = 15000;
 const DEFAULT_OVERTIME_LIMIT_MINUTES = Number(process.env.OVERTIME_DAILY_LIMIT_MINUTES || 120);
 const OVERTIME_ALERT_THRESHOLD_PERCENT = Math.max(
@@ -1612,6 +1618,16 @@ const rejectEntriesBulk = async (req, res) => {
     const statusUpdateIndex = overtimeIds.length ? overtimeIds.length + 1 : 0;
     const rejectedCount = rejectResults[statusUpdateIndex]?.count ?? 0;
 
+    // Cada updateMany por linha devolve o proprio count, entao o numero REAL
+    // esta disponivel. Reportar overtimeIds.length era a contagem pre-leitura:
+    // dizia a quem perdeu uma corrida que as rejeicoes dele entraram. E a
+    // mesma armadilha que o comentario acima documenta para rejectedCount.
+    const overtimeRejectedCount = overtimeIds.length
+      ? rejectResults
+          .slice(0, overtimeIds.length)
+          .reduce((sum, result) => sum + (result?.count ?? 0), 0)
+      : 0;
+
     console.log(
       `❌ ${rejectedCount} registros rejeitados em lote (${overtimeIds.length} com HE) por ${req.user.email}`
     );
@@ -1619,7 +1635,7 @@ const rejectEntriesBulk = async (req, res) => {
     res.json({
       message: `${rejectedCount} registro(s) rejeitado(s)`,
       rejectedCount,
-      overtimeRejectedCount: overtimeIds.length,
+      overtimeRejectedCount,
       skipped,
     });
   } catch (error) {
@@ -1830,9 +1846,13 @@ const rejectOvertime = async (req, res) => {
       (Number(entry.workedMinutes) || 0) - (Number(entry.overtimeMinutes) || 0)
     );
 
-    const [updatedEntry, approvalLog] = await prisma.$transaction([
-      prisma.timeEntry.update({
-        where: { id },
+    // updateMany com predicado, nao update por id: e a convencao do projeto e
+    // o que o caminho em LOTE logo acima ja fazia. A leitura em
+    // loadEntryForOvertimeDecision confere o estado antes, mas entre a leitura
+    // e a escrita cabe outra decisao, e o perdedor da corrida precisa perder.
+    const [rejectResult, approvalLog] = await prisma.$transaction([
+      prisma.timeEntry.updateMany({
+        where: getRejectOvertimeWhere(id),
         data: {
           overtimeStatus: 'REJECTED',
           workedMinutes: recognizedMinutes,
@@ -1841,15 +1861,6 @@ const rejectOvertime = async (req, res) => {
           overtimeMinutes100: 0,
           overtimePercent: 0,
           bankHoursAccruedMinutes: 0,
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
         },
       }),
       prisma.approvalLog.create({
@@ -1861,6 +1872,29 @@ const rejectOvertime = async (req, res) => {
         },
       }),
     ]);
+
+    if (rejectResult.count === 0) {
+      return res.status(409).json({
+        error: 'Conflict',
+        code: 'OVERTIME_NOT_PENDING',
+        message: 'Esta hora extra ja foi decidida por outra pessoa. Atualize a lista.',
+      });
+    }
+
+    // Releitura separada porque updateMany nao aceita `include` e a resposta
+    // carrega os dados do colaborador.
+    const updatedEntry = await prisma.timeEntry.findUnique({
+      where: { id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
 
     console.log(`❌ Horas extras do registro ${id} negadas por ${req.user.email}`);
 
@@ -2596,6 +2630,7 @@ module.exports = {
   // ignora `select`, entao e a unica forma de provar que overtimeStatus chega
   // ao reducer e o guard nao voltou a ser codigo morto.
   getTodayEntriesSelect,
+  getRejectOvertimeWhere,
   getTeamPendingEntries,
   approveEntry,
   approveEntriesBulk,

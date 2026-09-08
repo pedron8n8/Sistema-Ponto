@@ -427,7 +427,12 @@ describe('Supervisor Controller', () => {
     // beforeEach (e nao so no captureOps) para que um teste que nao instrumenta
     // as operacoes ainda receba uma contagem real em vez de 0 silencioso.
     const countMatching = (args) => {
-      const ids = args.where?.id?.in || [];
+      // A negacao de HE em lote escreve UM updateMany POR LINHA (o tempo
+      // reconhecido depende do registro e updateMany so grava valor
+      // constante), entao o WHERE vem com `id` ESCALAR e nao `id: { in: [...] }`.
+      // Sem aceitar as duas formas, o count saia 0 e overtimeRejectedCount
+      // reportaria zero negacao num lote que negou.
+      const ids = args.where?.id?.in || (args.where?.id ? [args.where.id] : []);
       const matched = bulkEntries.filter((entry) => {
         if (!ids.includes(entry.id)) return false;
         if (args.where?.status && entry.status !== args.where.status) return false;
@@ -689,10 +694,9 @@ describe('Supervisor Controller', () => {
       mockReq.params = { id: 'entry-ot' };
       mockPrisma.timeEntry.findUnique.mockResolvedValue(pendingOvertimeEntry());
       mockPrisma.$transaction.mockImplementation((operations) => Promise.all(operations));
-      mockPrisma.timeEntry.update.mockImplementation(async ({ data }) => ({
-        ...pendingOvertimeEntry(),
-        ...data,
-      }));
+      // A negacao passou a escrever com updateMany + predicado de estado, para
+      // o perdedor de uma corrida perder. count: 1 = venceu a corrida.
+      mockPrisma.timeEntry.updateMany.mockResolvedValue({ count: 1 });
       mockPrisma.approvalLog.create.mockResolvedValue({ id: 'log-1' });
     });
 
@@ -701,8 +705,9 @@ describe('Supervisor Controller', () => {
 
       await rejectOvertime(mockReq, mockRes);
 
-      const update = mockPrisma.timeEntry.update.mock.calls[0][0];
-      expect(update.where).toEqual({ id: 'entry-ot' });
+      const update = mockPrisma.timeEntry.updateMany.mock.calls[0][0];
+      // O predicado de estado viaja no UPDATE, nao so na leitura anterior.
+      expect(update.where).toEqual({ id: 'entry-ot', overtimeStatus: 'PENDING' });
       expect(update.data).toMatchObject({
         overtimeStatus: 'REJECTED',
         // 570 trabalhados menos os 90 de HE negada.
@@ -730,7 +735,7 @@ describe('Supervisor Controller', () => {
 
       await rejectOvertime(mockReq, mockRes);
 
-      expect(mockPrisma.timeEntry.update.mock.calls[0][0].data).toMatchObject({
+      expect(mockPrisma.timeEntry.updateMany.mock.calls[0][0].data).toMatchObject({
         workedMinutes: 0,
         overtimeMinutes: 0,
       });
@@ -742,8 +747,22 @@ describe('Supervisor Controller', () => {
       await rejectOvertime(mockReq, mockRes);
 
       expect(mockRes.status).toHaveBeenCalledWith(400);
-      expect(mockPrisma.timeEntry.update).not.toHaveBeenCalled();
+      expect(mockPrisma.timeEntry.updateMany).not.toHaveBeenCalled();
       expect(reverseEntryBankHours).not.toHaveBeenCalled();
+    });
+
+    // Quem perde a corrida tem que SABER que perdeu, em vez de receber 200 e
+    // acreditar que a decisao dele entrou.
+    it('devolve 409 quando outra pessoa ja decidiu a HE', async () => {
+      mockPrisma.timeEntry.updateMany.mockResolvedValue({ count: 0 });
+      mockReq.body = { comment: 'Fora do combinado com o cliente' };
+
+      await rejectOvertime(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(409);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'OVERTIME_NOT_PENDING' })
+      );
     });
   });
 
