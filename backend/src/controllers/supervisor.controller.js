@@ -8,9 +8,37 @@ const {
 const { reverseEntryBankHours } = require('../utils/recalcDay');
 const { normalizeMinutes, normalizeTime, normalizeTimeZone } = require('../utils/workSettings');
 const { parseLocalDate } = require('../utils/timeCalculations');
+const { applyMinOvertimeMinutes } = require('../utils/overtime');
 const { presenceBus } = require('../utils/presenceBus');
 const { resolveVisibleUserIds, canViewUser } = require('../utils/visibleUsers');
 const { isHrLevel } = require('../utils/roles');
+const {
+  isWorkedMinutesAuthoritative,
+  RECOGNIZED_MINUTES_SELECT,
+  assertOvertimeStatusSelected,
+} = require('../utils/recognizedMinutes');
+
+// Marcacoes do dia no snapshot de presenca.
+//
+// ATENCAO ao mexer: o guard isWorkedMinutesAuthoritative no reducer de
+// buildTeamPresenceSnapshot era CODIGO MORTO por falta de overtimeStatus neste
+// select — a comparacao virava `undefined === 'REJECTED'`, sempre false, e o
+// fallback devolvia a duracao cheia da entrada. As horas negadas voltavam para
+// o KPI, para o status OVERTIME_ACTIVE e para o alerta de limite de HE.
+//
+// Nomeado e exportado porque o mock do Prisma ignora `select`: so uma asercao
+// sobre a FORMA da query prova que o campo continua aqui.
+const TODAY_ENTRIES_SELECT = {
+  id: true,
+  userId: true,
+  clockIn: true,
+  clockOut: true,
+  location: true,
+  updatedAt: true,
+  ...RECOGNIZED_MINUTES_SELECT,
+};
+
+const getTodayEntriesSelect = () => TODAY_ENTRIES_SELECT;
 
 const PRESENCE_REFRESH_MS = 15000;
 const DEFAULT_OVERTIME_LIMIT_MINUTES = Number(process.env.OVERTIME_DAILY_LIMIT_MINUTES || 120);
@@ -237,6 +265,9 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, supervisorEmail, superv
       bankHoursLimitMinutes: true,
       workdayStartTime: true,
       workdayEndTime: true,
+      // Limiar de HE curta do tenant: a presenca ao vivo calcula HE por conta
+      // propria e precisa concordar com o fechamento do dia.
+      organizationAdmin: { select: { overtimeMinMinutes: true } },
       supervisor: {
         select: {
           id: true,
@@ -294,15 +325,7 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, supervisorEmail, superv
         userId: { in: teamIds },
         clockIn: { gte: startOfDay },
       },
-      select: {
-        id: true,
-        userId: true,
-        clockIn: true,
-        clockOut: true,
-        workedMinutes: true,
-        location: true,
-        updatedAt: true,
-      },
+      select: TODAY_ENTRIES_SELECT,
       orderBy: { clockIn: 'desc' },
     }),
     prisma.timeEntry.findMany({
@@ -337,6 +360,12 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, supervisorEmail, superv
     if (Number.isFinite(storedWorkedMinutes) && storedWorkedMinutes > 0) {
       return Math.floor(storedWorkedMinutes);
     }
+
+    // Entrada com HE negada que era HE de ponta a ponta tem 0 reconhecido de
+    // propósito: o fallback abaixo devolveria a duração cheia e o KPI somaria
+    // as horas que o supervisor negou.
+    assertOvertimeStatusSelected(entry, 'supervisor.presence');
+    if (isWorkedMinutesAuthoritative(entry)) return 0;
 
     const start = new Date(entry.clockIn).getTime();
     const end = new Date(entry.clockOut).getTime();
@@ -388,7 +417,10 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, supervisorEmail, superv
       }, 0);
       const totalWorkedMinutesToday = closedWorkedMinutesToday + elapsedMinutes;
       const contractDailyMinutes = Number(member.contractDailyMinutes || 480);
-      const overtimeMinutesSoFar = Math.max(0, totalWorkedMinutesToday - contractDailyMinutes);
+      const overtimeMinutesSoFar = applyMinOvertimeMinutes(
+        totalWorkedMinutesToday - contractDailyMinutes,
+        member.organizationAdmin?.overtimeMinMinutes ?? null
+      );
       const overtimeLimitMinutes = resolveOvertimeAlertLimitMinutes(member);
       const thresholdMinutes = Math.ceil((overtimeLimitMinutes * OVERTIME_ALERT_THRESHOLD_PERCENT) / 100);
 
@@ -547,6 +579,9 @@ const buildHoursKpisPayload = async ({ supervisorId, isAdmin, query }) => {
       clockOut: true,
       workedMinutes: true,
       overtimeMinutes: true,
+      // Necessário para distinguir um 0 autoritativo (HE negada) de um 0 por
+      // falta de cálculo — ver isWorkedMinutesAuthoritative.
+      overtimeStatus: true,
     },
     orderBy: { clockIn: 'asc' },
   });
@@ -585,7 +620,12 @@ const buildHoursKpisPayload = async ({ supervisorId, isAdmin, query }) => {
         ? Math.max(0, Math.floor((new Date(entry.clockOut) - new Date(entry.clockIn)) / 60000))
         : 0;
 
-    snapshot.workedMinutes += Number(entry.workedMinutes || fallbackWorkedMinutes || 0);
+    // `||` trata 0 como ausência. Uma entrada com HE negada que era hora extra
+    // de ponta a ponta tem 0 reconhecido DE PROPÓSITO, e cairia no fallback
+    // somando de volta ao KPI justamente as horas que o supervisor negou.
+    snapshot.workedMinutes += isWorkedMinutesAuthoritative(entry)
+      ? entry.workedMinutes
+      : Number(entry.workedMinutes || fallbackWorkedMinutes || 0);
     snapshot.overtimeMinutes += Number(entry.overtimeMinutes || 0);
   }
 
@@ -645,7 +685,11 @@ const buildHoursKpisPayload = async ({ supervisorId, isAdmin, query }) => {
         ? Math.max(0, Math.floor((new Date(entry.clockOut) - new Date(entry.clockIn)) / 60000))
         : 0;
 
-    bucket.workedMinutes += Number(entry.workedMinutes || fallbackWorkedMinutes || 0);
+    // Mesma razão do agregado por colaborador: 0 reconhecido é valor, não
+    // ausência, quando a HE foi negada.
+    bucket.workedMinutes += isWorkedMinutesAuthoritative(entry)
+      ? entry.workedMinutes
+      : Number(entry.workedMinutes || fallbackWorkedMinutes || 0);
     bucket.overtimeMinutes += Number(entry.overtimeMinutes || 0);
   }
 
@@ -1508,20 +1552,33 @@ const rejectEntriesBulk = async (req, res) => {
       await reverseEntryBankHours(id);
     }
 
+    // Um UPDATE POR LINHA, não um updateMany na lista: o tempo reconhecido
+    // depende do registro (workedMinutes menos a HE negada daquela linha) e
+    // updateMany só escreve valor constante. Continuam todos na MESMA transação,
+    // e cada um leva o predicado de estado `overtimeStatus: 'PENDING'` para o
+    // perdedor de uma corrida continuar perdendo.
+    const overtimeUpdateOps = overtimeEntries.map((entry) =>
+      prisma.timeEntry.updateMany({
+        where: { id: entry.id, overtimeStatus: 'PENDING' },
+        data: {
+          overtimeStatus: 'REJECTED',
+          workedMinutes: Math.max(
+            0,
+            (Number(entry.workedMinutes) || 0) - (Number(entry.overtimeMinutes) || 0)
+          ),
+          overtimeMinutes: 0,
+          overtimeMinutes50: 0,
+          overtimeMinutes100: 0,
+          overtimePercent: 0,
+          bankHoursAccruedMinutes: 0,
+        },
+      })
+    );
+
     const rejectResults = await prisma.$transaction([
       ...(overtimeIds.length
         ? [
-            prisma.timeEntry.updateMany({
-              where: { id: { in: overtimeIds } },
-              data: {
-                overtimeStatus: 'REJECTED',
-                overtimeMinutes: 0,
-                overtimeMinutes50: 0,
-                overtimeMinutes100: 0,
-                overtimePercent: 0,
-                bankHoursAccruedMinutes: 0,
-              },
-            }),
+            ...overtimeUpdateOps,
             prisma.approvalLog.createMany({
               data: overtimeEntries.map((entry) => ({
                 timeEntryId: entry.id,
@@ -1548,7 +1605,12 @@ const rejectEntriesBulk = async (req, res) => {
 
     // Ver approvedCount: o updateMany de status filtra por `status: 'PENDING'`,
     // entao a contagem pre-leitura mente para quem perde uma corrida.
-    const rejectedCount = rejectResults[overtimeIds.length ? 2 : 0]?.count ?? 0;
+    //
+    // O bloco de HE agora contribui com um UPDATE por linha mais o createMany
+    // dos logs, então o índice do update de status anda com a quantidade de HE
+    // negada — não é mais fixo em 2.
+    const statusUpdateIndex = overtimeIds.length ? overtimeIds.length + 1 : 0;
+    const rejectedCount = rejectResults[statusUpdateIndex]?.count ?? 0;
 
     console.log(
       `❌ ${rejectedCount} registros rejeitados em lote (${overtimeIds.length} com HE) por ${req.user.email}`
@@ -1758,11 +1820,22 @@ const rejectOvertime = async (req, res) => {
     // Reverte o crédito de banco de horas já lançado no clock-out
     await reverseEntryBankHours(id);
 
+    // O tempo negado sai do tempo reconhecido da entrada: 570 trabalhados com 90
+    // de HE negada valem 480. Sem isso o total do período, os KPIs, o relatório
+    // e o export continuavam somando as horas que o supervisor acabou de negar.
+    // O mesmo desconto vive no ramo REJECTED de recalcDay, senão o recálculo do
+    // dia (edição do RH, sincronização offline) regrava o valor cheio.
+    const recognizedMinutes = Math.max(
+      0,
+      (Number(entry.workedMinutes) || 0) - (Number(entry.overtimeMinutes) || 0)
+    );
+
     const [updatedEntry, approvalLog] = await prisma.$transaction([
       prisma.timeEntry.update({
         where: { id },
         data: {
           overtimeStatus: 'REJECTED',
+          workedMinutes: recognizedMinutes,
           overtimeMinutes: 0,
           overtimeMinutes50: 0,
           overtimeMinutes100: 0,
@@ -2519,6 +2592,10 @@ const payTeamMemberBankHours = async (req, res) => {
 };
 
 module.exports = {
+  // Exportado para asercao de FORMA da query nos testes: o mock do Prisma
+  // ignora `select`, entao e a unica forma de provar que overtimeStatus chega
+  // ao reducer e o guard nao voltou a ser codigo morto.
+  getTodayEntriesSelect,
   getTeamPendingEntries,
   approveEntry,
   approveEntriesBulk,
