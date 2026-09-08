@@ -49,6 +49,14 @@ const GLOBAL_BULK_KEY = '__period__'
 // A autoridade continua sendo o servidor (supervisor.controller.js).
 const MAX_PERIOD_BULK = 500
 
+// Tamanho da pagina da listagem. Antes era um `limit=500` fixo sem paginacao:
+// a acao do PERIODO INTEIRO nao se enganava com isso (manda `{ scope }` e o
+// servidor resolve, e o contador vem de `pagination.total`), mas as acoes POR
+// COLABORADOR montam `entryIds` a partir de `entries` — e a confirmacao delas
+// dizia "todos os N registros pendentes ... NESTE PERIODO". Com a lista
+// truncada isso era promessa falsa: aprovava so o que tinha sido carregado.
+const PAGE_SIZE = 200
+
 type PeriodBulkScope = { startDate: string; endDate: string; userId?: string; groupId?: string }
 type BulkBody = { entryIds: string[]; comment?: string } | { scope: PeriodBulkScope; comment?: string }
 type BulkResult = {
@@ -133,6 +141,10 @@ const SupervisorPendingItemsPage = () => {
   // Total do servidor para o periodo/filtro atual: a listagem para em 500, entao o
   // contador das acoes globais nao pode sair de `entries`.
   const [periodTotal, setPeriodTotal] = useState(0)
+  // Quantas paginas estao na tela. Precisa ser lembrado porque a lista e relida
+  // depois de cada decisao: reler so a pagina 1 devolveria o supervisor ao
+  // inicio de uma fila que ele acabou de percorrer.
+  const [pagesLoaded, setPagesLoaded] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -163,44 +175,81 @@ const SupervisorPendingItemsPage = () => {
     setAnchorDate(toYmd(boundary))
   }
 
-  const loadData = async () => {
+  // Carrega o intervalo fechado [fromPage, toPage]. `fromPage === 1` SUBSTITUI a
+  // lista; acima disso concatena. A acao do PERIODO INTEIRO nao depende disto —
+  // ela manda `{ scope }` e o servidor resolve. As acoes POR COLABORADOR sim:
+  // elas mandam `entryIds` montados a partir de `entries`, entao o que nao
+  // chegou aqui nao e aprovado nem negado.
+  const loadRange = async (fromPage: number, toPage: number) => {
     if (!token) return
 
     setLoading(true)
     setError('')
 
     try {
-      const query = new URLSearchParams()
-      if (filters.status) query.set('status', filters.status)
-      if (filters.userId) query.set('userId', filters.userId)
-      if (filters.groupId) query.set('groupId', filters.groupId)
-      query.set('startDate', startDate)
-      query.set('endDate', endDate)
-      query.set('limit', '500')
+      const collected: Entry[] = []
+      let lastStats: Stats | null = null
+      let subs: Subordinate[] | null = null
+      let total = 0
 
-      const entriesResponse = await apiFetch<{
-        entries: Entry[]
-        stats: Stats
-        subordinates: Subordinate[]
-        pagination?: { total: number }
-      }>(`/supervisor/entries?${query.toString()}`, { token })
+      // Sequencial, nao em paralelo: as paginas sao fatias de um mesmo ORDER BY,
+      // e respostas tiradas de estados diferentes do banco se misturariam.
+      for (let page = fromPage; page <= toPage; page += 1) {
+        const query = new URLSearchParams()
+        if (filters.status) query.set('status', filters.status)
+        if (filters.userId) query.set('userId', filters.userId)
+        if (filters.groupId) query.set('groupId', filters.groupId)
+        query.set('startDate', startDate)
+        query.set('endDate', endDate)
+        query.set('limit', String(PAGE_SIZE))
+        // `page`, 1-based: e o que o controller le
+        // (`skip = (parseInt(page) - 1) * limit`). Um `offset` seria ignorado em
+        // silencio e cada pagina nova repetiria a primeira.
+        query.set('page', String(page))
 
-      setEntries(entriesResponse.entries || [])
-      setStats(entriesResponse.stats || defaultStats)
-      setSubordinates(entriesResponse.subordinates || [])
-      setPeriodTotal(entriesResponse.pagination?.total || 0)
+        const entriesResponse = await apiFetch<{
+          entries: Entry[]
+          stats: Stats
+          subordinates: Subordinate[]
+          pagination?: { total: number }
+        }>(`/supervisor/entries?${query.toString()}`, { token })
+
+        collected.push(...(entriesResponse.entries || []))
+        if (entriesResponse.stats) lastStats = entriesResponse.stats
+        if (entriesResponse.subordinates) subs = entriesResponse.subordinates
+        total = entriesResponse.pagination?.total ?? total
+      }
+
+      setEntries((prev) => (fromPage === 1 ? collected : [...prev, ...collected]))
+      if (lastStats) setStats(lastStats)
+      if (subs) setSubordinates(subs)
+      setPeriodTotal(total)
+      setPagesLoaded(toPage)
     } catch (err) {
-      setEntries([])
-      setStats(defaultStats)
-      setPeriodTotal(0)
+      // Falha na primeira pagina significa que nao ha lista. Falha ao carregar
+      // mais preserva o que estava na tela: apagar tudo por um erro de rede
+      // jogaria fora a leitura de quem estava no meio da fila.
+      if (fromPage === 1) {
+        setEntries([])
+        setStats(defaultStats)
+        setPeriodTotal(0)
+        setPagesLoaded(1)
+      }
       setError(err instanceof Error ? err.message : t('Could not load pending items.', 'Erro ao carregar pendencias'))
     } finally {
       setLoading(false)
     }
   }
 
+  // Releitura depois de uma decisao: mantem as paginas JA abertas, senao o
+  // supervisor voltaria ao inicio de uma fila que acabou de percorrer.
+  const loadData = () => loadRange(1, pagesLoaded)
+
   useEffect(() => {
-    loadData().catch(() => undefined)
+    // Trocar filtro volta para a pagina 1 de proposito: `page` e um recorte do
+    // resultado do filtro ANTERIOR e nao significa nada no novo.
+    setPagesLoaded(1)
+    loadRange(1, 1).catch(() => undefined)
   }, [token, filters.status, filters.userId, filters.groupId, startDate, endDate])
 
   // Grupo = quem realmente tem gente abaixo, seja qual for o cargo. Filtrar por
@@ -451,6 +500,18 @@ const SupervisorPendingItemsPage = () => {
     return comment
   }
 
+  // A lista na tela cobre o periodo inteiro, ou e um pedaco dele?
+  const isTruncated = periodTotal > 0 && entries.length < periodTotal
+
+  // Ressalva de escopo das acoes POR COLABORADOR. Elas operam sobre os ids que
+  // estao na tela, entao dizer "neste periodo" com a lista truncada e mentira:
+  // o supervisor clicaria achando que fechou o colaborador e sobrariam
+  // registros que ele nunca viu. Com a lista completa, a frase antiga vale.
+  const scopeCaveat = () =>
+    isTruncated
+      ? t(' — only the ones loaded on screen, not the whole period', ' — apenas os carregados na tela, nao o periodo inteiro')
+      : t(' in this period', ' neste periodo')
+
   const handleBulkApprove = (group: WorkerGroup) => {
     if (group.approvableIds.length === 0) return
     const otWarning =
@@ -466,8 +527,8 @@ const SupervisorPendingItemsPage = () => {
       loadingKey: group.user.id || group.user.email,
       confirmText:
         t(
-          `Approve all ${group.approvableIds.length} pending entries of ${group.user.name} in this period?`,
-          `Aprovar todos os ${group.approvableIds.length} registros pendentes de ${group.user.name} neste periodo?`
+          `Approve ${group.approvableIds.length} pending entries of ${group.user.name}${scopeCaveat()}?`,
+          `Aprovar ${group.approvableIds.length} registros pendentes de ${group.user.name}${scopeCaveat()}?`
         ) + otWarning,
     })
   }
@@ -491,8 +552,8 @@ const SupervisorPendingItemsPage = () => {
       loadingKey: userKey,
       confirmText:
         t(
-          `Deny all ${group.approvableIds.length} pending entries of ${group.user.name} in this period?`,
-          `Negar todos os ${group.approvableIds.length} registros pendentes de ${group.user.name} neste periodo?`
+          `Deny ${group.approvableIds.length} pending entries of ${group.user.name}${scopeCaveat()}?`,
+          `Negar ${group.approvableIds.length} registros pendentes de ${group.user.name}${scopeCaveat()}?`
         ) + otWarning,
     })
     setBulkCommentByUser((prev) => ({ ...prev, [userKey]: '' }))
@@ -760,6 +821,29 @@ const SupervisorPendingItemsPage = () => {
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-4 shadow-sm md:p-6">
         <h3 className="text-lg font-semibold text-slate-900">{t('Items', 'Itens')}</h3>
+
+        {/* Uma lista truncada nao pode parecer uma lista terminada: as acoes por
+            colaborador operam sobre o que esta aqui. A barra do periodo inteiro
+            continua correta e cobre o caso grande — por isso o aviso aponta
+            para ela em vez de exigir carregar tudo. */}
+        {isTruncated ? (
+          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-2xl bg-amber-50 p-3">
+            <p className="text-xs text-amber-800">
+              {t(
+                `Showing ${entries.length} of ${periodTotal} entries. Per-member actions only cover what is loaded; use the whole-period action above to cover everything.`,
+                `Mostrando ${entries.length} de ${periodTotal} registros. As acoes por colaborador cobrem so o que esta carregado; use a acao do periodo inteiro acima para cobrir tudo.`
+              )}
+            </p>
+            <button
+              type="button"
+              onClick={() => loadRange(pagesLoaded + 1, pagesLoaded + 1)}
+              disabled={loading}
+              className="min-h-[44px] rounded-full border border-amber-300 bg-white px-4 text-xs font-semibold text-amber-800 disabled:opacity-50 md:min-h-0 md:py-2"
+            >
+              {loading ? t('Loading...', 'Carregando...') : t('Load more', 'Carregar mais')}
+            </button>
+          </div>
+        ) : null}
 
         {/* Abas: trabalho normal e hora extra sao decisoes diferentes sobre a mesma
             fila. role="tablist" com setas do teclado nao foi usado de proposito —
