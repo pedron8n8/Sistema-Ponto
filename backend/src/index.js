@@ -89,6 +89,36 @@ ensureUserPhotoDir();
 initGeofenceConfig().catch(() => undefined);
 app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
 
+// Log de requisicao, para o teste manual ter o que olhar.
+//
+// Existia so console.log espalhado em alguns handlers, entao uma tela que
+// falhava nao deixava rastro nenhum no servidor: nao havia como saber se a
+// requisicao chegou, qual status voltou, ou se o front nem chamou. Sem isso o
+// debug de UI e adivinhacao.
+//
+// Ligado quando HTTP_LOG=1 ou em development. Fica FORA de producao por
+// padrao: sao milhares de linhas por hora e o path pode carregar id de
+// colaborador, que nao deve ir para o stdout do container por default.
+//
+// Loga no 'finish' do response, e nao na entrada, porque o que interessa e o
+// par status+duracao — uma requisicao que chegou e nunca respondeu aparece
+// justamente pela AUSENCIA da linha.
+if (process.env.HTTP_LOG === '1' || process.env.NODE_ENV === 'development') {
+  app.use((req, res, next) => {
+    const startedAt = Date.now();
+
+    res.on('finish', () => {
+      const ms = Date.now() - startedAt;
+      // Marca visual por faixa de status: varrer 200 linhas de log procurando
+      // o 4xx no meio e mais lento do que deveria.
+      const marca = res.statusCode >= 500 ? '🔥' : res.statusCode >= 400 ? '⚠️ ' : '✅';
+      console.log(`${marca} ${res.statusCode} ${req.method} ${req.originalUrl} ${ms}ms`);
+    });
+
+    next();
+  });
+}
+
 // Health check route
 app.get('/health', (req, res) => {
   res.json({

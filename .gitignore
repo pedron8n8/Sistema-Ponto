@@ -23,10 +23,12 @@ frontend/.env
 # um `git add -A` distraido publicaria um arquivo de ambiente.
 /docker-compose.local.yml
 backend/.env.docker-local
-backend/inspect-local-db.js
-backend/recalc-test-days.js
-backend/seed-overtime-test.js
-backend/verify-overtime-local.js
+# Padroes, nao nomes: o primeiro script novo com nome fora da lista voltaria a
+# ser commitavel, e sao justamente scripts que escrevem no banco.
+backend/inspect-local-*.js
+backend/seed-*.js
+backend/verify-*-local.js
+backend/recalc-*.js
 
 # Scripts/dados locais que nao vao pra VPS
 backend/scripts/start-ssh-tunnel.ps1
