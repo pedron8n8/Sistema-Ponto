@@ -7,6 +7,49 @@ const {
 } = require('../utils/notifications');
 const { sendSlackDM } = require('../utils/slackNotifier');
 const { sendResendEmail } = require('../utils/resendNotifier');
+const { applyMinOvertimeMinutes } = require('../utils/overtime');
+const {
+  isWorkedMinutesAuthoritative,
+  RECOGNIZED_MINUTES_SELECT,
+  assertOvertimeStatusSelected,
+} = require('../utils/recognizedMinutes');
+
+// Marcacoes fechadas do dia, para somar o tempo JA reconhecido antes da entrada
+// aberta. Sem overtimeStatus, o reducer tratava o 0 gravado como "nao
+// calculado" e recalculava a duracao cheia — o alerta de limite de HE chegava
+// ao gestor por horas que o proprio gestor ja tinha negado.
+const CLOSED_ENTRIES_SELECT = {
+  userId: true,
+  clockIn: true,
+  clockOut: true,
+  ...RECOGNIZED_MINUTES_SELECT,
+};
+
+const getClosedEntriesSelect = () => CLOSED_ENTRIES_SELECT;
+
+// Extraido do processScanJob para poder ser testado sem subir a fila do BullMQ
+// (o require do modulo instancia a Queue e abre um ioredis).
+const sumRecognizedMinutesByUser = (entries) =>
+  (Array.isArray(entries) ? entries : []).reduce((acc, entry) => {
+    assertOvertimeStatusSelected(entry, 'proactiveAlert.scan');
+
+    const worked = Number(entry.workedMinutes);
+    let value;
+
+    if (Number.isFinite(worked) && worked > 0) {
+      value = Math.floor(worked);
+    } else if (isWorkedMinutesAuthoritative(entry)) {
+      // 0 reconhecido DE PROPOSITO: HE negada que valia HE de ponta a ponta.
+      value = 0;
+    } else {
+      // Registro legado que nunca passou por recalcDay: o fallback existe para
+      // curar esse caso, e continua valendo.
+      value = Math.max(0, Math.floor((new Date(entry.clockOut) - new Date(entry.clockIn)) / 60000));
+    }
+
+    acc[entry.userId] = (acc[entry.userId] || 0) + value;
+    return acc;
+  }, {});
 
 const SCAN_JOB_NAME = 'scan-end-of-shift-overtime';
 const DISPATCH_JOB_NAME = 'dispatch-end-of-shift-overtime';
@@ -301,6 +344,9 @@ const processScanJob = async () => {
       bankHoursLimitMinutes: true,
       workdayEndTime: true,
       slackUserId: true,
+      // Limiar de HE curta do tenant: sem ele o alerta proativo dispararia por
+      // hora extra que o fechamento do dia vai descartar.
+      organizationAdmin: { select: { overtimeMinMinutes: true } },
       adminPlanStatus: true,
       adminPlan: {
         select: {
@@ -345,23 +391,10 @@ const processScanJob = async () => {
         not: null,
       },
     },
-    select: {
-      userId: true,
-      workedMinutes: true,
-      clockIn: true,
-      clockOut: true,
-    },
+    select: CLOSED_ENTRIES_SELECT,
   });
 
-  const workedMinutesByUser = closedEntriesToday.reduce((acc, entry) => {
-    const worked = Number(entry.workedMinutes);
-    const value = Number.isFinite(worked) && worked > 0
-      ? Math.floor(worked)
-      : Math.max(0, Math.floor((new Date(entry.clockOut) - new Date(entry.clockIn)) / 60000));
-
-    acc[entry.userId] = (acc[entry.userId] || 0) + value;
-    return acc;
-  }, {});
+  const workedMinutesByUser = sumRecognizedMinutesByUser(closedEntriesToday);
 
   let enqueued = 0;
   let skipped = 0;
@@ -418,7 +451,10 @@ const evaluateOvertimeThreshold = async ({ openEntry, member, now, workedMinutes
   const elapsedMinutes = Math.max(0, Math.floor((now - new Date(openEntry.clockIn)) / 60000));
   const totalWorkedMinutesToday = (workedMinutesByUser[member.id] || 0) + elapsedMinutes;
   const contractDailyMinutes = Number(member.contractDailyMinutes || 480);
-  const overtimeMinutesSoFar = Math.max(0, totalWorkedMinutesToday - contractDailyMinutes);
+  const overtimeMinutesSoFar = applyMinOvertimeMinutes(
+    totalWorkedMinutesToday - contractDailyMinutes,
+    member.organizationAdmin?.overtimeMinMinutes ?? null
+  );
   const overtimeLimitMinutes = resolveOvertimeAlertLimitMinutes(member);
   const thresholdMinutes = Math.ceil((overtimeLimitMinutes * OVERTIME_ALERT_THRESHOLD_PERCENT) / 100);
 
@@ -1076,4 +1112,8 @@ module.exports = {
   processScanJob,
   processShiftEndDispatchJob,
   evaluateShiftEndReminder,
+  // Exportados para teste: o select por asercao de FORMA (o mock do Prisma
+  // ignora `select`) e o reducer isolado, que assim roda sem a fila do BullMQ.
+  getClosedEntriesSelect,
+  sumRecognizedMinutesByUser,
 };
