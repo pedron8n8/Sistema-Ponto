@@ -2,8 +2,22 @@ const { reportQueue, REPORTS_DIR } = require('../workers/reportWorker');
 const fs = require('fs');
 const path = require('path');
 const { prisma } = require('../config/database');
-const { getUtcDateRangeForDateOnly, resolveTimeZone } = require('../utils/dateFilters');
-const { resolveVisibleUserIds } = require('../utils/visibleUsers');
+const {
+  DATE_ONLY_REGEX,
+  getUtcDateRangeForDateOnly,
+  resolveTimeZone,
+} = require('../utils/dateFilters');
+const { canViewUser, resolveVisibleUserIds } = require('../utils/visibleUsers');
+const {
+  DAYS_IN_WEEK,
+  addDaysToDateKey,
+  buildWeeklyTimesheet,
+} = require('../utils/weeklyTimesheet');
+const { RECOGNIZED_MINUTES_SELECT } = require('../utils/recognizedMinutes');
+const {
+  TENANT_OVERTIME_POLICY_SELECT,
+  resolveMinOvertimeMinutes,
+} = require('../utils/tenantOvertimePolicy');
 
 const SUPPORTED_EXPORT_FORMATS = ['csv', 'xlsx'];
 
@@ -508,6 +522,138 @@ const getDailyBreakdown = async (req, res) => {
   }
 };
 
+/**
+ * GET /reports/weekly-timesheet
+ * Query: weekStart=YYYY-MM-DD&userId?&timeZone?
+ *
+ * Timesheet da semana JA CALCULADO, respondido na hora e SEM FILA: este é o
+ * caminho ao vivo. A geração assíncrona de planilha continua em /reports/export
+ * — misturar os dois faria o painel esperar um worker para mostrar a semana
+ * corrente, e o arquivo do Redis nunca é o retrato de agora.
+ *
+ * Endpoint único de propósito: o painel web e a tool do MCP consomem esta mesma
+ * resposta, então os dois não têm como discordar do número.
+ */
+const getWeeklyTimesheet = async (req, res) => {
+  try {
+    const requester = req.user;
+    const { weekStart, userId, timeZone } = req.query;
+
+    if (!DATE_ONLY_REGEX.test(String(weekStart || ''))) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Parâmetro weekStart é obrigatório (YYYY-MM-DD).',
+      });
+    }
+
+    // Sem userId a semana é a de quem pediu: é o que faz o MEMBER conseguir ver
+    // o próprio timesheet sem nenhuma permissão extra.
+    const targetUserId = userId || requester.id;
+
+    // canViewUser em vez de comparar contra a lista à mão: resolveVisibleUserIds
+    // devolve `null` para SUPERADMIN (irrestrito), e `null.includes(...)`
+    // derrubaria a requisição justamente para quem pode ver tudo.
+    if (targetUserId !== requester.id && !(await canViewUser(requester, targetUserId))) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Você não tem permissão para consultar dados desse usuário.',
+      });
+    }
+
+    const target = await prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        contractDailyMinutes: true,
+        timeZone: true,
+        // O limiar de HE curta mora na linha do DONO do tenant, não na do
+        // colaborador. Espalhar o fragmento é o que impede este select de
+        // nascer sem o campo, como aconteceu no clock-out.
+        ...TENANT_OVERTIME_POLICY_SELECT,
+      },
+    });
+
+    if (!target) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Colaborador não encontrado.',
+      });
+    }
+
+    // O fuso do colaborador manda, não o de quem olha: o dia do ponto é o dia
+    // de quem bateu. resolveTimeZone ainda valida e cai no padrão do produto se
+    // vier lixo no query string.
+    const effectiveTimeZone = resolveTimeZone(timeZone || target.timeZone || requester.timeZone);
+
+    // Sétimo dia inclusivo (weekStart + 6) — é o último dia que `days` devolve.
+    const weekEnd = addDaysToDateKey(String(weekStart), DAYS_IN_WEEK - 1);
+
+    // A janela é ZONADA, não UTC: em São Paulo a segunda-feira local começa às
+    // 03:00Z. Uma janela de weekStart 00:00Z traria a noite do domingo anterior
+    // (que nenhum bucket recolhe) e deixaria de fora a noite do último domingo
+    // — o dia apareceria vazio na tela mesmo com ponto batido.
+    const windowStart = getUtcDateRangeForDateOnly(String(weekStart), effectiveTimeZone);
+    const windowEnd = getUtcDateRangeForDateOnly(weekEnd, effectiveTimeZone);
+
+    const entries = await prisma.timeEntry.findMany({
+      where: {
+        userId: targetUserId,
+        clockIn: { gte: windowStart.start, lt: windowEnd.end },
+      },
+      select: {
+        id: true,
+        clockIn: true,
+        clockOut: true,
+        breakMinutes: true,
+        overtimeMinutes: true,
+        overtimeMinutes50: true,
+        overtimeMinutes100: true,
+        bankHoursAccruedMinutes: true,
+        status: true,
+        notes: true,
+        // workedMinutes + overtimeStatus: sem o status o zero autoritativo de
+        // uma HE negada cai no fallback de duração e os minutos negados voltam.
+        ...RECOGNIZED_MINUTES_SELECT,
+      },
+      orderBy: { clockIn: 'asc' },
+    });
+
+    const timesheet = buildWeeklyTimesheet({
+      entries,
+      weekStart: String(weekStart),
+      timeZone: effectiveTimeZone,
+      contractDailyMinutes: target.contractDailyMinutes,
+      minOvertimeMinutes: resolveMinOvertimeMinutes(target),
+    });
+
+    res.json({
+      weekStart: String(weekStart),
+      weekEnd,
+      timeZone: effectiveTimeZone,
+      user: {
+        id: target.id,
+        name: target.name,
+        email: target.email,
+        contractDailyMinutes: target.contractDailyMinutes,
+      },
+      ...timesheet,
+      // Quem consome mostra "atualizado às ...", e o MCP precisa saber que a
+      // resposta é um retrato de agora e não um arquivo estável — sobretudo
+      // quando hasOpenEntry é true e o total ainda vai crescer.
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('❌ Erro ao montar timesheet semanal:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao montar o timesheet da semana',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
 module.exports = {
   createExportJob,
   getJobStatus,
@@ -515,4 +661,5 @@ module.exports = {
   listReports,
   deleteReport,
   getDailyBreakdown,
+  getWeeklyTimesheet,
 };
