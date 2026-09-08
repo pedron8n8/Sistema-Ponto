@@ -59,8 +59,18 @@ const recalculateUserDay = async ({ userId, date }) => {
 
   const userConfig = await prisma.user.findUnique({
     where: { id: userId },
-    select: { contractDailyMinutes: true },
+    select: {
+      contractDailyMinutes: true,
+      // O limiar de HE curta e do TENANT, nao do colaborador: quem habilita e o
+      // ADMIN/INTEGRATOR da conta. Vem junto nesta mesma query, pela relacao,
+      // para nao custar uma ida extra ao banco por dia recalculado.
+      organizationAdmin: { select: { overtimeMinMinutes: true } },
+    },
   });
+
+  // Colaborador sem dono de organizacao (base legada) simplesmente nao tem
+  // limiar — o comportamento volta a ser o de antes.
+  const minOvertimeMinutes = userConfig?.organizationAdmin?.overtimeMinMinutes ?? null;
 
   const entries = await prisma.timeEntry.findMany({
     where: {
@@ -85,15 +95,26 @@ const recalculateUserDay = async ({ userId, date }) => {
       contractDailyMinutes: userConfig?.contractDailyMinutes,
       workedMinutesBeforeEntry,
       breakMinutes: entry.breakMinutes,
+      minOvertimeMinutes,
     });
 
     // HE negada é definitiva: mantém efeito zerado e não re-credita banco de horas,
     // mesmo que o recálculo do dia volte a produzir horas extras para este registro.
     if (entry.overtimeStatus === 'REJECTED') {
+      // O tempo negado sai do reconhecido: turno de 12h numa jornada de 8h com a
+      // HE negada vale 480min, não 720. Sem descontar aqui também, o recálculo
+      // do dia (edição do RH, batida offline sincronizada) regravava o valor
+      // cheio e desfazia em silêncio o que o supervisor negou.
+      //
+      // Desconta a HE da própria entrada em vez de cortar no contrato: num dia
+      // com várias entradas a HE é incremental e a segunda entrada pode ser HE
+      // de ponta a ponta, onde cortar em 480 daria número errado.
+      const recognizedMinutes = Math.max(0, overtime.workedMinutes - overtime.overtimeMinutes);
+
       await prisma.timeEntry.update({
         where: { id: entry.id },
         data: {
-          workedMinutes: overtime.workedMinutes,
+          workedMinutes: recognizedMinutes,
           overtimeMinutes: 0,
           overtimeMinutes50: 0,
           overtimeMinutes100: 0,
@@ -102,10 +123,15 @@ const recalculateUserDay = async ({ userId, date }) => {
         },
       });
 
+      // Acumula o tempo CHEIO, não o reconhecido: o colaborador trabalhou
+      // aqueles minutos e negar é sobre reconhecimento, não sobre rebobinar o
+      // relógio do dia. É também neutro para a HE das entradas seguintes — a
+      // diferença cai inteira na faixa acima do contrato, então otAfter-otBefore
+      // não muda (coberto por recalcDay.test.js).
       workedMinutesBeforeEntry += overtime.workedMinutes;
       results.push({
         id: entry.id,
-        workedMinutes: overtime.workedMinutes,
+        workedMinutes: recognizedMinutes,
         overtimeMinutes: 0,
         bankHoursAccruedMinutes: 0,
       });

@@ -143,6 +143,24 @@ describe('recalculateUserDay', () => {
     expect(accrueBankHours).not.toHaveBeenCalled();
   });
 
+  // HE negada sai do tempo reconhecido: turno de 12h numa jornada de 8h com os
+  // 240min de HE negados vale 480min, não 720. Sem isso o total do período, o
+  // relatório e o export continuavam mostrando as 12h que o supervisor negou.
+  //
+  // Desconta-se a HE da própria entrada em vez de cortar no contrato: num dia
+  // com várias entradas a HE é incremental, e a segunda entrada pode ser HE de
+  // ponta a ponta — cortar em 480 ali daria número errado.
+  it('discounts the rejected overtime from the recognized worked minutes', async () => {
+    const stored = arrangeEntry(offlineShift({ overtimeStatus: 'REJECTED' }));
+
+    const [result] = await recalculateUserDay({ userId: 'user-123', date: DAY });
+
+    expect(result.workedMinutes).toBe(480);
+    expect(stored.workedMinutes).toBe(480);
+    // clockIn/clockOut são o fato bruto e não se movem; workedMinutes é derivado.
+    expect(stored.clockIn).toEqual(new Date(DAY.getTime() - 12 * HOUR));
+    expect(stored.clockOut).toEqual(new Date(DAY.getTime()));
+  });
   it('clears the stale accrued minutes when the recalc produces no credit', async () => {
     // O crédito anterior foi revertido por reverseEntryBankHours; deixar o
     // número velho na coluna mostraria banco de horas que não existe mais.
@@ -171,5 +189,153 @@ describe('recalculateUserDay', () => {
     expect(mockPrisma.user.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { bankHoursBalanceMinutes: { decrement: 120 } } })
     );
+  });
+});
+
+// Negar a HE de uma entrada não pode empurrar hora extra para a entrada
+// seguinte do mesmo dia. O acumulador do dia segue somando o tempo CHEIO: o
+// colaborador trabalhou aqueles minutos, negar é sobre reconhecimento, não
+// sobre rebobinar o relógio do dia.
+describe('recalculateUserDay across two entries on the same day', () => {
+  const CONTRACT = 480;
+
+  const first = (over = {}) => ({
+    id: 'entry-a',
+    userId: 'user-123',
+    clockIn: new Date('2026-08-28T11:00:00.000Z'),
+    clockOut: new Date('2026-08-28T21:00:00.000Z'), // 600min => 120min de HE
+    breakMinutes: 0,
+    status: 'PENDING',
+    overtimeStatus: 'PENDING',
+    location: null,
+    ...over,
+  });
+
+  const second = (over = {}) => ({
+    id: 'entry-b',
+    userId: 'user-123',
+    clockIn: new Date('2026-08-28T22:00:00.000Z'),
+    clockOut: new Date('2026-08-28T23:00:00.000Z'), // 60min, todos HE incremental
+    breakMinutes: 0,
+    status: 'PENDING',
+    overtimeStatus: 'PENDING',
+    location: null,
+    ...over,
+  });
+
+  const arrangeDay = (entries) => {
+    const stored = entries.map((entry) => ({ ...entry }));
+    const byId = new Map(stored.map((entry) => [entry.id, entry]));
+
+    mockPrisma.user.findUnique.mockResolvedValue({ contractDailyMinutes: CONTRACT });
+    mockPrisma.timeEntry.findMany.mockResolvedValue(stored);
+    mockPrisma.bankHoursEntry.findMany.mockResolvedValue([]);
+    mockPrisma.timeEntry.update.mockImplementation(async ({ where, data }) => {
+      const target = byId.get(where.id);
+      Object.assign(target, data);
+      return target;
+    });
+    mockPrisma.timeEntry.findUnique.mockImplementation(async ({ where }) => byId.get(where.id));
+    accrueBankHours.mockImplementation(async ({ overtimeMinutes }) => ({
+      accruedMinutes: Math.max(0, Math.floor(Number(overtimeMinutes) || 0)),
+      discardedMinutes: 0,
+    }));
+
+    return byId;
+  };
+
+  it('gives the second entry its overtime when nothing is rejected', async () => {
+    arrangeDay([first(), second()]);
+
+    const results = await recalculateUserDay({ userId: 'user-123', date: DAY });
+
+    expect(results.find((r) => r.id === 'entry-a').overtimeMinutes).toBe(120);
+    expect(results.find((r) => r.id === 'entry-b').overtimeMinutes).toBe(60);
+  });
+
+  it('does not shift overtime onto the second entry when the first is rejected', async () => {
+    const byId = arrangeDay([first({ overtimeStatus: 'REJECTED' }), second()]);
+
+    const results = await recalculateUserDay({ userId: 'user-123', date: DAY });
+
+    // Primeira entrada: HE zerada e reconhecido descontado.
+    expect(results.find((r) => r.id === 'entry-a').overtimeMinutes).toBe(0);
+    expect(byId.get('entry-a').workedMinutes).toBe(480);
+
+    // Segunda entrada: exatamente a mesma HE do cenário sem negação.
+    expect(results.find((r) => r.id === 'entry-b').overtimeMinutes).toBe(60);
+    expect(byId.get('entry-b').workedMinutes).toBe(60);
+  });
+});
+
+// O limiar de HE curta e configurado POR TENANT (User.overtimeMinMinutes do dono
+// da organizacao), nao por colaborador: quem habilita e o ADMIN/INTEGRATOR da
+// conta. O recalculo tem que resolver isso a partir do dono — senao a regra que
+// o admin ligou no painel simplesmente nao vale no fechamento do dia.
+describe('recalculateUserDay com limiar de HE curta do tenant', () => {
+  const START = new Date('2026-08-28T11:00:00.000Z');
+
+  const arrangeWithThreshold = (overtimeMinMinutes, workedMinutes) => {
+    const stored = {
+      id: 'entry-short',
+      userId: 'user-123',
+      clockIn: START,
+      clockOut: new Date(START.getTime() + workedMinutes * 60000),
+      breakMinutes: 0,
+      status: 'PENDING',
+      overtimeStatus: null,
+      location: null,
+    };
+
+    mockPrisma.user.findUnique.mockResolvedValue({
+      contractDailyMinutes: 480,
+      organizationAdmin: overtimeMinMinutes === undefined ? null : { overtimeMinMinutes },
+    });
+    mockPrisma.timeEntry.findMany.mockResolvedValue([stored]);
+    mockPrisma.bankHoursEntry.findMany.mockResolvedValue([]);
+    mockPrisma.timeEntry.update.mockImplementation(async ({ data }) => {
+      Object.assign(stored, data);
+      return stored;
+    });
+    mockPrisma.timeEntry.findUnique.mockImplementation(async () => stored);
+    accrueBankHours.mockResolvedValue({ accruedMinutes: 0, discardedMinutes: 0 });
+
+    return stored;
+  };
+
+  it('zera a HE abaixo do limiar do tenant', async () => {
+    const stored = arrangeWithThreshold(10, 485); // 5min de HE
+
+    const [result] = await recalculateUserDay({ userId: 'user-123', date: DAY });
+
+    expect(result.overtimeMinutes).toBe(0);
+    // Sem HE a decidir, nao pode sobrar pendencia na fila do supervisor.
+    expect(stored.overtimeStatus).toBeNull();
+    // O tempo trabalhado e fato e nao muda por causa do limiar.
+    expect(stored.workedMinutes).toBe(485);
+  });
+
+  it('mantem a HE que cruza o limiar do tenant', async () => {
+    arrangeWithThreshold(10, 495); // 15min de HE
+
+    const [result] = await recalculateUserDay({ userId: 'user-123', date: DAY });
+
+    expect(result.overtimeMinutes).toBe(15);
+  });
+
+  it('nao aplica limiar nenhum quando o tenant nao configurou', async () => {
+    arrangeWithThreshold(null, 485);
+
+    const [result] = await recalculateUserDay({ userId: 'user-123', date: DAY });
+
+    expect(result.overtimeMinutes).toBe(5);
+  });
+
+  it('tolera colaborador sem dono de organizacao', async () => {
+    arrangeWithThreshold(undefined, 485);
+
+    const [result] = await recalculateUserDay({ userId: 'user-123', date: DAY });
+
+    expect(result.overtimeMinutes).toBe(5);
   });
 });

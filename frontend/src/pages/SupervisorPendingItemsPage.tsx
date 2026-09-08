@@ -3,6 +3,7 @@ import { apiFetch } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from 'react-i18next'
 import JourneyModal from '../components/JourneyModal'
+import OvertimeReviewList from '../components/OvertimeReviewList'
 
 type Entry = {
   id: string
@@ -94,8 +95,17 @@ const getPeriodRange = (periodType: PeriodType, anchorDate: string) => {
 
 const fmtHM = (minutes: number) => `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`
 
+// Negar hora extra desconta os minutos negados do tempo reconhecido no backend, e
+// uma entrada que era HE de ponta a ponta (turno extra colado num dia que ja
+// batia o contrato) fica com 0. O fallback abaixo trata 0 como "servidor nao
+// calculou" e recalcularia a duracao cheia, somando de volta ao total do periodo
+// exatamente as horas que o supervisor acabou de negar.
+//
+// overtimeStatus REJECTED e o discriminador: alguem decidiu, entao o 0 e valor e
+// nao ausencia. Mesma regra de backend/src/utils/recognizedMinutes.js.
 const entryMinutes = (entry: Entry) => {
   if (typeof entry.workedMinutes === 'number' && entry.workedMinutes > 0) return entry.workedMinutes
+  if (typeof entry.workedMinutes === 'number' && entry.overtimeStatus === 'REJECTED') return 0
   if (!entry.clockOut) return 0
   return Math.max(0, Math.floor((new Date(entry.clockOut).getTime() - new Date(entry.clockIn).getTime()) / 60000))
 }
@@ -131,6 +141,11 @@ const SupervisorPendingItemsPage = () => {
   const [bulkLoadingByUser, setBulkLoadingByUser] = useState<Record<string, boolean>>({})
   const [bulkCommentByUser, setBulkCommentByUser] = useState<Record<string, string>>({})
   const [detailEntryId, setDetailEntryId] = useState<string | null>(null)
+  // Trabalho normal e hora extra viraram abas: sao duas decisoes diferentes na
+  // mesma fila, e misturar os botoes fazia o supervisor decidir HE sem querer ao
+  // varrer o ponto. A ORDEM nao mudou — aprovar o ponto continua bloqueado
+  // enquanto a HE estiver pendente; a aba so torna essa ordem visivel.
+  const [activeTab, setActiveTab] = useState<'WORK' | 'OVERTIME'>('WORK')
 
   const [filters, setFilters] = useState({
     status: 'PENDING',
@@ -195,6 +210,19 @@ const SupervisorPendingItemsPage = () => {
     const headIds = new Set(subordinates.map((s) => s.supervisorId).filter(Boolean))
     return subordinates.filter((s) => headIds.has(s.id))
   }, [subordinates])
+
+  // Recorte da aba de hora extra: sai da MESMA listagem do periodo, sem segunda
+  // chamada de API. Inclui as ja decididas para o supervisor conferir o que
+  // negou; o filtro de status do ponto continua valendo para as duas abas.
+  const overtimeEntries = useMemo(
+    () => entries.filter((entry) => entry.overtimeStatus || (entry.overtimeMinutes ?? 0) > 0),
+    [entries]
+  )
+
+  const pendingOvertimeEntries = useMemo(
+    () => overtimeEntries.filter((entry) => entry.overtimeStatus === 'PENDING'),
+    [overtimeEntries]
+  )
 
   const visibleSubordinates = useMemo(() => {
     if (!filters.groupId) return subordinates
@@ -333,7 +361,10 @@ const SupervisorPendingItemsPage = () => {
       setNotice(
         decision === 'APPROVE'
           ? t('Overtime approved. You can now review the entry.', 'Horas extras aprovadas. Agora voce pode revisar o ponto.')
-          : t('Overtime denied (not paid). You can now review the entry.', 'Horas extras negadas (nao pagas). Agora voce pode revisar o ponto.')
+          : t(
+              'Overtime denied: the denied minutes left the recognized total. You can now review the entry.',
+              'Horas extras negadas: os minutos negados sairam do total reconhecido. Agora voce pode revisar o ponto.'
+            )
       )
 
       setCommentByEntry((prev) => ({ ...prev, [entryId]: '' }))
@@ -542,7 +573,7 @@ const SupervisorPendingItemsPage = () => {
     entry.overtimeStatus === 'APPROVED'
       ? t('approved', 'aprovadas')
       : entry.overtimeStatus === 'REJECTED'
-        ? t('denied (not paid)', 'negadas (nao pagas)')
+        ? t('denied (out of the total)', 'negadas (fora do total)')
         : t('awaiting decision', 'aguardando decisao')
 
   /**
@@ -730,6 +761,58 @@ const SupervisorPendingItemsPage = () => {
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-4 shadow-sm md:p-6">
         <h3 className="text-lg font-semibold text-slate-900">{t('Items', 'Itens')}</h3>
 
+        {/* Abas: trabalho normal e hora extra sao decisoes diferentes sobre a mesma
+            fila. role="tablist" com setas do teclado nao foi usado de proposito —
+            sao dois botoes que trocam a lista, e o leitor de tela ja anuncia o
+            estado por aria-pressed. */}
+        <div className="mt-4 flex gap-2" role="group" aria-label={t('View', 'Visao')}>
+          <button
+            type="button"
+            onClick={() => setActiveTab('WORK')}
+            aria-pressed={activeTab === 'WORK'}
+            className={`min-h-[44px] flex-1 rounded-full px-4 text-sm font-medium md:min-h-0 md:flex-none md:py-2 ${
+              activeTab === 'WORK'
+                ? 'bg-teal-700 text-white'
+                : 'border border-slate-200 bg-white text-slate-700'
+            }`}
+          >
+            {t('Normal work', 'Trabalho normal')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('OVERTIME')}
+            aria-pressed={activeTab === 'OVERTIME'}
+            className={`min-h-[44px] flex-1 rounded-full px-4 text-sm font-medium md:min-h-0 md:flex-none md:py-2 ${
+              activeTab === 'OVERTIME'
+                ? 'bg-teal-700 text-white'
+                : 'border border-slate-200 bg-white text-slate-700'
+            }`}
+          >
+            {t('Overtime', 'Hora extra')}
+            {pendingOvertimeEntries.length > 0 ? ` (${pendingOvertimeEntries.length})` : ''}
+          </button>
+        </div>
+
+        {activeTab === 'OVERTIME' ? (
+          <div className="mt-4">
+            <OvertimeReviewList
+              entries={overtimeEntries}
+              comment={commentByEntry}
+              onCommentChange={(entryId, value) =>
+                setCommentByEntry((prev) => ({ ...prev, [entryId]: value }))
+              }
+              onDecision={handleOvertimeReview}
+              loadingByEntry={actionLoadingByEntry}
+              locale={locale}
+              emptyLabel={t(
+                'No overtime in the current filters.',
+                'Nenhuma hora extra no filtro atual.'
+              )}
+            />
+          </div>
+        ) : (
+          <>
+
         {/* Celular: a acao do periodo inteiro fica fixada acima da lista de cartoes.
             E a MESMA funcao usada no desktop, entao o contador (pagination.total via
             periodTotal), o teto de MAX_PERIOD_BULK e o gate de 5 caracteres para negar
@@ -900,32 +983,25 @@ const SupervisorPendingItemsPage = () => {
                               className="mt-1 h-20 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
                             />
 
-                            {/* HE primeiro: enquanto a HE estiver PENDING, aprovar/rejeitar
-                                o ponto fica desabilitado, igual ao desktop (OVERTIME_FIRST). */}
+                            {/* HE primeiro: aprovar/rejeitar o ponto fica desabilitado
+                                enquanto a HE estiver PENDING (OVERTIME_FIRST). A decisao
+                                em si mudou de lugar — vive na aba "Hora extra" — para o
+                                supervisor nao decidir HE sem querer ao varrer o ponto. */}
                             {entry.overtimeStatus === 'PENDING' ? (
-                              <div className="mt-3">
-                                <div className="grid grid-cols-2 gap-2">
-                                  <button
-                                    onClick={() => handleOvertimeReview(entry.id, 'APPROVE')}
-                                    disabled={Boolean(actionLoadingByEntry[entry.id])}
-                                    className="min-h-[44px] rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                                  >
-                                    {t('Approve OT', 'Aprovar HE')}
-                                  </button>
-                                  <button
-                                    onClick={() => handleOvertimeReview(entry.id, 'REJECT')}
-                                    disabled={Boolean(actionLoadingByEntry[entry.id])}
-                                    className="min-h-[44px] rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 disabled:opacity-50"
-                                  >
-                                    {t('Deny OT', 'Negar HE')}
-                                  </button>
-                                </div>
-                                <p className="mt-2 text-xs text-amber-700">
+                              <div className="mt-3 rounded-2xl bg-amber-50 p-3">
+                                <p className="text-xs text-amber-800">
                                   {t(
-                                    'Decide the overtime before reviewing the entry.',
-                                    'Decida as horas extras antes de revisar o ponto.'
+                                    'Pending overtime. Decide it in the Overtime tab before reviewing the entry.',
+                                    'Hora extra pendente. Decida na aba Hora extra antes de revisar o ponto.'
                                   )}
                                 </p>
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveTab('OVERTIME')}
+                                  className="mt-2 min-h-[44px] w-full rounded-full border border-amber-300 bg-white px-4 text-sm font-semibold text-amber-800 md:min-h-0 md:w-auto md:py-2"
+                                >
+                                  {t('Go to overtime', 'Ir para hora extra')}
+                                </button>
                               </div>
                             ) : null}
 
@@ -1073,7 +1149,7 @@ const SupervisorPendingItemsPage = () => {
                                     {entry.overtimeStatus === 'APPROVED'
                                       ? t('approved', 'aprovadas')
                                       : entry.overtimeStatus === 'REJECTED'
-                                        ? t('denied (not paid)', 'negadas (nao pagas)')
+                                        ? t('denied (out of the total)', 'negadas (fora do total)')
                                         : t('awaiting decision', 'aguardando decisao')}
                                   </span>
                                 </p>
@@ -1111,27 +1187,24 @@ const SupervisorPendingItemsPage = () => {
                                     className="mt-3 h-20 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs"
                                   />
 
+                                  {/* Mesma separacao da lista compacta: a decisao de HE
+                                      vive na aba "Hora extra"; aqui fica so o aviso de
+                                      que ela bloqueia a revisao do ponto. */}
                                   {entry.overtimeStatus === 'PENDING' ? (
-                                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                                      <button
-                                        onClick={() => handleOvertimeReview(entry.id, 'APPROVE')}
-                                        disabled={Boolean(actionLoadingByEntry[entry.id])}
-                                        className="min-h-[44px] rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50 md:min-h-0 md:px-3"
-                                      >
-                                        {t('Approve OT', 'Aprovar HE')}
-                                      </button>
-
-                                      <button
-                                        onClick={() => handleOvertimeReview(entry.id, 'REJECT')}
-                                        disabled={Boolean(actionLoadingByEntry[entry.id])}
-                                        className="rounded-full border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
-                                      >
-                                        {t('Deny OT', 'Negar HE')}
-                                      </button>
-
-                                      <span className="text-xs text-amber-700">
-                                        {t('Decide the overtime before reviewing the entry.', 'Decida as horas extras antes de revisar o ponto.')}
+                                    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-2xl bg-amber-50 p-3">
+                                      <span className="text-xs text-amber-800">
+                                        {t(
+                                          'Pending overtime. Decide it in the Overtime tab first.',
+                                          'Hora extra pendente. Decida na aba Hora extra primeiro.'
+                                        )}
                                       </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveTab('OVERTIME')}
+                                        className="min-h-[44px] rounded-full border border-amber-300 bg-white px-4 py-2 text-xs font-semibold text-amber-800 md:min-h-0 md:px-3"
+                                      >
+                                        {t('Go to overtime', 'Ir para hora extra')}
+                                      </button>
                                     </div>
                                   ) : null}
 
@@ -1179,7 +1252,9 @@ const SupervisorPendingItemsPage = () => {
               )
             })
           )}
-        </div>
+            </div>
+          </>
+        )}
       </div>
 
       {detailEntryId

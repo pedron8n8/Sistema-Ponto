@@ -14,6 +14,8 @@ const {
   payUserBankHours,
   getLocationSettings,
   updateLocationSettings,
+  getOvertimeSettings,
+  updateOvertimeSettings,
 } = require('../controllers/admin.controller');
 const {
   getProFeatureSettings,
@@ -24,8 +26,26 @@ const {
 
 const router = express.Router();
 
-// Todas as rotas requerem autenticação e role ADMIN
+// Todas as rotas requerem autenticação
 router.use(authMiddleware);
+
+// --- limiar de hora extra curta ---------------------------------------------
+// ANTES do roleCheck(['ADMIN']) abaixo, de proposito: e a unica configuracao
+// deste router que o INTEGRATOR tambem administra. Mesmo idioma do
+// mcp.routes.js — INTEGRATOR aparece explicito porque o roleCheck so o adiciona
+// sozinho quando 'HR' esta na lista, e aqui HR nao entra.
+//
+// ATENCAO a quem for adicionar rota nova: qualquer coisa escrita ACIMA da linha
+// `router.use(roleCheck(['ADMIN']))` escapa do guard de ADMIN. Rota nova vai
+// DEPOIS dela, salvo decisao explicita como esta.
+
+/** GET /admin/overtime-settings — limiar de HE curta vigente na conta. */
+router.get('/overtime-settings', roleCheck(['ADMIN', 'INTEGRATOR']), getOvertimeSettings);
+
+/** PATCH /admin/overtime-settings — define ou desliga o limiar. */
+router.patch('/overtime-settings', roleCheck(['ADMIN', 'INTEGRATOR']), updateOvertimeSettings);
+
+// A partir daqui, tudo exige role ADMIN.
 router.use(roleCheck(['ADMIN']));
 
 /**

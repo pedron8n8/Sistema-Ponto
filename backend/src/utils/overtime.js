@@ -39,6 +39,26 @@ const resolveBreakMinutes = (breakMinutes) => {
   return Math.floor(parsed);
 };
 
+// Limiar de HE curta, configurado por tenant (User.overtimeMinMinutes do dono da
+// organizacao). Ausente, nulo ou zero significa desligado — o comportamento
+// volta a ser o de antes, sem limiar nenhum.
+const resolveMinOvertimeMinutes = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 0;
+  }
+  return Math.floor(parsed);
+};
+
+// Corte seco, nao franquia: abaixo do limiar nao ha hora extra; a partir dele a
+// hora extra vale CHEIA (11min continuam 11, nao 1).
+//
+// Recebe sempre o total do DIA, nunca o pedaco de uma marcacao. A HE e um
+// conceito diario aqui, e cortar por marcacao deixaria acumular hora extra em
+// fatias abaixo do limiar, perdendo minutos realmente trabalhados.
+const applyOvertimeThreshold = (dayOvertimeMinutes, minOvertimeMinutes) =>
+  dayOvertimeMinutes < minOvertimeMinutes ? 0 : dayOvertimeMinutes;
+
 const resolveDayType = (date) => {
   const targetDate = new Date(date);
   const holidays = getHolidaySet();
@@ -52,7 +72,13 @@ const resolveDayType = (date) => {
   };
 };
 
-const calculateOvertimeSummary = ({ clockIn, clockOut, contractDailyMinutes, breakMinutes = 0 }) => {
+const calculateOvertimeSummary = ({
+  clockIn,
+  clockOut,
+  contractDailyMinutes,
+  breakMinutes = 0,
+  minOvertimeMinutes,
+}) => {
   const start = new Date(clockIn);
   const end = new Date(clockOut);
   const diffMs = end.getTime() - start.getTime();
@@ -73,7 +99,11 @@ const calculateOvertimeSummary = ({ clockIn, clockOut, contractDailyMinutes, bre
     Math.floor(diffMs / (1000 * 60)) - resolveBreakMinutes(breakMinutes)
   );
   const effectiveContractMinutes = resolveContractDailyMinutes(contractDailyMinutes);
-  const overtimeMinutes = Math.max(0, workedMinutes - effectiveContractMinutes);
+  // Marcacao unica: o total do dia e o dela mesma, entao o limiar se aplica direto.
+  const overtimeMinutes = applyOvertimeThreshold(
+    Math.max(0, workedMinutes - effectiveContractMinutes),
+    resolveMinOvertimeMinutes(minOvertimeMinutes)
+  );
   const { isSpecialDay, dayType } = resolveDayType(start);
 
   return {
@@ -92,6 +122,7 @@ const calculateIncrementalOvertimeSummary = ({
   contractDailyMinutes,
   workedMinutesBeforeEntry,
   breakMinutes = 0,
+  minOvertimeMinutes,
 }) => {
   const start = new Date(clockIn);
   const end = new Date(clockOut);
@@ -118,8 +149,19 @@ const calculateIncrementalOvertimeSummary = ({
   const effectiveContractMinutes = resolveContractDailyMinutes(contractDailyMinutes);
   const minutesBefore = Math.max(0, Math.floor(Number(workedMinutesBeforeEntry) || 0));
   const totalAfterEntry = minutesBefore + workedMinutes;
-  const overtimeBefore = Math.max(0, minutesBefore - effectiveContractMinutes);
-  const overtimeAfter = Math.max(0, totalAfterEntry - effectiveContractMinutes);
+  // O limiar corta os TOTAIS do dia (antes e depois da entrada), nunca o pedaco
+  // da marcacao. E o que faz duas marcacoes de 6min somarem 12min de HE em vez
+  // de virarem zero cada uma: ao cruzar o limiar, os minutos antes suprimidos
+  // voltam na entrada que cruzou.
+  const threshold = resolveMinOvertimeMinutes(minOvertimeMinutes);
+  const overtimeBefore = applyOvertimeThreshold(
+    Math.max(0, minutesBefore - effectiveContractMinutes),
+    threshold
+  );
+  const overtimeAfter = applyOvertimeThreshold(
+    Math.max(0, totalAfterEntry - effectiveContractMinutes),
+    threshold
+  );
   const overtimeMinutes = Math.max(0, overtimeAfter - overtimeBefore);
   const { isSpecialDay, dayType } = resolveDayType(start);
 
@@ -142,6 +184,7 @@ const calculateCurrentDailyProgress = ({
   contractDailyMinutes,
   workedMinutesBeforeEntry,
   breakMinutes = 0,
+  minOvertimeMinutes,
 }) => {
   const start = new Date(clockIn);
   const end = new Date(now || new Date());
@@ -154,7 +197,13 @@ const calculateCurrentDailyProgress = ({
   const minutesBefore = Math.max(0, Math.floor(Number(workedMinutesBeforeEntry) || 0));
   const totalWorkedMinutes = minutesBefore + currentEntryWorkedMinutes;
   const hasReachedDailyTarget = totalWorkedMinutes >= effectiveContractMinutes;
-  const overtimeMinutesSoFar = Math.max(0, totalWorkedMinutes - effectiveContractMinutes);
+  // O limiar so decide o que e HE. A meta diaria (bateu o contrato) e o tempo
+  // trabalhado sao fato e nao se alteram — do contrario o painel diria que a
+  // pessoa nao cumpriu a jornada por causa de uma regra sobre hora extra.
+  const overtimeMinutesSoFar = applyOvertimeThreshold(
+    Math.max(0, totalWorkedMinutes - effectiveContractMinutes),
+    resolveMinOvertimeMinutes(minOvertimeMinutes)
+  );
 
   let reachedDailyTargetAt = null;
   if (hasReachedDailyTarget) {
@@ -178,9 +227,24 @@ const calculateCurrentDailyProgress = ({
   };
 };
 
+/**
+ * Aplica o limiar de HE curta a um total de hora extra JA calculado do dia.
+ *
+ * Existe exportada porque a HE nao nasce so aqui: o KPI do supervisor e o worker
+ * de alerta proativo calculam `totalDoDia - contrato` por conta propria, ao
+ * vivo. Sem um ponto unico, a regra viraria quatro copias e uma delas ficaria
+ * para tras — o colaborador veria HE no painel que nao existe no fechamento.
+ */
+const applyMinOvertimeMinutes = (dayOvertimeMinutes, minOvertimeMinutes) =>
+  applyOvertimeThreshold(
+    Math.max(0, Math.floor(Number(dayOvertimeMinutes) || 0)),
+    resolveMinOvertimeMinutes(minOvertimeMinutes)
+  );
+
 module.exports = {
   calculateOvertimeSummary,
   calculateIncrementalOvertimeSummary,
   calculateCurrentDailyProgress,
   resolveContractDailyMinutes,
+  applyMinOvertimeMinutes,
 };

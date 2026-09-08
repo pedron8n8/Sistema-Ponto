@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const xlsx = require('xlsx');
 const { parseDateFilter } = require('../utils/dateFilters');
+const { isWorkedMinutesAuthoritative } = require('../utils/recognizedMinutes');
 
 // Fila de exportação de relatórios
 const QUEUE_NAME = process.env.NODE_ENV === 'development' ? 'report-export-dev' : 'report-export';
@@ -54,6 +55,14 @@ const resolveWorkedMinutes = (entry) => {
   const stored = Number(entry.workedMinutes);
   if (Number.isFinite(stored) && stored > 0) {
     return Math.floor(stored);
+  }
+
+  // HE negada desconta os minutos negados do tempo reconhecido, e uma entrada
+  // que era HE de ponta a ponta cai para 0. Sem este guard o fallback abaixo
+  // recalcularia a duração cheia e o export mostraria de volta justamente as
+  // horas que o supervisor negou.
+  if (isWorkedMinutesAuthoritative(entry)) {
+    return 0;
   }
 
   if (!entry.clockIn || !entry.clockOut) {
