@@ -7,3 +7,6 @@ exports
 dev-dist
 uploads
 *.log
+# Testes ficam fora da imagem — e AQUI que essa exclusao pertence, nao no
+# .gitignore, que fazia teste novo nunca ser commitado.
+tests

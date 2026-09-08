@@ -67,7 +67,10 @@ get-token.js
 /scripts/e2e-invite-signup.js
 /scripts/create-admin-invite-users.js
 /scripts/*
-# Testes nao vao pra VPS
-/tests/
+# Testes SAO versionados (a exclusao do deploy e feita pelo .dockerignore, nao
+# aqui). Ignorar /tests/ fazia todo teste novo nascer invisivel para o git e
+# para a CI: passava na maquina de quem escreveu e nunca era commitado. Os 28
+# arquivos que ja estavam rastreados sobreviveram so porque entraram antes
+# desta regra.
 
 

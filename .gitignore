@@ -16,6 +16,18 @@ frontend/dev-dist
 backend/.env
 frontend/.env
 
+# Stack local de teste e scripts que MEXEM em banco. Ficam fora do git de
+# proposito: .env.docker-local carrega credenciais do compose local e os
+# scripts abaixo escrevem no banco. O .env* generico acima nao pega
+# `backend/.env.docker-local`, entao ele precisa estar aqui explicito — senao
+# um `git add -A` distraido publicaria um arquivo de ambiente.
+/docker-compose.local.yml
+backend/.env.docker-local
+backend/inspect-local-db.js
+backend/recalc-test-days.js
+backend/seed-overtime-test.js
+backend/verify-overtime-local.js
+
 # Scripts/dados locais que nao vao pra VPS
 backend/scripts/start-ssh-tunnel.ps1
 backend/scripts/pentest-phase2.js
