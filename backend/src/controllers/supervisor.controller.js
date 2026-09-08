@@ -5,7 +5,7 @@ const {
   isBankHoursDeferred,
   settleBankHoursAccruals,
 } = require('../utils/bankHours');
-const { reverseEntryBankHours } = require('../utils/recalcDay');
+const { reverseEntryBankHours, planEntryBankHoursReversal } = require('../utils/recalcDay');
 const { normalizeMinutes, normalizeTime, normalizeTimeZone } = require('../utils/workSettings');
 const { parseLocalDate } = require('../utils/timeCalculations');
 const { applyMinOvertimeMinutes } = require('../utils/overtime');
@@ -1141,8 +1141,11 @@ const approveEntry = async (req, res) => {
 };
 
 // Teto de registros que uma ação por período pode atingir numa chamada.
-// ponytail: o gargalo é o laço sequencial de reverseEntryBankHours no reject; se
-// precisar de mais, mova a reversão para dentro do lote ou pagine no cliente.
+//
+// O gargalo que este teto contornava era o laço sequencial de
+// reverseEntryBankHours no reject; ele saiu (a reversão virou uma leitura só,
+// com as escritas dentro da transação). O teto continua porque a transação
+// carrega um UPDATE por linha com HE, e uma transação longa segura locks.
 const MAX_SCOPE_ENTRIES = 500;
 
 const BULK_ENTRY_INCLUDE = {
@@ -1552,11 +1555,15 @@ const rejectEntriesBulk = async (req, res) => {
 
     const trimmedComment = comment.trim();
 
-    // Reverte o crédito de banco de horas antes da transação, igual ao rejectOvertime.
-    // ponytail: sequencial; o lote é limitado a 200 registros.
-    for (const id of overtimeIds) {
-      await reverseEntryBankHours(id);
-    }
+    // Planeja a reversão do banco de horas: LÊ agora, ESCREVE dentro da
+    // transação abaixo.
+    //
+    // Antes era um laço sequencial de reverseEntryBankHours ANTES da transação.
+    // O accrual já estava apagado e o saldo decrementado quando a transação
+    // rodava, então uma falha dela deixava as marcações PENDING com o crédito
+    // perdido — sem escrita compensatória. Era também o gargalo que limitava o
+    // tamanho do lote: N x 3 queries sequenciais viraram 1 leitura.
+    const bankReversal = await planEntryBankHoursReversal(overtimeIds);
 
     // Um UPDATE POR LINHA, não um updateMany na lista: o tempo reconhecido
     // depende do registro (workedMinutes menos a HE negada daquela linha) e
@@ -1607,6 +1614,22 @@ const rejectEntriesBulk = async (req, res) => {
           comment: trimmedComment,
         })),
       }),
+      // As escritas do banco de horas vão no FIM do array de propósito: os
+      // índices lidos abaixo (statusUpdateIndex e a fatia de HE) são
+      // posicionais, e inserir no meio os invalidaria em silêncio.
+      ...(bankReversal.accrualIds.length
+        ? [
+            prisma.bankHoursEntry.deleteMany({
+              where: { id: { in: bankReversal.accrualIds } },
+            }),
+            ...bankReversal.decrementsByUser.map(({ userId, minutes }) =>
+              prisma.user.update({
+                where: { id: userId },
+                data: { bankHoursBalanceMinutes: { decrement: minutes } },
+              })
+            ),
+          ]
+        : []),
     ]);
 
     // Ver approvedCount: o updateMany de status filtra por `status: 'PENDING'`,

@@ -57,6 +57,80 @@ describe('rejectOvertime e a corrida', () => {
   });
 });
 
+// A reversao de banco de horas do reject em lote acontecia num laco sequencial
+// ANTES da transacao: o accrual ja estava apagado e o saldo decrementado quando
+// a transacao rodava, entao uma falha dela deixava as marcacoes PENDING com o
+// credito perdido, sem escrita compensatoria. Agora a LEITURA fica fora (nao
+// causa dano) e as ESCRITAS entram na transacao.
+describe('reversao de banco de horas no reject em lote', () => {
+  it('planeja a reversao por leitura, agrupando o decremento por colaborador', async () => {
+    const recalcDay = require('../../src/utils/recalcDay');
+
+    mockPrisma.bankHoursEntry.findMany.mockResolvedValue([
+      { id: 'a1', minutes: 60, userId: 'u1' },
+      { id: 'a2', minutes: 30, userId: 'u1' },
+      { id: 'a3', minutes: 45, userId: 'u2' },
+    ]);
+
+    const plano = await recalcDay.planEntryBankHoursReversal(['e1', 'e2', 'e3']);
+
+    // Uma leitura so, no lugar de N x 3 queries sequenciais.
+    expect(mockPrisma.bankHoursEntry.findMany).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.bankHoursEntry.findMany.mock.calls[0][0].where).toMatchObject({
+      timeEntryId: { in: ['e1', 'e2', 'e3'] },
+      type: 'ACCRUAL',
+      paymentStatus: 'PENDING',
+      expiredAt: null,
+    });
+
+    expect(plano.accrualIds).toEqual(['a1', 'a2', 'a3']);
+    expect(plano.reversedMinutes).toBe(135);
+    // Um lote cobre varias pessoas, e o saldo vive na linha de cada uma.
+    expect(plano.decrementsByUser).toEqual([
+      { userId: 'u1', minutes: 90 },
+      { userId: 'u2', minutes: 45 },
+    ]);
+  });
+
+  it('nao escreve nada — e so um plano', async () => {
+    const recalcDay = require('../../src/utils/recalcDay');
+
+    mockPrisma.bankHoursEntry.findMany.mockResolvedValue([
+      { id: 'a1', minutes: 60, userId: 'u1' },
+    ]);
+
+    await recalcDay.planEntryBankHoursReversal(['e1']);
+
+    expect(mockPrisma.bankHoursEntry.deleteMany).not.toHaveBeenCalled();
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('lista vazia nao vai ao banco', async () => {
+    const recalcDay = require('../../src/utils/recalcDay');
+
+    const plano = await recalcDay.planEntryBankHoursReversal([]);
+
+    expect(mockPrisma.bankHoursEntry.findMany).not.toHaveBeenCalled();
+    expect(plano).toEqual({ accrualIds: [], decrementsByUser: [], reversedMinutes: 0 });
+  });
+
+  it('ignora minutos negativos no total revertido', async () => {
+    const recalcDay = require('../../src/utils/recalcDay');
+
+    mockPrisma.bankHoursEntry.findMany.mockResolvedValue([
+      { id: 'a1', minutes: -10, userId: 'u1' },
+      { id: 'a2', minutes: 20, userId: 'u1' },
+    ]);
+
+    const plano = await recalcDay.planEntryBankHoursReversal(['e1']);
+
+    // O accrual negativo continua sendo apagado, mas nao credita saldo de volta.
+    expect(plano.accrualIds).toEqual(['a1', 'a2']);
+    expect(plano.reversedMinutes).toBe(20);
+    expect(plano.decrementsByUser).toEqual([{ userId: 'u1', minutes: 20 }]);
+  });
+});
+
 describe('a asercao pega a regressao que existia antes', () => {
   it('explode com a forma antiga do select', () => {
     // Exatamente o que a query devolvia antes da correcao.

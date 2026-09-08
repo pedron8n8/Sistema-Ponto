@@ -7,9 +7,15 @@ jest.mock('../../src/config/database', () => ({ prisma: mockPrisma }));
 jest.mock('../../src/utils/recalcDay', () => ({
   recalculateUserDay: jest.fn(),
   reverseEntryBankHours: jest.fn().mockResolvedValue(undefined),
+  // O reject em LOTE nao usa mais reverseEntryBankHours: ele planeja a reversao
+  // e escreve DENTRO da propria transacao. O default devolve "nada a reverter";
+  // cada teste que precisa de accrual sobrescreve.
+  planEntryBankHoursReversal: jest
+    .fn()
+    .mockResolvedValue({ accrualIds: [], decrementsByUser: [], reversedMinutes: 0 }),
 }));
 
-const { reverseEntryBankHours } = require('../../src/utils/recalcDay');
+const { reverseEntryBankHours, planEntryBankHoursReversal } = require('../../src/utils/recalcDay');
 const {
   getTeamPendingEntries,
   approveEntry,
@@ -451,6 +457,14 @@ describe('Supervisor Controller', () => {
       // O controller agora lê o RESULTADO da transação, então o mock precisa
       // devolvê-lo em vez de undefined.
       mockPrisma.$transaction.mockImplementation((operations) => Promise.all(operations));
+      // `resetMocks: true` no jest.config apaga a implementação declarada no
+      // factory do jest.mock antes de CADA teste, então o valor de retorno tem
+      // de ser reposto aqui — sem isso o controller recebe undefined e estoura.
+      planEntryBankHoursReversal.mockResolvedValue({
+        accrualIds: [],
+        decrementsByUser: [],
+        reversedMinutes: 0,
+      });
     });
 
     it('aprova o lote e decide a HE pendente junto', async () => {
@@ -514,8 +528,11 @@ describe('Supervisor Controller', () => {
         })
       );
 
-      expect(reverseEntryBankHours).toHaveBeenCalledWith('entry-ot');
-      expect(reverseEntryBankHours).toHaveBeenCalledTimes(1);
+      // A reversão do banco de horas é PLANEJADA (leitura) e escrita dentro da
+      // transação. Antes era um laço de reverseEntryBankHours ANTES dela, e uma
+      // falha da transação deixava as marcações PENDING sem o crédito.
+      expect(planEntryBankHoursReversal).toHaveBeenCalledWith(['entry-ot']);
+      expect(reverseEntryBankHours).not.toHaveBeenCalled();
 
       // Um UPDATE por linha, não um updateMany na lista: o tempo reconhecido é
       // calculado por registro. O predicado de estado continua em cada linha.
@@ -650,7 +667,7 @@ describe('Supervisor Controller', () => {
         expect(mockRes.json).toHaveBeenCalledWith(
           expect.objectContaining({ rejectedCount: 2, overtimeRejectedCount: 1 })
         );
-        expect(reverseEntryBankHours).toHaveBeenCalledWith('entry-ot');
+        expect(planEntryBankHoursReversal).toHaveBeenCalledWith(['entry-ot']);
       });
 
       it('recusa colaborador fora do escopo do ator', async () => {
