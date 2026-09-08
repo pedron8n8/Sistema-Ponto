@@ -80,4 +80,35 @@ module.exports = [
     inputSchema: obj({ filename: str('Nome do arquivo exatamente como em reports_list.') }, ['filename']),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
   },
+  // Existe ao lado de reports_export porque a pergunta "quantas horas nesta
+  // semana" nao precisa de arquivo: pelo export a IA gastaria tres idas e
+  // vindas (enfileirar, consultar status, listar) e mesmo assim nao veria os
+  // numeros, ja que o conteudo do arquivo nao e exposto via MCP.
+  {
+    name: 'reports_weekly_timesheet',
+    title: 'Timesheet da semana',
+    titleEn: 'Weekly timesheet',
+    group: 'reports',
+    access: 'read',
+    roles: ALL_ROLES,
+    plans: null,
+    method: 'GET',
+    path: '/reports/weekly-timesheet',
+    description:
+      'Timesheet da semana JA CALCULADO, direto na resposta: sete dias com tempo reconhecido e ' +
+      'hora extra, mais os totais. E o caminho AO VIVO — nao enfileira nada e nao devolve ' +
+      'jobId, ao contrario de reports_export, que gera arquivo de forma assincrona. Use este ' +
+      'para responder "quanto foi trabalhado nesta semana"; use reports_export apenas quando a ' +
+      'pessoa quiser o arquivo xlsx/csv. O tempo de hora extra negada NAO entra no total. ' +
+      `${SCOPE_NOTE}`,
+    inputSchema: obj(
+      {
+        weekStart: date('Segunda-feira da semana desejada, YYYY-MM-DD.'),
+        userId: str('Colaborador (uuid). Ausente, devolve o da propria pessoa autenticada.'),
+        timeZone: str('Fuso IANA para o corte dos dias, ex.: America/Sao_Paulo.'),
+      },
+      ['weekStart']
+    ),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+  },
 ];
