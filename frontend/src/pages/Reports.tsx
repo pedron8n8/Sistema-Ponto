@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { API_BASE, apiFetch, translateApiMessage } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTimeZone } from '../context/TimezoneContext'
@@ -54,6 +54,27 @@ type DailyBreakdownResponse = {
   }
 }
 
+// Contrato de GET /reports/weekly-timesheet. Os minutos ja vem reconhecidos
+// pelo backend (HE negada removida, limiar de HE curta aplicado ao total do
+// dia), entao a tela NAO recalcula nada: recalcular aqui seria uma segunda
+// verdade sobre a mesma semana.
+type WeeklyTimesheetDay = {
+  dateKey: string
+  workedMinutes: number
+  overtimeMinutes: number
+  isOpen: boolean
+}
+
+type WeeklyTimesheet = {
+  weekStart: string
+  weekEnd: string
+  days: WeeklyTimesheetDay[]
+  totalWorkedMinutes: number
+  totalOvertimeMinutes: number
+  hasOpenEntry: boolean
+  generatedAt: string
+}
+
 const Reports = () => {
   const { session, profile } = useAuth()
   const { viewTimeZone } = useTimeZone()
@@ -83,6 +104,7 @@ const Reports = () => {
   const [dailyBreakdown, setDailyBreakdown] = useState<DailyBreakdownResponse | null>(null)
   const [dailyBreakdownLoading, setDailyBreakdownLoading] = useState(false)
   const [dailyBreakdownError, setDailyBreakdownError] = useState('')
+  const [timesheet, setTimesheet] = useState<WeeklyTimesheet | null>(null)
   const [weekLoading, setWeekLoading] = useState(false)
   const [weekError, setWeekError] = useState('')
   const [weekStart, setWeekStart] = useState(() => {
@@ -142,6 +164,39 @@ const Reports = () => {
   useEffect(() => {
     loadWeek().catch(() => undefined)
   }, [token, weekStart, weekEnd])
+
+  const loadTimesheet = useCallback(async () => {
+    if (!token) return
+    try {
+      const data = await apiFetch<WeeklyTimesheet>(
+        `/reports/weekly-timesheet?weekStart=${weekStartKey}&timeZone=${encodeURIComponent(viewTimeZone)}`,
+        { token }
+      )
+      setTimesheet(data)
+    } catch {
+      // apiFetch ja avisou o usuario, entao nao ha toast aqui. Um retrato
+      // anterior e mantido de proposito: derruba-lo a cada falha de rede
+      // tambem pararia o polling (a dependencia hasOpenEntry viraria
+      // undefined) e o painel so voltaria ao trocar de semana. Quem le sabe
+      // que esta velho pelo "atualizado as" que continua no rodape.
+    }
+  }, [token, weekStartKey, viewTimeZone])
+
+  useEffect(() => {
+    loadTimesheet().catch(() => undefined)
+  }, [loadTimesheet])
+
+  // Polling SO enquanto ha marcacao aberta: numa semana fechada o numero nao
+  // muda mais, e um intervalo rodando sem motivo custa bateria no celular.
+  useEffect(() => {
+    if (!timesheet?.hasOpenEntry) return
+
+    const id = window.setInterval(() => {
+      loadTimesheet().catch(() => undefined)
+    }, 60000)
+
+    return () => window.clearInterval(id)
+  }, [timesheet?.hasOpenEntry, loadTimesheet])
 
   const triggerBrowserDownload = async (downloadUrl: string, fallbackFilename: string) => {
     if (!token) return
@@ -305,6 +360,78 @@ const Reports = () => {
 
   return (
     <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+      {/* Ocupa a linha inteira e vem antes de tudo: quem abre Relatorios quer
+          saber quantas horas ja tem na semana, nao pedir uma planilha. */}
+      {timesheet ? (
+        <div className="rounded-3xl border border-white/80 bg-white/80 p-6 shadow-sm lg:col-span-2">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-lg font-semibold text-slate-900">
+              {t('This week, live', 'Esta semana, ao vivo')}
+            </h3>
+            {timesheet.hasOpenEntry ? (
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-emerald-700">
+                {t('Shift open', 'Turno aberto')}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-7">
+            {timesheet.days.map((day) => (
+              <div key={day.dateKey} className="rounded-2xl border border-slate-100 bg-white/80 p-3">
+                <p className="text-[11px] uppercase tracking-[0.15em] text-slate-500">
+                  {formatDateWithTimeZone(day.dateKey, viewTimeZone, locale, {
+                    weekday: 'short',
+                    day: '2-digit',
+                    month: '2-digit',
+                  })}
+                </p>
+                <p className="mt-1 text-base font-semibold text-slate-900">
+                  {formatMinutes(day.workedMinutes)}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-1">
+                  {day.overtimeMinutes > 0 ? (
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
+                      {t('OT', 'HE')} {formatMinutes(day.overtimeMinutes)}
+                    </span>
+                  ) : null}
+                  {day.isOpen ? (
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
+                      {t('Open', 'Em aberto')}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 text-sm">
+            <div className="flex flex-wrap items-center gap-4">
+              <span className="font-semibold text-slate-900">
+                {t('Total worked', 'Total trabalhado')} {formatMinutes(timesheet.totalWorkedMinutes)}
+              </span>
+              <span className="text-slate-600">
+                {t('Overtime', 'Hora extra')} {formatMinutes(timesheet.totalOvertimeMinutes)}
+              </span>
+            </div>
+            {/* Retrato de um instante, e nao um arquivo estavel: sem a hora o
+                leitor nao sabe se o numero e de agora ou de meia hora atras. */}
+            <span className="text-xs text-slate-500">
+              {t('Updated at', 'Atualizado as')}{' '}
+              {formatTimeWithTimeZone(timesheet.generatedAt, viewTimeZone, locale)}
+            </span>
+          </div>
+
+          {/* Diz que HE negada nao entra: sem isto o total parece errado para
+              quem lembra de ter trabalhado aquelas horas. */}
+          <p className="mt-2 text-xs text-slate-500">
+            {t(
+              'Denied overtime is not included in these totals.',
+              'Hora extra negada nao entra nestes totais.'
+            )}
+          </p>
+        </div>
+      ) : null}
+
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
         <p className="text-xs uppercase tracking-[0.35em] text-teal-700">{t('Reports', 'Relatorios')}</p>
         <h2 className="mt-4 text-3xl font-semibold text-slate-900">
