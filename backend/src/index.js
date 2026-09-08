@@ -104,7 +104,15 @@ app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
 // par status+duracao — uma requisicao que chegou e nunca respondeu aparece
 // justamente pela AUSENCIA da linha.
 if (process.env.HTTP_LOG === '1' || process.env.NODE_ENV === 'development') {
+  // Ruido que enterra o sinal. O healthcheck do compose bate /health a cada
+  // 10s: sem filtrar, meia hora de log e 180 linhas de healthcheck e nenhuma
+  // acao de tela visivel — foi o que aconteceu na primeira versao disto.
+  // /uploads e arquivo estatico (foto de perfil), idem.
+  const IGNORAR = [/^\/health$/, /^\/uploads\//];
+
   app.use((req, res, next) => {
+    if (IGNORAR.some((padrao) => padrao.test(req.path))) return next();
+
     const startedAt = Date.now();
 
     res.on('finish', () => {
