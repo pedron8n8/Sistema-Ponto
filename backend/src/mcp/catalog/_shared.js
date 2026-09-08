@@ -16,8 +16,13 @@ const str = (description, extra = {}) => ({ type: 'string', description, ...extr
 const num = (description, extra = {}) => ({ type: 'number', description, ...extra });
 const int = (description, extra = {}) => ({ type: 'integer', description, ...extra });
 const bool = (description, extra = {}) => ({ type: 'boolean', description, ...extra });
+// String.raw, e nao aspas simples: em '^\d{4}...' a sequencia \d nao existe em
+// JS e colapsa para 'd', entao o pattern anunciado era ^d{4}-d{2}-d{2}$ — que
+// casa a letra d literal e REJEITA qualquer data real em cliente que valide o
+// inputSchema. Afetava as 11 tools que declaram data. approvals.js e users.js
+// escrevem o mesmo padrao com '\\d' e sempre estiveram corretos; era so aqui.
 const date = (description) =>
-  str(`${description} Formato YYYY-MM-DD.`, { pattern: '^\d{4}-\d{2}-\d{2}$' });
+  str(`${description} Formato YYYY-MM-DD.`, { pattern: String.raw`^\d{4}-\d{2}-\d{2}$` });
 const enumOf = (values, description) => ({ type: 'string', enum: values, description });
 
 const obj = (properties = {}, required = []) => ({
