@@ -75,6 +75,17 @@ model User {
   hourlyRate       Decimal?      @db.Decimal(10, 2)
   timeZone         String        @default("America/Chicago")
   bankHoursBalanceMinutes Int   @default(0)
+  // Limiar de hora extra curta, por TENANT: vive na linha do dono da
+  // organizacao e vale para todos os colaboradores dela. null = desligado, o
+  // comportamento sem limiar. Nullable pelo mesmo motivo de
+  // bankHoursLimitMinutes: "nao configurado" e um estado, nao um zero.
+  overtimeMinMinutes Int?
+  // Quem mudou o limiar e quando. A configuracao e do TENANT e REDUZ tempo
+  // reconhecido de TODOS os colaboradores da conta: sem procedencia nao ha como
+  // responder "quem ligou isso e desde quando" numa contestacao trabalhista.
+  // Antes disso existia apenas um console.log, que morre com o container.
+  overtimeMinMinutesUpdatedAt   DateTime?
+  overtimeMinMinutesUpdatedById String?
   bankHoursLimitMinutes Int?
   bankHoursExpiryMonths Int     @default(6)
   bankHoursPolicyCode String?

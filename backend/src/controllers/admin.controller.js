@@ -1341,7 +1341,127 @@ const updateLocationSettings = async (req, res) => {
   }
 };
 
+// Teto do limiar de HE curta: 10 minutos.
+//
+// Nao e teto de sanidade contra erro de digitacao, e teto de LEGALIDADE. Com
+// 120 permitidos, uma unica configuracao do tenant apagava ate 2h de hora extra
+// trabalhada por pessoa por dia — isso e supressao salarial, nao arredondamento.
+// A CLT (art. 58 §1º) tolera ~5min por marcacao e ~10min no dia, e 10 e tambem
+// a regra que o produto pediu: "menos de 10 minutos nao e hora extra".
+const MAX_OVERTIME_MIN_MINUTES = 10;
+
+// Reusa o resolveTenantOwnerId do topo deste arquivo: o limiar vive na linha do
+// DONO do tenant e vale para a conta inteira. Um ADMIN e dono de si mesmo; um
+// INTEGRATOR edita a configuracao do admin dele. SUPERADMIN passa por qualquer
+// roleCheck mas nao pertence a tenant nenhum — resolve para null, e os handlers
+// recusam em vez de gravar uma configuracao fantasma que ninguem leria.
+// Recebe a LINHA do dono, nao o escalar: a procedencia (quem mudou e quando)
+// viaja junto com o valor, porque o painel precisa mostrar as duas coisas.
+const overtimeSettingsPayload = (owner) => ({
+  overtimeMinMinutes: owner?.overtimeMinMinutes ?? null,
+  enabled: Number(owner?.overtimeMinMinutes) > 0,
+  maxMinutes: MAX_OVERTIME_MIN_MINUTES,
+  updatedAt: owner?.overtimeMinMinutesUpdatedAt ?? null,
+  updatedById: owner?.overtimeMinMinutesUpdatedById ?? null,
+});
+
+// Campos da configuracao do limiar na linha do dono do tenant.
+const OVERTIME_SETTINGS_SELECT = {
+  overtimeMinMinutes: true,
+  overtimeMinMinutesUpdatedAt: true,
+  overtimeMinMinutesUpdatedById: true,
+};
+
+/**
+ * GET /admin/overtime-settings
+ * Limiar de hora extra curta vigente para a conta.
+ */
+const getOvertimeSettings = async (req, res) => {
+  try {
+    const ownerId = resolveTenantOwnerId(req.user);
+    if (!ownerId) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Sua conta nao esta vinculada a uma organizacao.',
+      });
+    }
+
+    const owner = await prisma.user.findUnique({
+      where: { id: ownerId },
+      select: OVERTIME_SETTINGS_SELECT,
+    });
+
+    res.json(overtimeSettingsPayload(owner));
+  } catch (error) {
+    console.error('❌ Erro ao carregar limiar de hora extra:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao carregar configuracao de hora extra',
+    });
+  }
+};
+
+/**
+ * PATCH /admin/overtime-settings
+ * Define (ou desliga, com null/0) o limiar de hora extra curta da conta.
+ */
+const updateOvertimeSettings = async (req, res) => {
+  try {
+    const ownerId = resolveTenantOwnerId(req.user);
+    if (!ownerId) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Sua conta nao esta vinculada a uma organizacao.',
+      });
+    }
+
+    const raw = req.body?.overtimeMinMinutes;
+
+    // Desligar e um estado, nao um zero: a coluna e nullable de proposito, e
+    // null/0 significam "sem limiar", voltando ao comportamento anterior.
+    let value = null;
+    if (raw !== null && raw !== undefined && raw !== '') {
+      const parsed = Number(raw);
+      if (!Number.isInteger(parsed) || parsed < 0 || parsed > MAX_OVERTIME_MIN_MINUTES) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: `Informe um numero inteiro de minutos entre 0 e ${MAX_OVERTIME_MIN_MINUTES}, ou nulo para desligar.`,
+        });
+      }
+      value = parsed > 0 ? parsed : null;
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: ownerId },
+      data: {
+        overtimeMinMinutes: value,
+        // Procedencia gravada na MESMA escrita: um console.log morre com o
+        // container, e esta configuracao reduz tempo reconhecido da conta
+        // inteira. Vale para o desligamento tambem — "quem desligou e quando"
+        // e uma pergunta tao legitima quanto "quem ligou".
+        overtimeMinMinutesUpdatedAt: new Date(),
+        overtimeMinMinutesUpdatedById: req.user.id,
+      },
+      select: OVERTIME_SETTINGS_SELECT,
+    });
+
+    console.log(
+      `⏱️ Limiar de hora extra curta definido para ${updated.overtimeMinMinutes ?? 'desligado'} por ${req.user.email}`
+    );
+
+    res.json(overtimeSettingsPayload(updated));
+  } catch (error) {
+    console.error('❌ Erro ao salvar limiar de hora extra:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao salvar configuracao de hora extra',
+    });
+  }
+};
+
 module.exports = {
+  getOvertimeSettings,
+  updateOvertimeSettings,
   getTimeEntryAuditLog,
   getUserTimeEntries,
   changeUserSupervisor,

@@ -58,6 +58,17 @@ const AdminBankHoursPage = () => {
   const token = session?.access_token
 
   const [period, setPeriod] = useState<KpiPeriod>('weekly')
+
+  // Limiar de HE curta da conta. `overtimeEnabled` desligado envia null, porque
+  // no backend "desligado" e null e nao zero — a coluna e nullable de proposito.
+  const [overtimeEnabled, setOvertimeEnabled] = useState(false)
+  const [overtimeMinutesInput, setOvertimeMinutesInput] = useState('10')
+  const [overtimeMaxMinutes, setOvertimeMaxMinutes] = useState(120)
+  const [savedOvertimeMinutes, setSavedOvertimeMinutes] = useState<number | null>(null)
+  const [overtimeUpdatedAt, setOvertimeUpdatedAt] = useState<string | null>(null)
+  const [savingOvertimeSettings, setSavingOvertimeSettings] = useState(false)
+  const [overtimeSettingsError, setOvertimeSettingsError] = useState('')
+  const [overtimeSettingsNotice, setOvertimeSettingsNotice] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -96,6 +107,110 @@ const AdminBankHoursPage = () => {
   useEffect(() => {
     loadData().catch(() => undefined)
   }, [token, period])
+
+  type OvertimeSettings = {
+    overtimeMinMinutes: number | null
+    enabled: boolean
+    maxMinutes: number
+    // Procedencia: quem mudou e quando. Antes so existia um console.log no
+    // servidor, que morre com o container.
+    updatedAt: string | null
+    updatedById: string | null
+  }
+
+  const applyOvertimeSettings = (settings: OvertimeSettings) => {
+    setOvertimeEnabled(settings.enabled)
+    setOvertimeMaxMinutes(settings.maxMinutes || 120)
+    // Estado REALMENTE gravado, separado do estado do formulario. Sem isso a
+    // tela so mostra o que voce digitou, e marcar o checkbox sem salvar fica
+    // visualmente identico a ter salvo.
+    setSavedOvertimeMinutes(settings.overtimeMinMinutes)
+    setOvertimeUpdatedAt(settings.updatedAt)
+    // Desligado mantem o ultimo valor visivel no campo, para religar nao exigir
+    // digitar tudo de novo.
+    if (settings.overtimeMinMinutes) setOvertimeMinutesInput(String(settings.overtimeMinMinutes))
+  }
+
+  const loadOvertimeSettings = async () => {
+    if (!token) return
+    try {
+      const settings = await apiFetch<OvertimeSettings>('/admin/overtime-settings', { token })
+      applyOvertimeSettings(settings)
+    } catch (err) {
+      setOvertimeSettingsError(
+        err instanceof Error
+          ? translateApiMessage(err.message)
+          : t('Could not load the overtime rule.', 'Erro ao carregar a regra de hora extra')
+      )
+    }
+  }
+
+  useEffect(() => {
+    loadOvertimeSettings().catch(() => undefined)
+  }, [token])
+
+  const saveOvertimeSettings = async () => {
+    // Sem `return` mudo: sem sessao o clique nao mandava requisicao nenhuma e
+    // nao dizia nada, deixando "salvei e nao mudou" indistinguivel de bug.
+    if (!token) {
+      setOvertimeSettingsError(
+        t('Session expired. Sign in again.', 'Sessao expirada. Entre novamente.')
+      )
+      return
+    }
+
+    setOvertimeSettingsError('')
+    setOvertimeSettingsNotice('')
+
+    // Ligado exige um inteiro valido; desligado ignora o campo e envia null.
+    let payload: number | null = null
+    if (overtimeEnabled) {
+      const parsed = Number(overtimeMinutesInput)
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > overtimeMaxMinutes) {
+        setOvertimeSettingsError(
+          t(
+            `Enter a whole number of minutes between 1 and ${overtimeMaxMinutes}.`,
+            `Informe um numero inteiro de minutos entre 1 e ${overtimeMaxMinutes}.`
+          )
+        )
+        return
+      }
+      payload = parsed
+    }
+
+    setSavingOvertimeSettings(true)
+    try {
+      const settings = await apiFetch<OvertimeSettings>('/admin/overtime-settings', {
+        token,
+        method: 'PATCH',
+        body: { overtimeMinMinutes: payload },
+      })
+      applyOvertimeSettings(settings)
+      setOvertimeSettingsNotice(
+        settings.enabled
+          ? t(
+              `Overtime under ${settings.overtimeMinMinutes} minutes in a day no longer counts.`,
+              `Hora extra abaixo de ${settings.overtimeMinMinutes} minutos no dia deixa de contar.`
+            )
+          : t('Short-overtime rule turned off.', 'Regra de hora extra curta desligada.')
+      )
+    } catch (err) {
+      // apiFetch ja exibe o toast do erro; aqui fica so o estado inline.
+      setOvertimeSettingsError(
+        err instanceof Error
+          ? translateApiMessage(err.message)
+          : t('Could not save the overtime rule.', 'Erro ao salvar a regra de hora extra')
+      )
+    } finally {
+      setSavingOvertimeSettings(false)
+    }
+  }
+
+  // Compara o formulario com o que esta gravado. Desligado nos dois lados e
+  // "sem alteracao", qualquer que seja o numero digitado no campo desabilitado.
+  const hasUnsavedOvertimeChange = overtimeEnabled
+    ? Number(overtimeMinutesInput) !== savedOvertimeMinutes
+    : savedOvertimeMinutes !== null
 
   const bankByUserId = useMemo(() => {
     return bankOverview.reduce<Record<string, BankHoursOverviewItem>>((acc, item) => {
@@ -182,6 +297,116 @@ const AdminBankHoursPage = () => {
           {t(
             'Track weekly and overtime hours by user, with banked-hours balances and pending payouts.',
             'Acompanhe horas semanais e extras por usuario, com saldo e pendencias de banco de horas.'
+          )}
+        </p>
+      </div>
+
+      {/* Limiar de HE curta: politica de jornada da CONTA inteira, por isso mora
+          na tela de politica de horas e nao no cadastro de cada colaborador. */}
+      <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
+        <h3 className="text-lg font-semibold text-slate-900">
+          {t('Short overtime', 'Hora extra curta')}
+        </h3>
+        <p className="mt-2 text-sm text-slate-600">
+          {t(
+            'Overtime below this many minutes in a day is not counted as overtime. Crossing it counts the full amount.',
+            'Hora extra abaixo desta quantidade de minutos no dia nao e considerada hora extra. Ao cruzar, conta o valor cheio.'
+          )}
+        </p>
+
+        {/* O teto tem base legal, e quem configura precisa ver isso na tela:
+            sem a nota, 10 parece um limite arbitrario do produto — e o campo
+            aceitava 120, o que permitia apagar 2h de HE trabalhada por dia. */}
+        <p className="mt-2 text-xs text-slate-500">
+          {t(
+            `Capped at ${overtimeMaxMinutes} minutes: CLT art. 58 §1º tolerates about 5 minutes per punch and 10 minutes a day. Above that it is worked time and must be paid.`,
+            `Limitado a ${overtimeMaxMinutes} minutos: a CLT (art. 58 §1º) tolera cerca de 5 minutos por marcacao e 10 minutos no dia. Acima disso e tempo trabalhado e deve ser pago.`
+          )}
+        </p>
+
+        {overtimeSettingsError ? (
+          <p className="mt-3 text-sm text-rose-600">{overtimeSettingsError}</p>
+        ) : null}
+        {overtimeSettingsNotice ? (
+          <p className="mt-3 text-sm text-emerald-700">{overtimeSettingsNotice}</p>
+        ) : null}
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <label className="flex min-h-[44px] items-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm md:min-h-0 md:py-2">
+            <input
+              type="checkbox"
+              checked={overtimeEnabled}
+              onChange={(event) => {
+                setOvertimeEnabled(event.target.checked)
+                setOvertimeSettingsNotice('')
+              }}
+              className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span>{t('Ignore short overtime', 'Desconsiderar hora extra curta')}</span>
+          </label>
+
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <span>{t('Minimum minutes', 'Minutos minimos')}</span>
+            <input
+              type="number"
+              min={1}
+              max={overtimeMaxMinutes}
+              step={1}
+              value={overtimeMinutesInput}
+              disabled={!overtimeEnabled}
+              onChange={(event) => {
+                setOvertimeMinutesInput(event.target.value)
+                setOvertimeSettingsNotice('')
+              }}
+              className="min-h-[44px] w-24 rounded-2xl border border-slate-200 bg-white px-3 text-sm disabled:bg-slate-50 disabled:text-slate-400 md:min-h-0 md:py-2"
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={saveOvertimeSettings}
+            disabled={savingOvertimeSettings}
+            className="min-h-[44px] rounded-full bg-teal-700 px-4 text-sm font-semibold text-white disabled:opacity-50 md:min-h-0 md:py-2"
+          >
+            {savingOvertimeSettings ? t('Saving...', 'Salvando...') : t('Save', 'Salvar')}
+          </button>
+        </div>
+
+        {/* O que esta GRAVADO, nao o que esta digitado. Marcar o checkbox sem
+            salvar era visualmente identico a ter salvo, e a unica forma de
+            saber a verdade era consultar o banco. */}
+        <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3">
+          <p className="text-sm text-slate-700">
+            <span className="font-semibold">{t('Saved rule:', 'Regra gravada:')}</span>{' '}
+            {savedOvertimeMinutes
+              ? t(
+                  `overtime under ${savedOvertimeMinutes} minutes a day is ignored`,
+                  `hora extra abaixo de ${savedOvertimeMinutes} minutos no dia e ignorada`
+                )
+              : t('off — all overtime counts', 'desligada — toda hora extra conta')}
+          </p>
+          {/* Quando a regra passou a valer. Vale para o desligamento tambem:
+              "desde quando esta desligada" e uma pergunta igualmente legitima. */}
+          {overtimeUpdatedAt ? (
+            <p className="mt-1 text-xs text-slate-500">
+              {t('Last changed on', 'Ultima alteracao em')}{' '}
+              {new Date(overtimeUpdatedAt).toLocaleString(locale, {
+                dateStyle: 'short',
+                timeStyle: 'short',
+              })}
+            </p>
+          ) : null}
+          {hasUnsavedOvertimeChange ? (
+            <p className="mt-1 text-xs font-semibold text-amber-700">
+              {t('You have unsaved changes. Click Save.', 'Ha alteracao nao salva. Clique em Salvar.')}
+            </p>
+          ) : null}
+        </div>
+
+        <p className="mt-3 text-xs text-slate-500">
+          {t(
+            'Applies to new calculations. Past days only change when they are recalculated.',
+            'Vale para novos calculos. Dias passados so mudam quando forem recalculados.'
           )}
         </p>
       </div>

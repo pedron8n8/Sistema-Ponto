@@ -78,11 +78,16 @@ describe('configuracao do limiar de HE curta', () => {
 
       await updateOvertimeSettings(mockReq, mockRes);
 
-      expect(mockPrisma.user.update).toHaveBeenCalledWith({
-        where: { id: 'admin-1' },
-        data: { overtimeMinMinutes: 10 },
-        select: { overtimeMinMinutes: true },
+      const update = mockPrisma.user.update.mock.calls[0][0];
+      expect(update.where).toEqual({ id: 'admin-1' });
+      expect(update.data).toMatchObject({
+        overtimeMinMinutes: 10,
+        // Procedencia na MESMA escrita: a configuracao e do tenant e reduz
+        // tempo reconhecido de todos, entao "quem mudou e quando" precisa
+        // sobreviver ao container.
+        overtimeMinMinutesUpdatedById: 'admin-1',
       });
+      expect(update.data.overtimeMinMinutesUpdatedAt).toBeInstanceOf(Date);
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({ overtimeMinMinutes: 10, enabled: true })
       );
@@ -95,9 +100,12 @@ describe('configuracao do limiar de HE curta', () => {
 
       await updateOvertimeSettings(mockReq, mockRes);
 
-      expect(mockPrisma.user.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { overtimeMinMinutes: null } })
-      );
+      // A procedencia e gravada no desligamento tambem: "quem desligou e
+      // quando" e uma pergunta tao legitima quanto "quem ligou".
+      expect(mockPrisma.user.update.mock.calls[0][0].data).toMatchObject({
+        overtimeMinMinutes: null,
+        overtimeMinMinutesUpdatedById: 'admin-1',
+      });
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({ enabled: false })
       );
@@ -109,9 +117,9 @@ describe('configuracao do limiar de HE curta', () => {
 
       await updateOvertimeSettings(mockReq, mockRes);
 
-      expect(mockPrisma.user.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { overtimeMinMinutes: null } })
-      );
+      expect(mockPrisma.user.update.mock.calls[0][0].data).toMatchObject({
+        overtimeMinMinutes: null,
+      });
     });
 
     it('recusa valor negativo', async () => {
@@ -132,8 +140,10 @@ describe('configuracao do limiar de HE curta', () => {
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
 
-    // Teto de sanidade: um limiar de 8h transformaria a jornada inteira em
-    // "sem hora extra" por engano de digitacao.
+    // Teto de LEGALIDADE, nao de sanidade contra erro de digitacao. Com 120
+    // permitidos, uma configuracao do tenant apagava ate 2h de HE trabalhada
+    // por pessoa por dia: supressao salarial. A CLT (art. 58 §1º) tolera ~10min
+    // no dia, que e tambem a regra pedida pelo produto.
     it('recusa limiar acima do teto', async () => {
       mockReq.body = { overtimeMinMinutes: 481 };
 
@@ -141,6 +151,33 @@ describe('configuracao do limiar de HE curta', () => {
 
       expect(mockRes.status).toHaveBeenCalledWith(400);
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('recusa 11 minutos: acima da tolerancia diaria da CLT', async () => {
+      mockReq.body = { overtimeMinMinutes: 11 };
+
+      await updateOvertimeSettings(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('aceita exatamente 10 minutos', async () => {
+      mockReq.body = { overtimeMinMinutes: 10 };
+      mockPrisma.user.update.mockResolvedValue({ overtimeMinMinutes: 10 });
+
+      await updateOvertimeSettings(mockReq, mockRes);
+
+      expect(mockRes.status).not.toHaveBeenCalledWith(400);
+      expect(mockPrisma.user.update).toHaveBeenCalled();
+    });
+
+    it('anuncia o teto vigente no payload, para o painel nao chuta-lo', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({ overtimeMinMinutes: 10 });
+
+      await getOvertimeSettings(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({ maxMinutes: 10 }));
     });
 
     it('grava no admin dono quando quem chama e INTEGRATOR', async () => {
