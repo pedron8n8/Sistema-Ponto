@@ -32,6 +32,7 @@ import AdminMcpPage from './pages/AdminMcpPage'
 import McpAuthorizePage from './pages/McpAuthorizePage'
 import SupervisorKpisPage from './pages/SupervisorKpisPage'
 import SupervisorPendingItemsPage from './pages/SupervisorPendingItemsPage'
+import SupervisorOvertimePage from './pages/SupervisorOvertimePage'
 import SupervisorHoursPage from './pages/SupervisorHoursPage'
 import HrDailyTimePage from './pages/HrDailyTimePage'
 import HrSchedulesPage from './pages/HrSchedulesPage'
@@ -213,6 +214,19 @@ const App = () => {
                     </ProtectedRoute>
                   }
                 />
+                {/* Hora extra tem janela propria: mesma alcada da tela de
+                    pendencias, mas so decide HE. INTEGRATOR entra junto com HR
+                    pelo ProtectedRoute, nao se lista aqui. */}
+                <Route
+                  path="/app/supervisor/overtime"
+                  element={
+                    <ProtectedRoute allowedRoles={['SUPERVISOR', 'HR', 'ADMIN', 'SUPERADMIN']}>
+                      <ShellLayout>
+                        <SupervisorOvertimePage />
+                      </ShellLayout>
+                    </ProtectedRoute>
+                  }
+                />
                 <Route
                   path="/app/hr"
                   element={
@@ -298,7 +312,16 @@ const App = () => {
                 <Route
                   path="/app/admin/bank-hours"
                   element={
-                    <ProtectedRoute allowedRoles={['ADMIN']}>
+                    /* INTEGRATOR entra porque o limiar de HE curta vive nesta
+                       tela e /admin/overtime-settings o concede de proposito
+                       (admin.routes.js escreve as duas rotas ACIMA do
+                       router.use(roleCheck(['ADMIN'])) justamente por isso).
+                       Sem esta ampliacao o INTEGRATOR tinha a permissao e
+                       nenhuma forma de exerce-la. As demais acoes da tela
+                       seguem barradas no backend por roleCheck(['ADMIN']) — a
+                       propria pagina deixa de pedi-las quando o papel nao e
+                       ADMIN, para nao virar uma tela de 403. */
+                    <ProtectedRoute allowedRoles={['ADMIN', 'INTEGRATOR']}>
                       <ShellLayout>
                         <AdminBankHoursPage />
                       </ShellLayout>

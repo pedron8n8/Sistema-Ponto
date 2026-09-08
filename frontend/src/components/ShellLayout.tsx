@@ -192,6 +192,11 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
           label: t('Supervisor Pendings', 'Supervisor Pendings'),
           icon: <SupervisorIcon />,
         },
+        {
+          to: '/app/supervisor/overtime',
+          label: t('Overtime', 'Hora extra'),
+          icon: <SupervisorIcon />,
+        },
         ...(isGrowthOrBetter
           ? [
               {
@@ -222,6 +227,25 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
           label: t('Teams & groups', 'Equipes e grupos'),
           icon: <SupervisorIcon />,
         },
+        // /app/admin/bank-hours entra AQUI, e nao na secao Admin, porque a
+        // secao Admin inteira e `visible: isOnlyAdmin` e abrir ela para o
+        // INTEGRATOR entregaria de brinde assentos, financeiro e aprovacoes.
+        // O ADMIN nao cai neste ramo porque ja tem o item na secao Admin, e
+        // dois links iguais no menu leem como bug.
+        //
+        // Rotulo proprio de proposito: o que o INTEGRATOR administra ali e o
+        // limiar de hora extra curta (/admin/overtime-settings). Chamar de
+        // "Banco de horas" prometeria a tabela de saldos, que o backend nega
+        // a ele.
+        ...(profile?.role === 'INTEGRATOR'
+          ? [
+              {
+                to: '/app/admin/bank-hours',
+                label: t('Overtime rule', 'Regra de hora extra'),
+                icon: <SupervisorIcon />,
+              },
+            ]
+          : []),
       ],
     },
     {

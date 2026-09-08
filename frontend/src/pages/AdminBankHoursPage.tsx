@@ -50,12 +50,24 @@ const formatMinutesLabel = (minutes: number) => {
 }
 
 const AdminBankHoursPage = () => {
-  const { session } = useAuth()
+  const { session, profile } = useAuth()
   const { t: i18nT, i18n } = useTranslation()
   const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
   const locale = isPt ? 'pt-BR' : 'en-US'
   const t = (en: string, pt: string) => i18nT(isPt ? pt : en)
   const token = session?.access_token
+
+  // Esta tela e alcancavel por ADMIN e por INTEGRATOR, mas as duas metades dela
+  // tem guards diferentes no backend: /admin/overtime-settings concede
+  // ['ADMIN','INTEGRATOR'], enquanto /admin/bank-hours/overview e o pagamento de
+  // pendencia ficam abaixo do router.use(roleCheck(['ADMIN'])).
+  //
+  // O flag existe para NAO pedir o que vai voltar 403: `loadData` usava um
+  // Promise.all, entao o 403 do overview derrubava junto o KPI de horas — que o
+  // INTEGRATOR TEM direito de ver, porque /supervisor/kpis/hours lista 'HR' e o
+  // roleCheck expande HR para INTEGRATOR. O resultado era uma tela de erro para
+  // quem tinha permissao, mais um toast do apiFetch em cada abertura.
+  const canManageBankHours = profile?.role === 'ADMIN' || profile?.role === 'SUPERADMIN'
 
   const [period, setPeriod] = useState<KpiPeriod>('weekly')
 
@@ -86,7 +98,11 @@ const AdminBankHoursPage = () => {
     try {
       const [kpisResponse, bankResponse] = await Promise.all([
         apiFetch<HoursKpiResponse>(`/supervisor/kpis/hours?period=${period}`, { token }),
-        apiFetch<{ overview: BankHoursOverviewItem[] }>('/admin/bank-hours/overview', { token }),
+        // Sem o `canManageBankHours` este item era um 403 garantido para o
+        // INTEGRATOR e, por ser Promise.all, levava o KPI embora com ele.
+        canManageBankHours
+          ? apiFetch<{ overview: BankHoursOverviewItem[] }>('/admin/bank-hours/overview', { token })
+          : Promise.resolve({ overview: [] as BankHoursOverviewItem[] }),
       ])
 
       setKpiPayload(kpisResponse)
@@ -104,9 +120,12 @@ const AdminBankHoursPage = () => {
     }
   }
 
+  // `canManageBankHours` na lista de dependencias: o profile chega por uma requisicao
+  // separada da sessao, entao um ADMIN podia rodar o primeiro loadData com o
+  // flag ainda false e ficar sem o overview ate mexer no filtro de periodo.
   useEffect(() => {
     loadData().catch(() => undefined)
-  }, [token, period])
+  }, [token, period, canManageBankHours])
 
   type OvertimeSettings = {
     overtimeMinMinutes: number | null
@@ -461,7 +480,10 @@ const AdminBankHoursPage = () => {
 
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
         <h3 className="text-lg font-semibold text-slate-900">
-          {t('Hours and balances by user', 'Horas e saldo por usuario')}
+          {canManageBankHours
+            ? t('Hours and balances by user', 'Horas e saldo por usuario')
+            : /* Sem saldo na tabela, prometer "e saldo" no titulo seria mentir. */
+              t('Hours by user', 'Horas por usuario')}
         </h3>
 
         <div className="mt-4 space-y-3">
@@ -476,18 +498,29 @@ const AdminBankHoursPage = () => {
                   <div>
                     <p className="text-sm font-semibold text-slate-900">{row.name}</p>
                     <p className="text-xs text-slate-500">{row.email}</p>
-                    <p className="mt-1 text-xs text-slate-600">Role: {row.role}</p>
+                    {/* `role` so existe na linha do overview. Quando o overview
+                        nao foi carregado, `combinedRows` devolve '-', e
+                        "Role: -" em toda linha parece dado corrompido. */}
+                    {row.role !== '-' ? (
+                      <p className="mt-1 text-xs text-slate-600">Role: {row.role}</p>
+                    ) : null}
                   </div>
 
-                  <button
-                    onClick={() => handlePayPendingBankHours(row.userId)}
-                    disabled={Boolean(bankPayLoadingByUser[row.userId]) || row.pendingMinutes <= 0}
-                    className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-                  >
-                    {bankPayLoadingByUser[row.userId]
-                      ? t('Processing...', 'Processando...')
-                      : t('Post pending payout', 'Dar baixa pendente')}
-                  </button>
+                  {/* Dar baixa e PATCH /admin/users/:id/bank-hours/pay, abaixo
+                      do roleCheck(['ADMIN']). Escondido em vez de desabilitado
+                      porque um botao habilitado que sempre volta 403 ensina o
+                      INTEGRATOR a ignorar toast de erro. */}
+                  {canManageBankHours ? (
+                    <button
+                      onClick={() => handlePayPendingBankHours(row.userId)}
+                      disabled={Boolean(bankPayLoadingByUser[row.userId]) || row.pendingMinutes <= 0}
+                      className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                    >
+                      {bankPayLoadingByUser[row.userId]
+                        ? t('Processing...', 'Processando...')
+                        : t('Post pending payout', 'Dar baixa pendente')}
+                    </button>
+                  ) : null}
                 </div>
 
                 <div className="mt-3 grid gap-2 text-xs text-slate-700 md:grid-cols-3 lg:grid-cols-6">
@@ -503,18 +536,26 @@ const AdminBankHoursPage = () => {
                     <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">{t('OT', 'HE')}</p>
                     <p className="mt-1 font-semibold text-rose-700">{formatMinutesLabel(row.overtimeMinutes)}</p>
                   </div>
-                  <div className="rounded-xl border border-slate-100 bg-white px-3 py-2">
-                    <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">{t('Balance', 'Saldo')}</p>
-                    <p className="mt-1 font-semibold">{formatMinutesLabel(row.balanceMinutes)}</p>
-                  </div>
-                  <div className="rounded-xl border border-slate-100 bg-white px-3 py-2">
-                    <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">{t('Pending', 'Pendente')}</p>
-                    <p className="mt-1 font-semibold text-amber-700">{formatMinutesLabel(row.pendingMinutes)}</p>
-                  </div>
-                  <div className="rounded-xl border border-slate-100 bg-white px-3 py-2">
-                    <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">{t('Paid', 'Pago')}</p>
-                    <p className="mt-1 font-semibold text-emerald-700">{formatMinutesLabel(row.paidMinutes)}</p>
-                  </div>
+                  {/* Saldo/Pendente/Pago vem SO de /admin/bank-hours/overview.
+                      Sem o overview, `combinedRows` preenche esses tres campos
+                      com 0 (fallback `|| 0`), e "Saldo 00:00" para quem nunca
+                      recebeu o dado leria como saldo zerado de verdade. */}
+                  {canManageBankHours ? (
+                    <>
+                      <div className="rounded-xl border border-slate-100 bg-white px-3 py-2">
+                        <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">{t('Balance', 'Saldo')}</p>
+                        <p className="mt-1 font-semibold">{formatMinutesLabel(row.balanceMinutes)}</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-100 bg-white px-3 py-2">
+                        <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">{t('Pending', 'Pendente')}</p>
+                        <p className="mt-1 font-semibold text-amber-700">{formatMinutesLabel(row.pendingMinutes)}</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-100 bg-white px-3 py-2">
+                        <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">{t('Paid', 'Pago')}</p>
+                        <p className="mt-1 font-semibold text-emerald-700">{formatMinutesLabel(row.paidMinutes)}</p>
+                      </div>
+                    </>
+                  ) : null}
                 </div>
               </div>
             ))
