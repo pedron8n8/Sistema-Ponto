@@ -13,6 +13,15 @@ const {
   calculateIncrementalOvertimeSummary,
   calculateCurrentDailyProgress,
 } = require('../utils/overtime');
+const {
+  TENANT_OVERTIME_POLICY_SELECT,
+  resolveMinOvertimeMinutes,
+} = require('../utils/tenantOvertimePolicy');
+const {
+  isWorkedMinutesAuthoritative,
+  RECOGNIZED_MINUTES_SELECT,
+  assertOvertimeStatusSelected,
+} = require('../utils/recognizedMinutes');
 const { accrueBankHours, expireBankHoursIfNeeded } = require('../utils/bankHours');
 const {
   issueTerminalQrToken,
@@ -426,6 +435,16 @@ const resolveWorkedMinutes = (entry) => {
     return Math.floor(storedWorkedMinutes);
   }
 
+  // Entrada com HE negada que era HE de ponta a ponta tem 0 reconhecido DE
+  // PROPOSITO. Sem este guard, o fallback abaixo devolvia a duracao cheia e os
+  // minutos negados voltavam para workedMinutesBeforeEntry — inflando o total
+  // do dia, o painel ao vivo e a HE da marcacao seguinte, que ganhava hora
+  // extra empilhada sobre tempo ja negado.
+  assertOvertimeStatusSelected(entry, 'time.resolveWorkedMinutes');
+  if (isWorkedMinutesAuthoritative(entry)) {
+    return 0;
+  }
+
   const calculatedDuration = calculateDuration(
     entry.clockIn,
     entry.clockOut,
@@ -433,6 +452,29 @@ const resolveWorkedMinutes = (entry) => {
   );
   return Math.max(0, Math.floor(Number(calculatedDuration?.totalMinutes) || 0));
 };
+
+// Selects nomeados e exportados para que um teste possa afirmar a FORMA da
+// query. O mock do Prisma ignora `select`, entao asercao de comportamento nao
+// pega campo faltando — e foi um campo faltando aqui que deixou o clock-out
+// gravar 6min de HE num tenant com limiar de 10min, estampada como PENDING, o
+// que BLOQUEIA a aprovacao do ponto.
+const CLOCK_OUT_USER_CONFIG_SELECT = {
+  contractDailyMinutes: true,
+  hourlyRate: true,
+  ...TENANT_OVERTIME_POLICY_SELECT,
+};
+
+// Marcacoes anteriores do dia: alimentam workedMinutesBeforeEntry via
+// resolveWorkedMinutes, que precisa de overtimeStatus para distinguir um 0
+// autoritativo (HE negada) de um 0 por falta de calculo.
+const PRIOR_ENTRIES_SELECT = {
+  clockIn: true,
+  clockOut: true,
+  ...RECOGNIZED_MINUTES_SELECT,
+};
+
+const getClockOutUserConfigSelect = () => CLOCK_OUT_USER_CONFIG_SELECT;
+const getPriorEntriesSelect = () => PRIOR_ENTRIES_SELECT;
 
 const LOCATION_SOURCE_TERMINAL_QR =
   LOCATION_VALIDATION_SOURCES?.TERMINAL_QR || 'TERMINAL_QR';
@@ -966,10 +1008,7 @@ const clockOut = async (req, res) => {
 
     const userConfig = await prisma.user.findUnique({
       where: { id: userId },
-      select: {
-        contractDailyMinutes: true,
-        hourlyRate: true,
-      },
+      select: CLOCK_OUT_USER_CONFIG_SELECT,
     });
 
     const dayStart = getStartOfDay(clockOutTime);
@@ -987,11 +1026,7 @@ const clockOut = async (req, res) => {
           not: null,
         },
       },
-      select: {
-        clockIn: true,
-        clockOut: true,
-        workedMinutes: true,
-      },
+      select: PRIOR_ENTRIES_SELECT,
     });
 
     const normalizedPriorEntriesToday = Array.isArray(priorEntriesToday) ? priorEntriesToday : [];
@@ -1007,6 +1042,13 @@ const clockOut = async (req, res) => {
       contractDailyMinutes: userConfig?.contractDailyMinutes,
       workedMinutesBeforeEntry,
       breakMinutes: breakSummary.totalMinutes,
+      // Este e o UNICO caminho que persiste hora extra e estampa
+      // overtimeStatus. Sem o limiar aqui, o clock-out gravava HE abaixo do
+      // limiar como PENDING — e HE pendente BLOQUEIA a aprovacao do ponto,
+      // exatamente o que o limiar existe para evitar. O painel ao vivo e o
+      // recalcDay ja respeitavam a regra, entao o numero mudava sozinho entre
+      // a tela e o fechamento do dia.
+      minOvertimeMinutes: resolveMinOvertimeMinutes(userConfig),
     });
 
     const financial = calculateFinancialSummary({
@@ -1488,6 +1530,10 @@ const getCurrentEntry = async (req, res) => {
         where: { id: userId },
         select: {
           contractDailyMinutes: true,
+          // Limiar de HE curta do tenant: sem ele o painel anunciaria "8min de
+          // HE" subindo ao vivo e ela sumiria no fechamento do dia. Vem do
+          // fragmento compartilhado para nao divergir do clock-out.
+          ...TENANT_OVERTIME_POLICY_SELECT,
         },
       }),
       prisma.timeEntry.findMany({
@@ -1502,11 +1548,7 @@ const getCurrentEntry = async (req, res) => {
             not: null,
           },
         },
-        select: {
-          clockIn: true,
-          clockOut: true,
-          workedMinutes: true,
-        },
+        select: PRIOR_ENTRIES_SELECT,
       }),
     ]);
 
@@ -1526,6 +1568,7 @@ const getCurrentEntry = async (req, res) => {
       contractDailyMinutes: userConfig?.contractDailyMinutes,
       workedMinutesBeforeEntry,
       breakMinutes: breakSummary.totalMinutes,
+      minOvertimeMinutes: resolveMinOvertimeMinutes(userConfig),
     });
 
     // Calcula quanto tempo já passou desde o clock-in
@@ -1904,4 +1947,9 @@ module.exports = {
   getTimeEntryById,
   updateMyEntryNotes,
   requestCorrection,
+  // Exportados para asercao de FORMA da query nos testes: o mock do Prisma
+  // ignora `select`, entao esta e a unica forma de provar que o limiar do
+  // tenant e o overtimeStatus chegam a quem precisa deles.
+  getClockOutUserConfigSelect,
+  getPriorEntriesSelect,
 };
