@@ -22,6 +22,7 @@ frontend/.env
 # `backend/.env.docker-local`, entao ele precisa estar aqui explicito — senao
 # um `git add -A` distraido publicaria um arquivo de ambiente.
 /docker-compose.local.yml
+/docker-compose.teste.yml
 backend/.env.docker-local
 # Padroes, nao nomes: o primeiro script novo com nome fora da lista voltaria a
 # ser commitavel, e sao justamente scripts que escrevem no banco.
