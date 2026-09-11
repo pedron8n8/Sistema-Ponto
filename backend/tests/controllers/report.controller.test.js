@@ -367,4 +367,95 @@ describe('Report Controller', () => {
       );
     });
   });
+
+  // O painel "This week, live" consome ESTA resposta. Os testes de
+  // buildWeeklyTimesheet exercitam a aritmetica direto; aqui o que se prova e a
+  // LIGACAO — que o controller busca os campos certos e entrega o tempo em
+  // curso ja somado. Um select sem breakStartedAt, ou o `now` nao chegando ao
+  // calculo, passa despercebido la e e pego aqui.
+  describe('getWeeklyTimesheet', () => {
+    const colaborador = {
+      id: 'admin-123',
+      name: 'Teste',
+      email: 'teste@example.com',
+      contractDailyMinutes: 480,
+      timeZone: 'America/Sao_Paulo',
+      organizationAdmin: { overtimeMinMinutes: null },
+    };
+
+    beforeEach(() => {
+      req.query = { weekStart: '2026-05-04', timeZone: 'America/Sao_Paulo' };
+      mockPrisma.user.findUnique.mockResolvedValue(colaborador);
+    });
+
+    it('conta o turno ABERTO no dia, em vez de devolver zero', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-05-04T15:00:00Z'));
+
+      // Entrou 09:00 em Sao Paulo (12:00Z) e ainda nao bateu a saida.
+      mockPrisma.timeEntry.findMany.mockResolvedValue([
+        {
+          id: 'aberta',
+          clockIn: new Date('2026-05-04T12:00:00Z'),
+          clockOut: null,
+          breakMinutes: 0,
+          breakStartedAt: null,
+          workedMinutes: 0,
+          overtimeStatus: null,
+        },
+      ]);
+
+      await reportController.getWeeklyTimesheet(req, res);
+
+      const payload = res.json.mock.calls[0][0];
+      const segunda = payload.days.find((day) => day.dateKey === '2026-05-04');
+
+      expect(segunda.workedMinutes).toBe(180);
+      expect(segunda.isOpen).toBe(true);
+      expect(payload.totalWorkedMinutes).toBe(180);
+      expect(payload.hasOpenEntry).toBe(true);
+      // Turno aberto nao vira hora extra: ela nasceria PENDING e travaria a
+      // aprovacao do ponto.
+      expect(payload.totalOvertimeMinutes).toBe(0);
+
+      jest.useRealTimers();
+    });
+
+    it('traz breakStartedAt na query, senao a pausa em andamento nao desconta', async () => {
+      mockPrisma.timeEntry.findMany.mockResolvedValue([]);
+
+      await reportController.getWeeklyTimesheet(req, res);
+
+      expect(mockPrisma.timeEntry.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({ breakStartedAt: true }),
+        })
+      );
+    });
+
+    it('carimba generatedAt no MESMO instante que alimenta o tempo em curso', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-05-04T15:00:00Z'));
+
+      mockPrisma.timeEntry.findMany.mockResolvedValue([
+        {
+          id: 'aberta',
+          clockIn: new Date('2026-05-04T12:00:00Z'),
+          clockOut: null,
+          breakMinutes: 0,
+          breakStartedAt: null,
+          workedMinutes: 0,
+          overtimeStatus: null,
+        },
+      ]);
+
+      await reportController.getWeeklyTimesheet(req, res);
+
+      const payload = res.json.mock.calls[0][0];
+
+      // O rodape "atualizado as" tem que apontar para o instante que os numeros
+      // usaram, senao a tela mostra uma hora e conta outra.
+      expect(payload.generatedAt).toBe('2026-05-04T15:00:00.000Z');
+
+      jest.useRealTimers();
+    });
+  });
 });

@@ -125,6 +125,9 @@ const Reports = () => {
   }, [weekStart])
   const weekStartKey = formatDateInput(weekStart)
   const weekEndKey = formatDateInput(weekEnd)
+  // Hoje no fuso do colaborador, nao no do navegador: e o mesmo criterio de dia
+  // que o backend usa para montar a semana.
+  const todayKey = getDateKeyWithTimeZone(new Date(), viewTimeZone)
 
   const formatMinutes = (minutes: number) => {
     const hours = Math.floor(minutes / 60)
@@ -186,17 +189,57 @@ const Reports = () => {
     loadTimesheet().catch(() => undefined)
   }, [loadTimesheet])
 
-  // Polling SO enquanto ha marcacao aberta: numa semana fechada o numero nao
-  // muda mais, e um intervalo rodando sem motivo custa bateria no celular.
+  // O gatilho e a SEMANA CORRENTE, nao hasOpenEntry. Condicionar o polling a
+  // hasOpenEntry criava um circulo: so o proprio polling descobre que um turno
+  // abriu, entao quem ja estava com Relatorios na tela quando bateu a entrada
+  // (do celular, do terminal, da outra aba) ficava com o painel congelado para
+  // sempre — nada voltava a chamar o endpoint ate trocar de semana ou recarregar.
+  //
+  // Semana passada continua sem intervalo: aquele numero nao muda mais. E a
+  // aba escondida pausa, que era a preocupacao de bateria por tras do gate
+  // antigo — so que agora sem custar o caso que o painel existe para mostrar.
+  const isCurrentWeek =
+    todayKey >= weekStartKey && todayKey <= weekEndKey
+
   useEffect(() => {
-    if (!timesheet?.hasOpenEntry) return
+    if (!isCurrentWeek) return
 
-    const id = window.setInterval(() => {
+    let id: number | null = null
+
+    const stop = () => {
+      if (id !== null) {
+        window.clearInterval(id)
+        id = null
+      }
+    }
+
+    const start = () => {
+      if (id !== null) return
+      id = window.setInterval(() => {
+        loadTimesheet().catch(() => undefined)
+      }, 30000)
+    }
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        stop()
+        return
+      }
+
+      // Volta da aba ja com o numero de agora: esperar o proximo tick faria o
+      // painel mostrar meio minuto de atraso justamente quando alguem olha.
       loadTimesheet().catch(() => undefined)
-    }, 60000)
+      start()
+    }
 
-    return () => window.clearInterval(id)
-  }, [timesheet?.hasOpenEntry, loadTimesheet])
+    if (!document.hidden) start()
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    return () => {
+      stop()
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [isCurrentWeek, loadTimesheet])
 
   const triggerBrowserDownload = async (downloadUrl: string, fallbackFilename: string) => {
     if (!token) return

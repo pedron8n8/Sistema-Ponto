@@ -100,12 +100,201 @@ describe('buildWeeklyTimesheet', () => {
 
   it('marca o dia com marcacao aberta', () => {
     const open = entry({ clockOut: null, workedMinutes: 0 });
-    const result = buildWeeklyTimesheet({ ...base, entries: [open] });
+    const result = buildWeeklyTimesheet({
+      ...base,
+      entries: [open],
+      now: new Date('2026-08-31T14:30:00Z'),
+    });
 
     expect(result.days[0].isOpen).toBe(true);
     expect(result.hasOpenEntry).toBe(true);
-    // Marcacao aberta nao entra no total: o pedaco de agora e de quem consome.
+    // Entrou 12:00, agora sao 14:30: o dia ja vale 2h30, nao 00:00.
+    expect(result.days[0].workedMinutes).toBe(150);
+  });
+
+  it('comeca a contar no primeiro minuto depois da entrada', () => {
+    const open = entry({ clockOut: null, workedMinutes: 0 });
+
+    // 30s depois ainda nao fechou um minuto: HH:MM nao tem onde mostrar isso.
+    const trintaSegundos = buildWeeklyTimesheet({
+      ...base,
+      entries: [open],
+      now: new Date('2026-08-31T12:00:30Z'),
+    });
+    const umMinuto = buildWeeklyTimesheet({
+      ...base,
+      entries: [open],
+      now: new Date('2026-08-31T12:01:00Z'),
+    });
+
+    expect(trintaSegundos.days[0].workedMinutes).toBe(0);
+    expect(umMinuto.days[0].workedMinutes).toBe(1);
+  });
+
+  it('faz o dia do turno aberto subir junto com o relogio', () => {
+    const open = entry({ clockOut: null, workedMinutes: 0 });
+
+    const primeiro = buildWeeklyTimesheet({
+      ...base,
+      entries: [open],
+      now: new Date('2026-08-31T13:00:00Z'),
+    });
+    const segundo = buildWeeklyTimesheet({
+      ...base,
+      entries: [open],
+      now: new Date('2026-08-31T13:20:00Z'),
+    });
+
+    expect(primeiro.days[0].workedMinutes).toBe(60);
+    expect(segundo.days[0].workedMinutes).toBe(80);
+    // O total da semana acompanha, senao o rodape contradiz os cartoes.
+    expect(segundo.totalWorkedMinutes).toBe(80);
+  });
+
+  it('reconcilia sem pulo no clock-out', () => {
+    const instante = new Date('2026-08-31T20:00:00Z');
+    const aberto = entry({ clockOut: null, workedMinutes: 0, breakMinutes: 60 });
+
+    const aoVivo = buildWeeklyTimesheet({ ...base, entries: [aberto], now: instante });
+
+    // Mesma marcacao, fechada nesse exato instante: o clock-out grava
+    // duracao - pausa, que e a mesma conta do tempo ao vivo.
+    const fechado = buildWeeklyTimesheet({
+      ...base,
+      entries: [entry({ clockOut: instante, workedMinutes: 420, breakMinutes: 60 })],
+      now: instante,
+    });
+
+    expect(aoVivo.days[0].workedMinutes).toBe(420);
+    expect(fechado.days[0].workedMinutes).toBe(420);
+  });
+
+  it('desconta a pausa em andamento do tempo ao vivo', () => {
+    // Saiu para almoco 13:00 e ainda nao voltou; agora sao 14:00.
+    const emPausa = entry({
+      clockOut: null,
+      workedMinutes: 0,
+      breakMinutes: 0,
+      breakStartedAt: new Date('2026-08-31T13:00:00Z'),
+    });
+
+    const result = buildWeeklyTimesheet({
+      ...base,
+      entries: [emPausa],
+      now: new Date('2026-08-31T14:00:00Z'),
+    });
+
+    // 2h decorridas menos 1h de pausa correndo.
+    expect(result.days[0].workedMinutes).toBe(60);
+  });
+
+  it('soma marcacao fechada e aberta no mesmo dia', () => {
+    const manha = entry({ id: 'a', workedMinutes: 240 });
+    const tarde = entry({
+      id: 'b',
+      clockIn: new Date('2026-08-31T21:00:00Z'),
+      clockOut: null,
+      workedMinutes: 0,
+    });
+
+    const result = buildWeeklyTimesheet({
+      ...base,
+      entries: [manha, tarde],
+      now: new Date('2026-08-31T22:00:00Z'),
+    });
+
+    expect(result.days[0].recognizedMinutes).toBe(240);
+    expect(result.days[0].liveMinutes).toBe(60);
+    expect(result.days[0].workedMinutes).toBe(300);
+  });
+
+  it('nao classifica hora extra enquanto o turno esta aberto', () => {
+    // Ja fechou o contrato do dia e continua batendo: worked sobe, HE espera o
+    // fechamento. HE pendente bloqueia aprovacao — nao se cria no meio do turno.
+    const fechada = entry({ id: 'a', workedMinutes: 480 });
+    const aberta = entry({
+      id: 'b',
+      clockIn: new Date('2026-08-31T21:00:00Z'),
+      clockOut: null,
+      workedMinutes: 0,
+    });
+
+    const result = buildWeeklyTimesheet({
+      ...base,
+      entries: [fechada, aberta],
+      now: new Date('2026-08-31T22:00:00Z'),
+    });
+
+    expect(result.days[0].workedMinutes).toBe(540);
+    expect(result.days[0].overtimeMinutes).toBe(0);
+    expect(result.totalOvertimeMinutes).toBe(0);
+  });
+
+  it('nao ressuscita HE negada pelo relogio ao vivo', () => {
+    const negadaEAberta = entry({
+      clockOut: null,
+      workedMinutes: 0,
+      overtimeStatus: 'REJECTED',
+    });
+
+    const result = buildWeeklyTimesheet({
+      ...base,
+      entries: [negadaEAberta],
+      now: new Date('2026-08-31T20:00:00Z'),
+    });
+
     expect(result.days[0].workedMinutes).toBe(0);
+  });
+
+  it('nao produz tempo negativo com marcacao no futuro', () => {
+    const futura = entry({ clockOut: null, workedMinutes: 0 });
+
+    const result = buildWeeklyTimesheet({
+      ...base,
+      entries: [futura],
+      now: new Date('2026-08-31T11:00:00Z'),
+    });
+
+    expect(result.days[0].workedMinutes).toBe(0);
+  });
+
+  it('poe o turno aberto que cruza a meia-noite no dia da ENTRADA', () => {
+    // Entrou 21h de domingo em Sao Paulo (00h30Z de segunda) e segue aberto na
+    // madrugada. O dia do ponto e o dia de quem bateu, como ja vale para as
+    // marcacoes fechadas.
+    const madrugada = entry({
+      clockIn: new Date('2026-09-07T00:30:00Z'),
+      clockOut: null,
+      workedMinutes: 0,
+    });
+
+    const result = buildWeeklyTimesheet({
+      ...base,
+      timeZone: 'America/Sao_Paulo',
+      entries: [madrugada],
+      now: new Date('2026-09-07T02:30:00Z'),
+    });
+
+    expect(result.days[6].dateKey).toBe('2026-09-06');
+    expect(result.days[6].workedMinutes).toBe(120);
+    expect(result.totalWorkedMinutes).toBe(120);
+  });
+
+  it('nao mexe no dia ja fechado quando o relogio anda', () => {
+    const cedo = buildWeeklyTimesheet({
+      ...base,
+      entries: [entry()],
+      now: new Date('2026-08-31T20:00:00Z'),
+    });
+    const tarde = buildWeeklyTimesheet({
+      ...base,
+      entries: [entry()],
+      now: new Date('2026-09-02T20:00:00Z'),
+    });
+
+    expect(cedo.days[0].workedMinutes).toBe(480);
+    expect(tarde.days[0].workedMinutes).toBe(480);
+    expect(tarde.days[0].liveMinutes).toBe(0);
   });
 
   it('coloca a marcacao no dia do FUSO do colaborador, nao no dia UTC', () => {

@@ -607,6 +607,10 @@ const getWeeklyTimesheet = async (req, res) => {
         clockIn: true,
         clockOut: true,
         breakMinutes: true,
+        // Pausa EM ANDAMENTO: breakMinutes so recebe o intervalo depois que ele
+        // fecha, entao sem este campo o tempo ao vivo contaria como trabalhado
+        // o almoco que esta correndo — e cairia na volta da pausa.
+        breakStartedAt: true,
         overtimeMinutes: true,
         overtimeMinutes50: true,
         overtimeMinutes100: true,
@@ -620,12 +624,18 @@ const getWeeklyTimesheet = async (req, res) => {
       orderBy: { clockIn: 'asc' },
     });
 
+    // O MESMO instante alimenta o tempo em curso e o carimbo da resposta. Dois
+    // new Date() separados fariam o rodape "atualizado as" apontar para um
+    // instante que nenhum numero da tela usou.
+    const generatedAt = new Date();
+
     const timesheet = buildWeeklyTimesheet({
       entries,
       weekStart: String(weekStart),
       timeZone: effectiveTimeZone,
       contractDailyMinutes: target.contractDailyMinutes,
       minOvertimeMinutes: resolveMinOvertimeMinutes(target),
+      now: generatedAt,
     });
 
     res.json({
@@ -642,7 +652,7 @@ const getWeeklyTimesheet = async (req, res) => {
       // Quem consome mostra "atualizado às ...", e o MCP precisa saber que a
       // resposta é um retrato de agora e não um arquivo estável — sobretudo
       // quando hasOpenEntry é true e o total ainda vai crescer.
-      generatedAt: new Date().toISOString(),
+      generatedAt: generatedAt.toISOString(),
     });
   } catch (error) {
     console.error('❌ Erro ao montar timesheet semanal:', error);
