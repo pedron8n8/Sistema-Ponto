@@ -62,6 +62,18 @@ const recognizedEntryMinutes = (entry) => {
   return Math.max(0, Math.floor((new Date(entry.clockOut) - new Date(entry.clockIn)) / 60000));
 };
 
+/**
+ * Teto do relogio ao vivo. Nao existe fechamento automatico de ponto: uma
+ * marcacao que ninguem fechou cresce indefinidamente e o painel passa a
+ * afirmar uma jornada que ninguem trabalhou — 61h numa quarta-feira, que
+ * alguem pode aprovar no automatico e virar banco de horas.
+ *
+ * 16h fica acima de qualquer jornada legitima, inclusive a que atravessa a
+ * meia-noite, entao o teto so encosta em marcacao esquecida. Passado ele o
+ * numero congela: continua evidente que o dia esta errado, sem inflar sozinho.
+ */
+const MAX_LIVE_MINUTES = 16 * 60;
+
 const toDate = (value) => {
   if (!value) return null;
   const parsed = new Date(value);
@@ -110,7 +122,13 @@ const liveEntryMinutes = (entry, now = new Date()) => {
 
   // Relogio adiantado no cliente ou marcacao no futuro nao viram tempo
   // negativo: o dia fica em 00:00 ate o instante alcancar a entrada.
-  return Math.max(0, elapsedMinutes - toPositiveMinutes(entry.breakMinutes) - openBreakMinutes);
+  const workedMinutes = Math.max(
+    0,
+    elapsedMinutes - toPositiveMinutes(entry.breakMinutes) - openBreakMinutes
+  );
+
+  // O teto e do numero que o relatorio mostra, aplicado depois da pausa.
+  return Math.min(workedMinutes, MAX_LIVE_MINUTES);
 };
 
 /**
@@ -215,5 +233,6 @@ module.exports = {
   buildWeeklyTimesheet,
   dayKeyInTimeZone,
   liveEntryMinutes,
+  MAX_LIVE_MINUTES,
   recognizedEntryMinutes,
 };

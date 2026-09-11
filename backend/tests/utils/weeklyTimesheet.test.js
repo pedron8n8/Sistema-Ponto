@@ -112,6 +112,54 @@ describe('buildWeeklyTimesheet', () => {
     expect(result.days[0].workedMinutes).toBe(150);
   });
 
+  it('trava o turno esquecido no teto de 16 horas', () => {
+    // Nao existe fechamento automatico: uma marcacao que ninguem fechou cresce
+    // para sempre e o relatorio passa a afirmar uma jornada que ninguem
+    // trabalhou. 61h44 aberta desde quarta vira 16:00, nao 61:44.
+    const esquecida = entry({ clockOut: null, workedMinutes: 0 });
+
+    const result = buildWeeklyTimesheet({
+      ...base,
+      entries: [esquecida],
+      now: new Date('2026-09-03T01:44:00Z'),
+    });
+
+    expect(result.days[0].liveMinutes).toBe(960);
+    expect(result.days[0].workedMinutes).toBe(960);
+  });
+
+  it('nao trava nada abaixo do teto', () => {
+    // Turno longo, porem plausivel: o teto nao pode encostar em jornada real,
+    // inclusive a que atravessa a meia-noite.
+    const longa = entry({ clockOut: null, workedMinutes: 0 });
+
+    const result = buildWeeklyTimesheet({
+      ...base,
+      entries: [longa],
+      now: new Date('2026-09-01T03:59:00Z'),
+    });
+
+    expect(result.days[0].liveMinutes).toBe(959);
+  });
+
+  it('aplica o teto depois de descontar a pausa', () => {
+    // O teto e do numero que aparece no relatorio, nao do tempo decorrido: o
+    // dia nunca mostra mais de 16h de trabalho em uma marcacao aberta.
+    const esquecidaComPausa = entry({
+      clockOut: null,
+      workedMinutes: 0,
+      breakMinutes: 120,
+    });
+
+    const result = buildWeeklyTimesheet({
+      ...base,
+      entries: [esquecidaComPausa],
+      now: new Date('2026-09-03T01:44:00Z'),
+    });
+
+    expect(result.days[0].liveMinutes).toBe(960);
+  });
+
   it('comeca a contar no primeiro minuto depois da entrada', () => {
     const open = entry({ clockOut: null, workedMinutes: 0 });
 
