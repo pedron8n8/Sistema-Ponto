@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { API_BASE, apiFetch, buildIdempotencyHeaders, translateApiMessage } from '../lib/api'
+import { passwordPolicyHint, validateStrongPassword } from '../lib/passwordPolicy'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from 'react-i18next'
 
@@ -94,6 +95,7 @@ const AdminUsersPage = () => {
   const [selectedAdminId, setSelectedAdminId] = useState('')
 
   const [createLoading, setCreateLoading] = useState(false)
+  const [createError, setCreateError] = useState('')
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -246,21 +248,26 @@ const AdminUsersPage = () => {
   const handleCreate = async () => {
     if (!token || createLoading || !canManageUsers) return
 
+    // Erro proprio do formulario: o banner do topo da pagina fica acima da
+    // dobra quando se esta preenchendo o card, e a recusa do servidor acabava
+    // visivel so no console.
+    setCreateError('')
     setError('')
     setNotice('')
 
     if (form.name.trim().length < 2) {
-      setError(t('Name must have at least 2 characters.', 'Nome deve ter pelo menos 2 caracteres.'))
+      setCreateError(t('Name must have at least 2 characters.', 'Nome deve ter pelo menos 2 caracteres.'))
       return
     }
 
     if (!form.email.includes('@')) {
-      setError(t('Invalid email.', 'Email invalido.'))
+      setCreateError(t('Invalid email.', 'Email invalido.'))
       return
     }
 
-    if (form.password.length < 6) {
-      setError(t('Password must have at least 6 characters.', 'Senha deve ter pelo menos 6 caracteres.'))
+    const passwordValidationError = validateStrongPassword(form.password)
+    if (passwordValidationError) {
+      setCreateError(passwordValidationError)
       return
     }
 
@@ -348,7 +355,7 @@ const AdminUsersPage = () => {
       await refreshTeamData()
       setNotice(t('User created successfully.', 'Usuario criado com sucesso.'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Could not create user.', 'Erro ao criar usuario.'))
+      setCreateError(err instanceof Error ? err.message : t('Could not create user.', 'Erro ao criar usuario.'))
     } finally {
       setCreateLoading(false)
     }
@@ -758,6 +765,7 @@ const AdminUsersPage = () => {
                 onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
                 className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm"
               />
+              <p className="px-3 text-[11px] text-slate-500">{passwordPolicyHint()}</p>
 
               <div className="grid gap-2 md:grid-cols-2">
                 <select
@@ -784,6 +792,12 @@ const AdminUsersPage = () => {
                   ))}
                 </select>
               </div>
+
+              {createError ? (
+                <p className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                  {createError}
+                </p>
+              ) : null}
 
               <button
                 onClick={handleCreate}

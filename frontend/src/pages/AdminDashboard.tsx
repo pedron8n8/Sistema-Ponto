@@ -6,6 +6,7 @@ import {
   resolveApiAssetUrl,
   translateApiMessage,
 } from '../lib/api'
+import { passwordPolicyHint, validateStrongPassword } from '../lib/passwordPolicy'
 import { useAuth } from '../context/AuthContext'
 import { usePlan } from '../hooks/usePlan'
 import { TIME_ZONE_OPTIONS } from '../lib/timezone'
@@ -288,6 +289,7 @@ const AdminDashboard = () => {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [createLoading, setCreateLoading] = useState(false)
+  const [createError, setCreateError] = useState('')
   const [inviteRole, setInviteRole] = useState<InvitableRole>('MEMBER')
   const [inviteTtlHours, setInviteTtlHours] = useState('72')
   const [inviteLoading, setInviteLoading] = useState(false)
@@ -471,17 +473,26 @@ const AdminDashboard = () => {
 
   const handleCreate = async () => {
     if (!token || createLoading) return
+    // Erro proprio do card: o banner do topo fica longe do formulario e a
+    // recusa do servidor acabava visivel so no console.
+    setCreateError('')
     setError('')
     setNotice('')
 
     const needsAdminOwner = isSuperAdmin && TEAM_ROLE_OPTIONS.includes(form.role)
     if (needsAdminOwner && !form.organizationAdminId) {
-      setError(
+      setCreateError(
         t(
           'Select which ADMIN will be responsible for this user.',
           'Selecione qual ADMIN sera responsavel por este usuario.'
         )
       )
+      return
+    }
+
+    const passwordValidationError = validateStrongPassword(form.password)
+    if (passwordValidationError) {
+      setCreateError(passwordValidationError)
       return
     }
 
@@ -569,7 +580,7 @@ const AdminDashboard = () => {
       await loadAdminSeatAssignments()
       setNotice(t('User created successfully.', 'Usuario criado com sucesso.'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Could not create user.', 'Erro ao criar usuario'))
+      setCreateError(err instanceof Error ? err.message : t('Could not create user.', 'Erro ao criar usuario'))
     } finally {
       setCreateLoading(false)
     }
@@ -1559,6 +1570,7 @@ const AdminDashboard = () => {
               type="password"
               className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
             />
+            <p className="px-1 text-[11px] text-slate-500">{passwordPolicyHint()}</p>
             <select
               value={form.role}
               onChange={(event) => {
@@ -1625,6 +1637,12 @@ const AdminDashboard = () => {
                   </option>
                 ))}
             </select>
+            {createError ? (
+              <p className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                {createError}
+              </p>
+            ) : null}
+
             <button
               onClick={handleCreate}
               disabled={createLoading}

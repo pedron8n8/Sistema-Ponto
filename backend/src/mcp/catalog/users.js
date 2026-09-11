@@ -195,7 +195,9 @@ module.exports = [
         email: str('E-mail de login. Sera normalizado para minusculas.'),
         name: str('Nome completo. Minimo 2 caracteres.'),
         role: enumOf(ROLE_VALUES, 'Role do colaborador. Padrao MEMBER.'),
-        password: str('Senha inicial. Minimo 6 caracteres neste endpoint.'),
+        password: str(
+          'Senha inicial. Minimo 12 caracteres, com maiuscula, minuscula, numero e simbolo.'
+        ),
         supervisorId: str('Id do supervisor direto (uuid). Define a arvore de visibilidade.'),
       },
       ['email', 'name', 'password']
