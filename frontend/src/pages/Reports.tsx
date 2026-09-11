@@ -4,18 +4,16 @@ import { useAuth } from '../context/AuthContext'
 import { useTimeZone } from '../context/TimezoneContext'
 import { useTranslation } from 'react-i18next'
 import { formatDateWithTimeZone, formatTimeWithTimeZone, getDateKeyWithTimeZone } from '../lib/timezone'
+import { buildWeekDays, type TimesheetEntry } from '../lib/weekTimesheet'
+
+// A semana corrente e "ao vivo": o registro em aberto cresce no relogio local
+// e uma batida feita em outro dispositivo entra sem o usuario recarregar.
+const LIVE_TICK_MS = 30_000
+const LIVE_REFRESH_MS = 60_000
 
 const API_ORIGIN = API_BASE.replace(/\/api\/v1\/?$/, '')
 
-type TimeEntry = {
-  id: string
-  clockIn: string
-  clockOut: string | null
-  duration?: {
-    totalMinutes: number
-    formatted: string
-  } | null
-}
+type TimeEntry = TimesheetEntry
 
 type ExportJobResponse = {
   jobId: string
@@ -69,6 +67,7 @@ const Reports = () => {
     return `${year}-${month}-${day}`
   }
   const [entries, setEntries] = useState<TimeEntry[]>([])
+  const [nowMs, setNowMs] = useState(() => Date.now())
   const [startDate, setStartDate] = useState(() => {
     const d = new Date()
     d.setDate(d.getDate() - 7)
@@ -119,29 +118,48 @@ const Reports = () => {
     }).format(value)
   }
 
-  const loadWeek = async () => {
+  // O backend filtra clockIn por instante UTC, mas as linhas sao agrupadas pelo
+  // dia no fuso de visualizacao. Pede um dia a mais de cada lado para nenhuma
+  // batida da borda da semana sumir; dayRows depois recorta pelo dia certo.
+  const queryStartKey = useMemo(() => {
+    const start = new Date(weekStart)
+    start.setDate(start.getDate() - 1)
+    return formatDateInput(start)
+  }, [weekStart])
+  const queryEndKey = useMemo(() => {
+    const end = new Date(weekEnd)
+    end.setDate(end.getDate() + 1)
+    return formatDateInput(end)
+  }, [weekEnd])
+
+  const loadWeek = async (options: { silent?: boolean } = {}) => {
     if (!token) return
-    setWeekLoading(true)
-    setWeekError('')
+    if (!options.silent) {
+      setWeekLoading(true)
+      setWeekError('')
+    }
     const query = new URLSearchParams({
-      startDate: weekStartKey,
-      endDate: weekEndKey,
+      startDate: queryStartKey,
+      endDate: queryEndKey,
       limit: '200',
     })
     try {
       const response = await apiFetch<{ entries: TimeEntry[] }>(`/time/me?${query.toString()}`, { token })
       setEntries(response.entries)
+      setNowMs(Date.now())
     } catch (err) {
+      // Falha no refresh silencioso nao apaga o que ja esta na tela.
+      if (options.silent) return
       setEntries([])
       setWeekError(err instanceof Error ? err.message : t('Failed to load reports.', 'Erro ao carregar relatorios'))
     } finally {
-      setWeekLoading(false)
+      if (!options.silent) setWeekLoading(false)
     }
   }
 
   useEffect(() => {
     loadWeek().catch(() => undefined)
-  }, [token, weekStart, weekEnd])
+  }, [token, queryStartKey, queryEndKey])
 
   const triggerBrowserDownload = async (downloadUrl: string, fallbackFilename: string) => {
     if (!token) return
@@ -276,32 +294,41 @@ const Reports = () => {
     setDailyBreakdownError('')
   }
 
-  const dayRows = useMemo(() => {
-    const rows = Array.from({ length: 7 }).map((_, index) => {
-      const date = new Date(weekStart)
-      date.setDate(date.getDate() + index)
-      return formatDateInput(date)
-    })
+  const weekDateKeys = useMemo(
+    () =>
+      Array.from({ length: 7 }).map((_, index) => {
+        const date = new Date(weekStart)
+        date.setDate(date.getDate() + index)
+        return formatDateInput(date)
+      }),
+    [weekStart]
+  )
 
-    return rows.map((dateKey) => {
-      const dayEntries = entries.filter((entry) => getDateKeyWithTimeZone(entry.clockIn, viewTimeZone) === dateKey)
-      const totalMinutes = dayEntries.reduce((acc, entry) => {
-        if (entry.duration?.totalMinutes) return acc + entry.duration.totalMinutes
-        if (entry.clockIn && entry.clockOut) {
-          const diff = new Date(entry.clockOut).getTime() - new Date(entry.clockIn).getTime()
-          return acc + Math.max(0, Math.floor(diff / 60000))
-        }
-        return acc
-      }, 0)
-      const hours = Math.floor(totalMinutes / 60)
-      const minutes = totalMinutes % 60
-      return {
-        dateKey,
-        entries: dayEntries,
-        totalLabel: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
-      }
-    })
-  }, [entries, viewTimeZone, weekStart])
+  const dayRows = useMemo(
+    () => buildWeekDays({ dateKeys: weekDateKeys, entries, timeZone: viewTimeZone, nowMs }),
+    [entries, viewTimeZone, weekDateKeys, nowMs]
+  )
+
+  const weekIncludesToday = useMemo(
+    () => weekDateKeys.includes(getDateKeyWithTimeZone(new Date(nowMs), viewTimeZone)),
+    [weekDateKeys, viewTimeZone, nowMs]
+  )
+
+  // Relogio: o registro em aberto precisa crescer sozinho, sem nova requisicao.
+  useEffect(() => {
+    if (!weekIncludesToday) return
+    const interval = window.setInterval(() => setNowMs(Date.now()), LIVE_TICK_MS)
+    return () => window.clearInterval(interval)
+  }, [weekIncludesToday])
+
+  // Batida feita no celular ou no terminal aparece aqui sem recarregar a pagina.
+  useEffect(() => {
+    if (!token || !weekIncludesToday) return
+    const interval = window.setInterval(() => {
+      loadWeek({ silent: true }).catch(() => undefined)
+    }, LIVE_REFRESH_MS)
+    return () => window.clearInterval(interval)
+  }, [token, weekIncludesToday, queryStartKey, queryEndKey])
 
   return (
     <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
@@ -381,23 +408,30 @@ const Reports = () => {
                   </p>
                   <p className="text-xs text-slate-500">{formatDateWithTimeZone(day.dateKey, viewTimeZone)}</p>
                 </div>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+                <span
+                  className={`rounded-full px-3 py-1 text-xs ${
+                    day.hasLiveEntry ? 'bg-teal-50 font-semibold text-teal-700' : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
                   {day.totalLabel}
+                  {day.hasLiveEntry ? ` · ${t('running', 'em andamento')}` : ''}
                 </span>
               </div>
               <div className="mt-3 grid gap-2 text-xs text-slate-600">
                 {day.entries.length === 0 ? (
                   <p>{t('No records.', 'Sem registros.')}</p>
                 ) : (
-                  day.entries.map((entry) => (
-                    <div key={entry.id} className="flex items-center justify-between">
+                  day.entries.map((row) => (
+                    <div key={row.entry.id} className="flex items-center justify-between">
                       <span>
-                        {formatTimeWithTimeZone(entry.clockIn, viewTimeZone)} -{' '}
-                        {entry.clockOut
-                          ? formatTimeWithTimeZone(entry.clockOut, viewTimeZone)
+                        {formatTimeWithTimeZone(row.entry.clockIn, viewTimeZone)} -{' '}
+                        {row.entry.clockOut
+                          ? formatTimeWithTimeZone(row.entry.clockOut, viewTimeZone)
                           : t('Open', 'Em aberto')}
                       </span>
-                      <span>{entry.duration?.formatted || ''}</span>
+                      <span className={row.isLive ? 'font-semibold text-teal-700' : undefined}>
+                        {row.durationLabel}
+                      </span>
                     </div>
                   ))
                 )}
