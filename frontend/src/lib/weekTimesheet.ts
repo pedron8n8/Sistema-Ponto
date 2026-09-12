@@ -1,4 +1,4 @@
-import { getDateKeyWithTimeZone } from './timezone'
+import { addDaysToDateKey, getDateKeyWithTimeZone } from './timezone'
 
 export type TimesheetDuration = {
   totalMinutes: number
@@ -132,11 +132,10 @@ export const buildWeekDays = ({
     const rows: TimesheetEntryRow[] = dayEntries.map((entry) => {
       const isLive = isLiveEntry(entry, nowMs)
       const minutes = resolveEntryMinutes(entry, nowMs, { allowLive: isLive })
-      const durationLabel = entry.clockOut
-        ? entry.duration?.formatted || formatDurationLabel(minutes)
-        : isLive
-          ? formatDurationLabel(minutes)
-          : ''
+      // Uma formatacao so na coluna. O 'formatted' do backend inclui segundos
+      // ("8h 12m 30s") e ficava lado a lado com o "3h 15m" do registro ao vivo,
+      // na mesma coluna do mesmo dia.
+      const durationLabel = entry.clockOut || isLive ? formatDurationLabel(minutes) : ''
 
       return { entry, minutes, durationLabel, isLive }
     })
@@ -151,4 +150,17 @@ export const buildWeekDays = ({
       hasLiveEntry: rows.some((row) => row.isLive),
     }
   })
+}
+
+/**
+ * Segunda-feira da semana que contem a chave informada. A aritmetica acontece
+ * em UTC puro a partir de 'YYYY-MM-DD', entao a semana e a do calendario que o
+ * usuario esta vendo, nunca a do fuso da maquina dele.
+ */
+export const startOfWeekKey = (dateKey: string) => {
+  const [year, month, day] = dateKey.split('-').map(Number)
+  const utc = new Date(Date.UTC(year, month - 1, day))
+  if (Number.isNaN(utc.getTime())) return dateKey
+  const weekday = utc.getUTCDay()
+  return addDaysToDateKey(dateKey, weekday === 0 ? -6 : 1 - weekday)
 }

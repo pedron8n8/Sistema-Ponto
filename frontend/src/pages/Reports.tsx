@@ -1,10 +1,17 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { API_BASE, apiFetch, translateApiMessage } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTimeZone } from '../context/TimezoneContext'
 import { useTranslation } from 'react-i18next'
-import { formatDateWithTimeZone, formatTimeWithTimeZone, getDateKeyWithTimeZone } from '../lib/timezone'
-import { buildWeekDays, type TimesheetEntry } from '../lib/weekTimesheet'
+import {
+  addDaysToDateKey,
+  endOfZonedDayUtc,
+  formatDateWithTimeZone,
+  formatTimeWithTimeZone,
+  getDateKeyWithTimeZone,
+  startOfZonedDayUtc,
+} from '../lib/timezone'
+import { buildWeekDays, startOfWeekKey, type TimesheetEntry } from '../lib/weekTimesheet'
 
 // A semana corrente e "ao vivo": o registro em aberto cresce no relogio local
 // e uma batida feita em outro dispositivo entra sem o usuario recarregar.
@@ -84,24 +91,13 @@ const Reports = () => {
   const [dailyBreakdownError, setDailyBreakdownError] = useState('')
   const [weekLoading, setWeekLoading] = useState(false)
   const [weekError, setWeekError] = useState('')
-  const [weekStart, setWeekStart] = useState(() => {
-    const now = new Date()
-    const day = now.getDay()
-    const diff = now.getDate() - day + (day === 0 ? -6 : 1)
-    const start = new Date(now)
-    start.setDate(diff)
-    start.setHours(0, 0, 0, 0)
-    return start
-  })
-
-  const weekEnd = useMemo(() => {
-    const end = new Date(weekStart)
-    end.setDate(end.getDate() + 6)
-    end.setHours(23, 59, 59, 999)
-    return end
-  }, [weekStart])
-  const weekStartKey = formatDateInput(weekStart)
-  const weekEndKey = formatDateInput(weekEnd)
+  // A semana e ancorada no dia corrente do fuso de visualizacao, nao no do
+  // browser: com viewTimeZone em America/Chicago e a maquina em UTC-3, a
+  // meia-noite local ainda e o dia anterior na tela, e a semana pulava.
+  const [weekStartKey, setWeekStartKey] = useState(() =>
+    startOfWeekKey(getDateKeyWithTimeZone(new Date(), viewTimeZone))
+  )
+  const weekEndKey = useMemo(() => addDaysToDateKey(weekStartKey, 6), [weekStartKey])
 
   const formatMinutes = (minutes: number) => {
     const hours = Math.floor(minutes / 60)
@@ -118,48 +114,72 @@ const Reports = () => {
     }).format(value)
   }
 
-  // O backend filtra clockIn por instante UTC, mas as linhas sao agrupadas pelo
-  // dia no fuso de visualizacao. Pede um dia a mais de cada lado para nenhuma
-  // batida da borda da semana sumir; dayRows depois recorta pelo dia certo.
-  const queryStartKey = useMemo(() => {
-    const start = new Date(weekStart)
-    start.setDate(start.getDate() - 1)
-    return formatDateInput(start)
-  }, [weekStart])
-  const queryEndKey = useMemo(() => {
-    const end = new Date(weekEnd)
-    end.setDate(end.getDate() + 1)
-    return formatDateInput(end)
-  }, [weekEnd])
+  // O backend faz `clockIn >= new Date(startDate)` e `<= new Date(endDate)`, e
+  // uma chave 'YYYY-MM-DD' crua vira meia-noite UTC. Mandar o instante exato do
+  // inicio e do fim do dia no fuso de visualizacao e o que faz a semana bater:
+  // com uma chave crua, as ultimas horas do ultimo dia caiam fora do filtro.
+  const queryStartIso = useMemo(
+    () => startOfZonedDayUtc(weekStartKey, viewTimeZone).toISOString(),
+    [weekStartKey, viewTimeZone]
+  )
+  const queryEndIso = useMemo(
+    () => endOfZonedDayUtc(weekEndKey, viewTimeZone).toISOString(),
+    [weekEndKey, viewTimeZone]
+  )
+
+  // Guarda de faixa: trocar de semana no meio de um refresh silencioso fazia a
+  // resposta antiga chegar depois e sobrescrever a semana nova com as linhas da
+  // anterior, que o agrupamento por dia entao descartava ("Sem registros").
+  // A guarda e a propria faixa, e nao um contador, para que a resposta aceita
+  // seja sempre a da semana que esta na tela, independente da ordem de chegada.
+  const weekRange = `${queryStartIso}|${queryEndIso}`
+  const weekRangeRef = useRef(weekRange)
+  useEffect(() => {
+    weekRangeRef.current = weekRange
+  }, [weekRange])
 
   const loadWeek = async (options: { silent?: boolean } = {}) => {
     if (!token) return
+    const requestRange = weekRange
     if (!options.silent) {
       setWeekLoading(true)
       setWeekError('')
     }
     const query = new URLSearchParams({
-      startDate: queryStartKey,
-      endDate: queryEndKey,
+      startDate: queryStartIso,
+      endDate: queryEndIso,
       limit: '200',
     })
     try {
-      const response = await apiFetch<{ entries: TimeEntry[] }>(`/time/me?${query.toString()}`, { token })
+      const response = await apiFetch<{ entries: TimeEntry[] }>(`/time/me?${query.toString()}`, {
+        token,
+        // O refresh de fundo nao pode virar um toast por minuto quando a rede
+        // oscila ou o token expira.
+        suppressErrorToast: options.silent,
+      })
+      if (weekRangeRef.current !== requestRange) return
       setEntries(response.entries)
       setNowMs(Date.now())
+      // Um refresh silencioso bem-sucedido tambem limpa o erro: sem isso, uma
+      // falha momentanea deixava o banner na tela e a grade escondida para
+      // sempre, mesmo com os dados ja carregados.
+      setWeekError('')
     } catch (err) {
       // Falha no refresh silencioso nao apaga o que ja esta na tela.
       if (options.silent) return
+      if (weekRangeRef.current !== requestRange) return
       setEntries([])
       setWeekError(err instanceof Error ? err.message : t('Failed to load reports.', 'Erro ao carregar relatorios'))
     } finally {
+      // O spinner e sempre liberado: prende-lo a faixa deixava a tela girando
+      // para sempre se um refresh silencioso corresse junto com a troca de semana.
       if (!options.silent) setWeekLoading(false)
     }
   }
 
   useEffect(() => {
     loadWeek().catch(() => undefined)
-  }, [token, queryStartKey, queryEndKey])
+  }, [token, queryStartIso, queryEndIso])
 
   const triggerBrowserDownload = async (downloadUrl: string, fallbackFilename: string) => {
     if (!token) return
@@ -295,13 +315,8 @@ const Reports = () => {
   }
 
   const weekDateKeys = useMemo(
-    () =>
-      Array.from({ length: 7 }).map((_, index) => {
-        const date = new Date(weekStart)
-        date.setDate(date.getDate() + index)
-        return formatDateInput(date)
-      }),
-    [weekStart]
+    () => Array.from({ length: 7 }).map((_, index) => addDaysToDateKey(weekStartKey, index)),
+    [weekStartKey]
   )
 
   const dayRows = useMemo(
@@ -328,7 +343,7 @@ const Reports = () => {
       loadWeek({ silent: true }).catch(() => undefined)
     }, LIVE_REFRESH_MS)
     return () => window.clearInterval(interval)
-  }, [token, weekIncludesToday, queryStartKey, queryEndKey])
+  }, [token, weekIncludesToday, queryStartIso, queryEndIso])
 
   return (
     <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
@@ -351,21 +366,13 @@ const Reports = () => {
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => {
-                const prev = new Date(weekStart)
-                prev.setDate(prev.getDate() - 7)
-                setWeekStart(prev)
-              }}
+              onClick={() => setWeekStartKey((current) => addDaysToDateKey(current, -7))}
               className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600"
             >
               {t('Previous week', 'Semana anterior')}
             </button>
             <button
-              onClick={() => {
-                const next = new Date(weekStart)
-                next.setDate(next.getDate() + 7)
-                setWeekStart(next)
-              }}
+              onClick={() => setWeekStartKey((current) => addDaysToDateKey(current, 7))}
               className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600"
             >
               {t('Next week', 'Proxima semana')}

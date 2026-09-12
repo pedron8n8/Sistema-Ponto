@@ -369,6 +369,10 @@ type RequestOptions = {
   body?: unknown
   timeoutMs?: number
   skipIdempotency?: boolean
+  // Para requisicoes que a tela dispara sozinha (polling, refresh de fundo): o
+  // erro continua sendo lancado, mas sem toast. Sem isso um refresh de 60s
+  // vira um toast por minuto enquanto a rede ou o token estiverem ruins.
+  suppressErrorToast?: boolean
 }
 
 type FormDataRequestOptions = {
@@ -502,7 +506,7 @@ export const apiFetch = async <T>(path: string, options: RequestOptions = {}): P
         'Request timed out. Please check your internet connection.',
         'Tempo de resposta excedido. Verifique sua conexão com a internet.'
       )
-      toast.error(msg)
+      if (!options.suppressErrorToast) toast.error(msg)
       throw new Error(msg)
     }
     throw error
@@ -513,7 +517,7 @@ export const apiFetch = async <T>(path: string, options: RequestOptions = {}): P
   if (!res.ok) {
     const payload = await readJsonResponse(res).catch(() => ({}))
     const errorMessage = translateApiMessage(payload || localizeMessage('Request failed.', 'Erro na requisicao'))
-    toast.error(errorMessage)
+    if (!options.suppressErrorToast) toast.error(errorMessage)
     const error = new Error(errorMessage) as Error & { status?: number }
     error.status = res.status
     throw error

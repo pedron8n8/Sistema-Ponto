@@ -55,7 +55,7 @@ jobs:
               tests/controllers/vacation.controller.test.js
 
   frontend-build:
-    name: Frontend (tsc + vite build)
+    name: Frontend (vitest + tsc + vite build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -78,6 +78,13 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # A suite do frontend estava verde mas nunca rodava aqui. Um dos casos
+      # (passwordPolicy) le backend/src/controllers/user.controller.js para
+      # comparar a politica de senha dos dois lados, e depende do checkout
+      # completo do repo, nao so da pasta frontend.
+      - name: Run vitest
+        run: npm test
 
       - name: Type-check + bundle
         run: npm run build

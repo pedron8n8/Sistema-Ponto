@@ -3,6 +3,7 @@ import {
   buildWeekDays,
   formatClockMinutes,
   resolveEntryMinutes,
+  startOfWeekKey,
   type TimesheetEntry,
 } from './weekTimesheet'
 
@@ -137,5 +138,42 @@ describe('formatClockMinutes', () => {
     expect(formatClockMinutes(0)).toBe('00:00')
     expect(formatClockMinutes(65)).toBe('01:05')
     expect(formatClockMinutes(600)).toBe('10:00')
+  })
+})
+
+describe('startOfWeekKey', () => {
+  it('ancora a semana na segunda-feira', () => {
+    // 2026-09-06 e um domingo: pertence a semana que comecou em 31/08.
+    expect(startOfWeekKey('2026-09-06')).toBe('2026-08-31')
+    expect(startOfWeekKey('2026-09-07')).toBe('2026-09-07') // segunda
+    expect(startOfWeekKey('2026-09-11')).toBe('2026-09-07') // sexta
+    expect(startOfWeekKey('2026-09-13')).toBe('2026-09-07') // domingo seguinte
+  })
+
+  it('atravessa a virada de mes e de ano', () => {
+    expect(startOfWeekKey('2027-01-01')).toBe('2026-12-28')
+  })
+})
+
+describe('formato da coluna de duracao', () => {
+  it('usa o mesmo formato para registro fechado e ao vivo', () => {
+    const [day] = buildWeekDays({
+      dateKeys: ['2026-09-11'],
+      entries: [
+        closedEntry({
+          id: 'fechado',
+          clockIn: '2026-09-11T06:00:00.000Z',
+          clockOut: '2026-09-11T14:12:30.000Z',
+          duration: { totalMinutes: 492, formatted: '8h 12m 30s' },
+        }),
+        openEntry({ id: 'aberto', clockIn: '2026-09-11T15:00:00.000Z' }),
+      ],
+      timeZone: 'UTC',
+      nowMs: at('2026-09-11T18:15:00.000Z'),
+    })
+
+    // Nada de "8h 12m 30s" ao lado de "3h 15m" na mesma coluna.
+    expect(day.entries[0].durationLabel).toBe('8h 12m')
+    expect(day.entries[1].durationLabel).toBe('3h 15m')
   })
 })
