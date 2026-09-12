@@ -6,6 +6,7 @@ import LanguageSwitcher from '../components/LanguageSwitcher'
 import BrandWordmark from '../components/BrandWordmark'
 import PageMeta from '../components/PageMeta'
 import { apiFetch } from '../lib/api'
+import { MIN_PASSWORD_LENGTH, passwordPolicyHint } from '../lib/passwordPolicy'
 import { splitMessageLink } from '../lib/errorMessage'
 
 type InvitePreview = {
@@ -302,7 +303,7 @@ const Signup = () => {
               onChange={(event) => setPassword(event.target.value)}
               type={showPassword ? 'text' : 'password'}
               required
-              minLength={6}
+              minLength={MIN_PASSWORD_LENGTH}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 pr-12 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
               placeholder={t('signup.passwordPlaceholder')}
             />
@@ -332,6 +333,8 @@ const Signup = () => {
             </button>
           </div>
 
+          <p className="mt-1.5 text-[11px] text-slate-500">{passwordPolicyHint()}</p>
+
           <label className="mt-4 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
             {t('signup.confirmPasswordLabel', 'Confirmar senha *')}
           </label>
@@ -341,7 +344,7 @@ const Signup = () => {
               onChange={(event) => setConfirmPassword(event.target.value)}
               type={showConfirmPassword ? 'text' : 'password'}
               required
-              minLength={6}
+              minLength={MIN_PASSWORD_LENGTH}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 pr-12 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
               placeholder={t('signup.confirmPasswordPlaceholder', 'Repita a senha')}
             />

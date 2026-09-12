@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch, apiFetchFormData, resolveApiAssetUrl } from '../lib/api'
+import { passwordPolicyHint, validateStrongPassword } from '../lib/passwordPolicy'
 import { useAuth } from '../context/AuthContext'
 import UserAvatar from '../components/UserAvatar'
 import { useTranslation } from 'react-i18next'
@@ -202,9 +203,14 @@ const ProfileComplete = () => {
       return
     }
 
-    if (nextPassword.length > 0 && nextPassword.length < 6) {
-      setAccountError(t('Password must have at least 6 characters.', 'Senha deve ter pelo menos 6 caracteres.'))
-      return
+    // Senha aqui e opcional: vazio significa "nao trocar". Preenchida, passa
+    // pela mesma politica que PATCH /users/me/account aplica no servidor.
+    if (nextPassword.length > 0) {
+      const passwordValidationError = validateStrongPassword(nextPassword)
+      if (passwordValidationError) {
+        setAccountError(passwordValidationError)
+        return
+      }
     }
 
     if (nextPassword.length > 0 && nextPassword !== confirmPassword) {
@@ -492,6 +498,7 @@ const ProfileComplete = () => {
                     placeholder={t('Optional', 'Opcional')}
                     className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
                   />
+                  <span className="text-[11px] text-slate-500">{passwordPolicyHint()}</span>
                 </label>
 
                 <label className="grid gap-1 text-xs text-slate-600">

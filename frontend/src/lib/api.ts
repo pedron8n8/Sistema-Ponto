@@ -1,5 +1,6 @@
 import i18next from 'i18next'
 import { toast } from 'sonner'
+import { MIN_PASSWORD_LENGTH } from './passwordPolicy'
 
 export const API_BASE =
   (import.meta.env.VITE_API_URL as string | undefined) || 'https://api.omnipunt.com/api/v1'
@@ -128,9 +129,24 @@ const PT_TO_EN_ERROR_RULES: Array<{ pattern: RegExp; replacement: string }> = [
     pattern: /email inv[aá]lido/i,
     replacement: 'Invalid email address.',
   },
+  // Ordem importa: a regra de complexidade vem antes da de tamanho, e as tres
+  // frases abaixo sao as que validateStrongPassword devolve em
+  // backend/src/controllers/user.controller.js:188-208.
   {
-    pattern: /senha deve ter pelo menos/i,
-    replacement: 'Password must have at least 6 characters.',
+    pattern: /senha deve conter letra mai[uú]scula/i,
+    replacement: 'Password must include uppercase, lowercase, number and special character.',
+  },
+  {
+    pattern: /senha muito fraca/i,
+    replacement: 'Password is too weak. Choose a stronger one.',
+  },
+  {
+    pattern: /senha deve ter (?:pelo menos|no m[ií]nimo)/i,
+    replacement: `Password must have at least ${MIN_PASSWORD_LENGTH} characters.`,
+  },
+  {
+    pattern: /senha (?:e|é) obrigat[oó]ria/i,
+    replacement: 'Password is required.',
   },
   {
     pattern: /nome deve ter pelo menos/i,
