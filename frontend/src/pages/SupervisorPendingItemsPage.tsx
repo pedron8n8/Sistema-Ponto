@@ -105,6 +105,7 @@ type WorkerGroup = {
   user: Entry['user']
   days: Map<string, DayGroup>
   approvableIds: string[]
+  pendingOtIds: string[]
   pendingOtMinutes: number
   totalMinutes: number
 }
@@ -225,7 +226,14 @@ const SupervisorPendingItemsPage = () => {
       const userKey = entry.user.id || entry.user.email
       let group = groups.get(userKey)
       if (!group) {
-        group = { user: entry.user, days: new Map(), approvableIds: [], pendingOtMinutes: 0, totalMinutes: 0 }
+        group = {
+          user: entry.user,
+          days: new Map(),
+          approvableIds: [],
+          pendingOtIds: [],
+          pendingOtMinutes: 0,
+          totalMinutes: 0,
+        }
         groups.set(userKey, group)
       }
 
@@ -243,7 +251,10 @@ const SupervisorPendingItemsPage = () => {
       // HE pendente entra no lote: as acoes em lote decidem a HE junto.
       if (entry.status === 'PENDING' && entry.clockOut) {
         group.approvableIds.push(entry.id)
-        if (entry.overtimeStatus === 'PENDING') group.pendingOtMinutes += entry.overtimeMinutes || 0
+        if (entry.overtimeStatus === 'PENDING') {
+          group.pendingOtIds.push(entry.id)
+          group.pendingOtMinutes += entry.overtimeMinutes || 0
+        }
       }
     }
 
@@ -455,6 +466,55 @@ const SupervisorPendingItemsPage = () => {
         ) + otWarning,
     })
     setBulkCommentByUser((prev) => ({ ...prev, [userKey]: '' }))
+  }
+
+  /**
+   * Nega so a trilha de hora extra do colaborador no periodo: as marcacoes
+   * continuam pendentes e aprovaveis depois. Comentario opcional — diferente do
+   * lote de marcacoes, onde ele continua obrigatorio.
+   */
+  const handleBulkRejectOvertime = async (group: WorkerGroup) => {
+    if (group.pendingOtIds.length === 0) return
+    const userKey = group.user.id || group.user.email
+    const comment = (bulkCommentByUser[userKey] || '').trim()
+
+    const confirmText = t(
+      `Deny ${fmtHM(group.pendingOtMinutes)} of pending overtime for ${group.user.name}? The entries themselves stay pending, and the bank-hours credit is reversed.`,
+      `Negar ${fmtHM(group.pendingOtMinutes)} de horas extras pendentes de ${group.user.name}? As marcacoes continuam pendentes, e o credito de banco de horas e revertido.`
+    )
+    if (!window.confirm(confirmText)) return
+
+    setNotice('')
+    setError('')
+    setBulkLoadingByUser((prev) => ({ ...prev, [userKey]: true }))
+
+    try {
+      // skipIdempotency pelo mesmo motivo de runBulk: repetir o mesmo corpo no
+      // mesmo dia voltaria 202 sem os contadores.
+      const result = await apiFetch<BulkResult>('/supervisor/overtime/bulk/reject', {
+        token,
+        method: 'POST',
+        body: comment ? { entryIds: group.pendingOtIds, comment } : { entryIds: group.pendingOtIds },
+        skipIdempotency: true,
+      })
+
+      const count = result.overtimeRejectedCount || 0
+      const skippedCount = result.skipped?.length || 0
+      setNotice(
+        t(`Overtime denied on ${count} entries.`, `Horas extras negadas em ${count} registros.`) +
+          (skippedCount > 0 ? t(` ${skippedCount} skipped.`, ` ${skippedCount} ignorados.`) : '')
+      )
+      setBulkCommentByUser((prev) => ({ ...prev, [userKey]: '' }))
+      await loadData()
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : t('Could not bulk deny overtime.', 'Erro ao negar horas extras em lote')
+      )
+    } finally {
+      setBulkLoadingByUser((prev) => ({ ...prev, [userKey]: false }))
+    }
   }
 
   /**
@@ -792,6 +852,16 @@ const SupervisorPendingItemsPage = () => {
                       >
                         {t(`Deny all (${group.approvableIds.length})`, `Negar tudo (${group.approvableIds.length})`)}
                       </button>
+                      <button
+                        onClick={() => handleBulkRejectOvertime(group)}
+                        disabled={group.pendingOtIds.length === 0 || Boolean(bulkLoadingByUser[userKey])}
+                        className="col-span-2 min-h-[44px] rounded-full border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-700 disabled:opacity-50"
+                      >
+                        {t(
+                          `Deny overtime only (${group.pendingOtIds.length})`,
+                          `Negar so as horas extras (${group.pendingOtIds.length})`
+                        )}
+                      </button>
                     </div>
                   </div>
 
@@ -1019,6 +1089,16 @@ const SupervisorPendingItemsPage = () => {
                         className="rounded-full border border-rose-200 bg-white px-4 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
                       >
                         {t(`Deny all (${group.approvableIds.length})`, `Negar tudo (${group.approvableIds.length})`)}
+                      </button>
+                      <button
+                        onClick={() => handleBulkRejectOvertime(group)}
+                        disabled={group.pendingOtIds.length === 0 || Boolean(bulkLoadingByUser[userKey])}
+                        className="rounded-full border border-amber-200 bg-white px-4 py-2 text-xs font-semibold text-amber-700 disabled:opacity-50"
+                      >
+                        {t(
+                          `Deny overtime only (${group.pendingOtIds.length})`,
+                          `Negar so as horas extras (${group.pendingOtIds.length})`
+                        )}
                       </button>
                     </div>
                   </div>
