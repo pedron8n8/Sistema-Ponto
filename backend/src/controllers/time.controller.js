@@ -18,6 +18,7 @@ const {
   resolveOrganizationAdminId,
 } = require('../utils/overtimeBuffer');
 const { accrueBankHours, expireBankHoursIfNeeded } = require('../utils/bankHours');
+const { calculateEntryPayment } = require('../utils/entryPayment');
 const {
   issueTerminalQrToken,
   consumeTerminalQrToken,
@@ -330,36 +331,6 @@ const validateClockAuthFactors = async ({ userId, faceDescriptor, livenessData, 
     ok: true,
     faceAuth,
     pinAuth,
-  };
-};
-
-const calculateFinancialSummary = ({ workedMinutes, overtimeMinutes50, overtimeMinutes100, hourlyRate }) => {
-  const rate = Number(hourlyRate || 0);
-  if (!Number.isFinite(rate) || rate <= 0) {
-    return {
-      hourlyRate: 0,
-      regularAmount: 0,
-      overtime50Amount: 0,
-      overtime100Amount: 0,
-      overtimeTotalAmount: 0,
-      totalAmount: 0,
-    };
-  }
-
-  const regularMinutes = Math.max(0, workedMinutes - overtimeMinutes50 - overtimeMinutes100);
-  const regularAmount = (regularMinutes / 60) * rate;
-  const overtime50Amount = (overtimeMinutes50 / 60) * rate * 1.5;
-  const overtime100Amount = (overtimeMinutes100 / 60) * rate * 2;
-  const overtimeTotalAmount = overtime50Amount + overtime100Amount;
-  const totalAmount = regularAmount + overtimeTotalAmount;
-
-  return {
-    hourlyRate: Number(rate.toFixed(2)),
-    regularAmount: Number(regularAmount.toFixed(2)),
-    overtime50Amount: Number(overtime50Amount.toFixed(2)),
-    overtime100Amount: Number(overtime100Amount.toFixed(2)),
-    overtimeTotalAmount: Number(overtimeTotalAmount.toFixed(2)),
-    totalAmount: Number(totalAmount.toFixed(2)),
   };
 };
 
@@ -1023,7 +994,7 @@ const clockOut = async (req, res) => {
       bufferMinutes: overtimeBufferMinutes,
     });
 
-    const financial = calculateFinancialSummary({
+    const financial = calculateEntryPayment({
       workedMinutes: overtime.workedMinutes,
       overtimeMinutes50: overtime.overtimeMinutes50,
       overtimeMinutes100: overtime.overtimeMinutes100,

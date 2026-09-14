@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const xlsx = require('xlsx');
 const { parseDateFilter } = require('../utils/dateFilters');
+const { calculateEntryPayment, resolveSettledOvertime } = require('../utils/entryPayment');
 
 // Fila de exportação de relatórios
 const QUEUE_NAME = process.env.NODE_ENV === 'development' ? 'report-export-dev' : 'report-export';
@@ -90,8 +91,12 @@ const resolveOvertimeMinutes = (entry) => ({
 
 // HE só conta (horas e adicional) depois de aprovada. overtimeStatus null ⇒ registro sem HE
 // a decidir (recalcDay.js:132), então o gate nunca descarta hora extra legítima.
-const resolveApprovedOvertime = (entry) =>
-  entry.overtimeStatus === 'APPROVED' ? resolveOvertimeMinutes(entry) : { ot50: 0, ot100: 0 };
+// Delegado para entryPayment.resolveSettledOvertime (a mesma política, nomeada e
+// compartilhada); só remapeia as chaves para o formato ot50/ot100 já usado aqui.
+const resolveApprovedOvertime = (entry) => {
+  const settled = resolveSettledOvertime(entry);
+  return { ot50: settled.overtimeMinutes50, ot100: settled.overtimeMinutes100 };
+};
 
 // Normais = trabalhado menos TODA a HE (inclusive a pendente), para que HE aguardando
 // decisão não seja promovida a hora normal.
@@ -100,8 +105,13 @@ const resolveRegularMinutes = (entry) => {
   return Math.max(0, resolveWorkedMinutes(entry) - ot50 - ot100);
 };
 
-// ponytail: mesma fórmula de time.controller.calculateFinancialSummary (que não é exportada).
-// Se um dia for exportada de um util compartilhado, trocar as duas por uma só.
+// Usa a aritmética compartilhada (entryPayment.calculateEntryPayment), mas a política
+// do export diverge da de custo: horas normais continuam descontando TODA a HE
+// (resolveRegularMinutes, inalterado), enquanto o adicional só entra para a HE já
+// aprovada (resolveApprovedOvertime). Para reaproveitar a mesma função pura sem
+// duplicar a fórmula, passamos um "workedMinutes" sintético — normais aprovadas +
+// HE aprovada — de forma que a subtração interna da função reproduza exatamente
+// resolveRegularMinutes(entry) minutos de hora normal.
 const resolveEntryPayment = (entry) => {
   const rate = resolveHourlyRate(entry.user);
   if (rate <= 0) {
@@ -109,12 +119,16 @@ const resolveEntryPayment = (entry) => {
   }
 
   const { ot50, ot100 } = resolveApprovedOvertime(entry);
+  const regularMinutes = resolveRegularMinutes(entry);
 
-  return (
-    (resolveRegularMinutes(entry) / 60) * rate +
-    (ot50 / 60) * rate * 1.5 +
-    (ot100 / 60) * rate * 2
-  );
+  const { totalAmount } = calculateEntryPayment({
+    workedMinutes: regularMinutes + ot50 + ot100,
+    overtimeMinutes50: ot50,
+    overtimeMinutes100: ot100,
+    hourlyRate: rate,
+  });
+
+  return totalAmount;
 };
 
 // Número (não string) para que a planilha permita somar/filtrar os valores.
