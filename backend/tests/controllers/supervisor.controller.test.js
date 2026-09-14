@@ -849,6 +849,153 @@ describe('Supervisor Controller', () => {
     });
   });
 
+  // Tolerancia (buffer) por empresa: buildTeamPresenceSnapshot le a config uma
+  // vez por organizationAdminId e aplica o mesmo gatilho do fechamento do dia
+  // (utils/overtime.js applyOvertimeBuffer) ao "overtimeMinutesSoFar" ao vivo.
+  describe('overtime buffer da empresa no snapshot de presenca', () => {
+    const firstMember = () => mockRes.json.mock.calls[0][0];
+
+    // openEntry sem pausa, clockIn ha `minutesAgo` minutos: worked = minutesAgo.
+    const buildOpenEntry = (userId, minutesAgo) => {
+      const clockIn = new Date(Date.now() - minutesAgo * 60 * 1000);
+      return {
+        id: `entry-${userId}`,
+        userId,
+        clockIn,
+        breakStartedAt: null,
+        breakMinutes: 0,
+        location: null,
+        updatedAt: clockIn,
+      };
+    };
+
+    const buildMember = (overrides) => ({
+      id: 'member-1',
+      name: 'Member 1',
+      email: 'member1@test.com',
+      role: 'MEMBER',
+      timeZone: 'America/Sao_Paulo',
+      contractDailyMinutes: 480,
+      bankHoursLimitMinutes: 0,
+      workdayStartTime: '08:00',
+      workdayEndTime: '18:00',
+      organizationAdminId: 'org-1',
+      supervisor: { id: 'supervisor-123', name: 'Sup', email: 'supervisor@test.com' },
+      ...overrides,
+    });
+
+    const mockPresence = ({ members, open = [], today = [] }) => {
+      mockPrisma.user.findMany.mockResolvedValue(members);
+      mockPrisma.timeEntry.findMany
+        .mockResolvedValueOnce(open)
+        .mockResolvedValueOnce(today)
+        .mockResolvedValueOnce([]);
+    };
+
+    // Chave real: overtimeBuffer:<organizationAdminId> (utils/overtimeBuffer.js).
+    const mockCompanyBuffers = (bufferByOrgId) => {
+      mockPrisma.appSetting.findUnique.mockImplementation(({ where }) => {
+        const orgId = where.key.replace('overtimeBuffer:', '');
+        const bufferMinutes = bufferByOrgId[orgId];
+        return Promise.resolve(
+          typeof bufferMinutes === 'number' ? { value: { bufferMinutes } } : null
+        );
+      });
+    };
+
+    it('reports zero overtime and stays PRESENT when the excess fits inside the company tolerance', async () => {
+      // Contrato 480min, buffer 30min, 10min de excedente bruto: cabe inteiro no buffer.
+      mockCompanyBuffers({ 'org-1': 30 });
+      const member = buildMember({});
+      const openEntry = buildOpenEntry(member.id, 490);
+
+      mockPresence({
+        members: [member],
+        open: [openEntry],
+        today: [{ ...openEntry, clockOut: null, workedMinutes: 0 }],
+      });
+
+      await getTeamPresenceSnapshot(mockReq, mockRes);
+
+      const payload = firstMember();
+      expect(payload.members[0].status).toBe('PRESENT');
+      expect(payload.summary.overtimeActive).toBe(0);
+      expect(payload.overtimeAlerts).toHaveLength(0);
+    });
+
+    it('reports the FULL excess (not excess minus buffer) once the tolerance is exceeded', async () => {
+      // Contrato 480min, buffer 20min, 130min de excedente bruto: acima do buffer,
+      // o gatilho manda o excedente INTEIRO (130), nunca 130-20=110.
+      // bankHoursLimitMinutes=100 -> limite=100 -> threshold=80 (80%), 130 ultrapassa.
+      mockCompanyBuffers({ 'org-1': 20 });
+      const member = buildMember({ bankHoursLimitMinutes: 100 });
+      const openEntry = buildOpenEntry(member.id, 610);
+
+      mockPresence({
+        members: [member],
+        open: [openEntry],
+        today: [{ ...openEntry, clockOut: null, workedMinutes: 0 }],
+      });
+
+      await getTeamPresenceSnapshot(mockReq, mockRes);
+
+      const payload = firstMember();
+      expect(payload.members[0].status).toBe('OVERTIME_ACTIVE');
+      expect(payload.overtimeAlerts).toHaveLength(1);
+      expect(payload.overtimeAlerts[0].overtimeMinutes).toBe(130);
+    });
+
+    it('reads the company tolerance once per organizationAdminId, even with two members', async () => {
+      mockCompanyBuffers({ 'org-shared': 30 });
+      const memberA = buildMember({ id: 'member-a', organizationAdminId: 'org-shared' });
+      const memberB = buildMember({ id: 'member-b', organizationAdminId: 'org-shared' });
+      const openEntryA = buildOpenEntry(memberA.id, 490);
+      const openEntryB = buildOpenEntry(memberB.id, 495);
+
+      mockPresence({
+        members: [memberA, memberB],
+        open: [openEntryA, openEntryB],
+        today: [
+          { ...openEntryA, clockOut: null, workedMinutes: 0 },
+          { ...openEntryB, clockOut: null, workedMinutes: 0 },
+        ],
+      });
+
+      await getTeamPresenceSnapshot(mockReq, mockRes);
+
+      expect(mockPrisma.appSetting.findUnique).toHaveBeenCalledTimes(1);
+    });
+
+    // RED/GREEN: um ADMIN nao tem organizationAdminId (e null) — a propria
+    // empresa e o seu id (utils/overtimeBuffer.js resolveOrganizationAdminId).
+    // Antes da correcao, o snapshot lia o campo cru member.organizationAdminId,
+    // via null, e tratava a tolerancia da empresa como 0 mesmo com buffer
+    // configurado para o id do proprio ADMIN.
+    it("resolves the company tolerance from the member's own id when organizationAdminId is null (ADMIN)", async () => {
+      const member = buildMember({
+        id: 'admin-1',
+        role: 'ADMIN',
+        organizationAdminId: null,
+      });
+      // Buffer configurado para a chave da PROPRIA empresa do ADMIN (seu id),
+      // nao para "org-1" nem qualquer outro valor de organizationAdminId.
+      mockCompanyBuffers({ 'admin-1': 15 });
+      const openEntry = buildOpenEntry(member.id, 490); // 10min de excedente bruto, dentro do buffer de 15.
+
+      mockPresence({
+        members: [member],
+        open: [openEntry],
+        today: [{ ...openEntry, clockOut: null, workedMinutes: 0 }],
+      });
+
+      await getTeamPresenceSnapshot(mockReq, mockRes);
+
+      const payload = firstMember();
+      expect(payload.members[0].status).toBe('PRESENT');
+      expect(payload.summary.overtimeActive).toBe(0);
+    });
+  });
+
   describe('Error handling', () => {
     it('should handle database errors', async () => {
       mockPrisma.user.findMany.mockRejectedValue(new Error('DB Error'));

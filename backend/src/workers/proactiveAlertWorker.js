@@ -7,6 +7,8 @@ const {
 } = require('../utils/notifications');
 const { sendSlackDM } = require('../utils/slackNotifier');
 const { sendResendEmail } = require('../utils/resendNotifier');
+const { getOvertimeBufferMinutes, resolveOrganizationAdminId } = require('../utils/overtimeBuffer');
+const { resolveBufferMinutes, applyOvertimeBuffer } = require('../utils/overtime');
 
 const SCAN_JOB_NAME = 'scan-end-of-shift-overtime';
 const DISPATCH_JOB_NAME = 'dispatch-end-of-shift-overtime';
@@ -301,6 +303,7 @@ const processScanJob = async () => {
       bankHoursLimitMinutes: true,
       workdayEndTime: true,
       slackUserId: true,
+      organizationAdminId: true,
       adminPlanStatus: true,
       adminPlan: {
         select: {
@@ -365,6 +368,9 @@ const processScanJob = async () => {
 
   let enqueued = 0;
   let skipped = 0;
+  // Tolerancia por empresa, uma leitura por organizationAdminId para todo o
+  // job de scan: varios membros da mesma empresa nao multiplicam a consulta.
+  const bufferMinutesByOrg = new Map();
 
   for (const openEntry of openEntries) {
     const member = usersById.get(openEntry.userId);
@@ -380,6 +386,7 @@ const processScanJob = async () => {
       member,
       now,
       workedMinutesByUser,
+      bufferMinutesByOrg,
     });
     if (overtimeOutcome === 'enqueued') {
       enqueued += 1;
@@ -404,7 +411,24 @@ const processScanJob = async () => {
   };
 };
 
-const evaluateOvertimeThreshold = async ({ openEntry, member, now, workedMinutesByUser }) => {
+// Le a tolerancia da empresa uma vez por organizationAdminId, reaproveitando o
+// cache que o chamador (processScanJob) mantem vivo pela duracao do job.
+const resolveCachedBufferMinutes = async (organizationAdminId, cache) => {
+  if (!organizationAdminId) return 0;
+  if (cache.has(organizationAdminId)) return cache.get(organizationAdminId);
+
+  const bufferMinutes = await getOvertimeBufferMinutes(organizationAdminId);
+  cache.set(organizationAdminId, bufferMinutes);
+  return bufferMinutes;
+};
+
+const evaluateOvertimeThreshold = async ({
+  openEntry,
+  member,
+  now,
+  workedMinutesByUser,
+  bufferMinutesByOrg,
+}) => {
   const plan = resolveEffectivePlan(member);
   if (!(plan.code === 'PRO' && plan.status === 'ACTIVE')) {
     return 'skipped';
@@ -418,7 +442,17 @@ const evaluateOvertimeThreshold = async ({ openEntry, member, now, workedMinutes
   const elapsedMinutes = Math.max(0, Math.floor((now - new Date(openEntry.clockIn)) / 60000));
   const totalWorkedMinutesToday = (workedMinutesByUser[member.id] || 0) + elapsedMinutes;
   const contractDailyMinutes = Number(member.contractDailyMinutes || 480);
-  const overtimeMinutesSoFar = Math.max(0, totalWorkedMinutesToday - contractDailyMinutes);
+  // Mesmo gatilho do clock-out e do painel de presenca: dentro da tolerancia
+  // da empresa, sem alerta de hora extra.
+  const cache = bufferMinutesByOrg || new Map();
+  const companyBufferMinutes = await resolveCachedBufferMinutes(
+    resolveOrganizationAdminId(member),
+    cache
+  );
+  const overtimeMinutesSoFar = applyOvertimeBuffer(
+    Math.max(0, totalWorkedMinutesToday - contractDailyMinutes),
+    resolveBufferMinutes(companyBufferMinutes)
+  );
   const overtimeLimitMinutes = resolveOvertimeAlertLimitMinutes(member);
   const thresholdMinutes = Math.ceil((overtimeLimitMinutes * OVERTIME_ALERT_THRESHOLD_PERCENT) / 100);
 
@@ -1076,4 +1110,5 @@ module.exports = {
   processScanJob,
   processShiftEndDispatchJob,
   evaluateShiftEndReminder,
+  evaluateOvertimeThreshold,
 };

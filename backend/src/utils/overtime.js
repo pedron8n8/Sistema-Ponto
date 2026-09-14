@@ -227,4 +227,6 @@ module.exports = {
   calculateIncrementalOvertimeSummary,
   calculateCurrentDailyProgress,
   resolveContractDailyMinutes,
+  resolveBufferMinutes,
+  applyOvertimeBuffer,
 };

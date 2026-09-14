@@ -11,6 +11,8 @@ const { parseLocalDate } = require('../utils/timeCalculations');
 const { presenceBus } = require('../utils/presenceBus');
 const { resolveVisibleUserIds, canViewUser } = require('../utils/visibleUsers');
 const { isHrLevel } = require('../utils/roles');
+const { getOvertimeBufferMinutes, resolveOrganizationAdminId } = require('../utils/overtimeBuffer');
+const { resolveBufferMinutes, applyOvertimeBuffer } = require('../utils/overtime');
 
 const PRESENCE_REFRESH_MS = 15000;
 const DEFAULT_OVERTIME_LIMIT_MINUTES = Number(process.env.OVERTIME_DAILY_LIMIT_MINUTES || 120);
@@ -237,6 +239,7 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, supervisorEmail, superv
       bankHoursLimitMinutes: true,
       workdayStartTime: true,
       workdayEndTime: true,
+      organizationAdminId: true,
       supervisor: {
         select: {
           id: true,
@@ -359,6 +362,25 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, supervisorEmail, superv
 
   const overtimeAlerts = [];
 
+  // Tolerancia por empresa, uma leitura por organizationAdminId para todo o
+  // snapshot: um time de 40 pessoas na mesma empresa custa uma consulta, nao 40.
+  // resolveOrganizationAdminId trata o caso ADMIN (organizationAdminId nulo,
+  // a propria empresa e o seu id) do mesmo jeito que todo outro call site.
+  const uniqueOrgAdminIds = Array.from(
+    new Set(teamMembers.map((member) => resolveOrganizationAdminId(member)).filter(Boolean))
+  );
+  const bufferEntries = await Promise.all(
+    uniqueOrgAdminIds.map(async (organizationAdminId) => [
+      organizationAdminId,
+      await getOvertimeBufferMinutes(organizationAdminId),
+    ])
+  );
+  const bufferMinutesByOrg = new Map(bufferEntries);
+  const resolveMemberBufferMinutes = (member) => {
+    const organizationAdminId = resolveOrganizationAdminId(member);
+    return organizationAdminId ? bufferMinutesByOrg.get(organizationAdminId) || 0 : 0;
+  };
+
   const members = teamMembers.map((member) => {
     const labels = resolveVirtualOrgLabels(member);
     const openEntry = openEntryMap.get(member.id);
@@ -388,13 +410,18 @@ const buildTeamPresenceSnapshot = async ({ supervisorId, supervisorEmail, superv
       }, 0);
       const totalWorkedMinutesToday = closedWorkedMinutesToday + elapsedMinutes;
       const contractDailyMinutes = Number(member.contractDailyMinutes || 480);
-      const overtimeMinutesSoFar = Math.max(0, totalWorkedMinutesToday - contractDailyMinutes);
+      // Mesmo gatilho do fechamento/painel ao vivo: dentro da tolerancia da
+      // empresa, zero hora extra — nao "quase" OVERTIME_ACTIVE.
+      const overtimeMinutesSoFar = applyOvertimeBuffer(
+        Math.max(0, totalWorkedMinutesToday - contractDailyMinutes),
+        resolveBufferMinutes(resolveMemberBufferMinutes(member))
+      );
       const overtimeLimitMinutes = resolveOvertimeAlertLimitMinutes(member);
       const thresholdMinutes = Math.ceil((overtimeLimitMinutes * OVERTIME_ALERT_THRESHOLD_PERCENT) / 100);
 
       status = onBreak
         ? PRESENCE_STATUS.ON_BREAK
-        : totalWorkedMinutesToday > contractDailyMinutes
+        : overtimeMinutesSoFar > 0
           ? PRESENCE_STATUS.OVERTIME_ACTIVE
           : PRESENCE_STATUS.PRESENT;
       since = onBreak ? openEntry.breakStartedAt : openEntry.clockIn;
