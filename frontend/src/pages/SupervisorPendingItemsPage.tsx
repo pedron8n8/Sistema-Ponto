@@ -312,16 +312,6 @@ const SupervisorPendingItemsPage = () => {
     setActionLoadingByEntry((prev) => ({ ...prev, [entryId]: true }))
 
     const comment = (commentByEntry[entryId] || '').trim()
-    if (decision === 'REJECT' && comment.length < 5) {
-      setActionLoadingByEntry((prev) => ({ ...prev, [entryId]: false }))
-      setError(
-        t(
-          'To deny overtime, provide a comment with at least 5 characters.',
-          'Para negar horas extras, informe comentario com pelo menos 5 caracteres.'
-        )
-      )
-      return
-    }
 
     try {
       await apiFetch(`/supervisor/overtime/${entryId}/${decision === 'APPROVE' ? 'approve' : 'reject'}`, {

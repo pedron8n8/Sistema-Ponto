@@ -172,16 +172,6 @@ const AdminPendingApprovalsPage = () => {
 
     const comment = (entryCommentById[entryId] || '').trim()
 
-    if (decision === 'REJECT' && comment.length < 5) {
-      setError(
-        t(
-          'To deny overtime, provide a comment with at least 5 characters.',
-          'Para negar horas extras, informe comentario com pelo menos 5 caracteres.'
-        )
-      )
-      return
-    }
-
     setError('')
     setNotice('')
     setEntryActionLoadingById((prev) => ({ ...prev, [entryId]: true }))
