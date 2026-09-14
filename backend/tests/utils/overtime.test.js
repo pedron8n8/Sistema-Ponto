@@ -6,6 +6,7 @@
 // excedente inteiro. Com buffer 10, 25 minutos extras valem 25, nao 15.
 
 const {
+  calculateOvertimeSummary,
   calculateIncrementalOvertimeSummary,
   calculateCurrentDailyProgress,
   resolveContractDailyMinutes,
@@ -21,6 +22,42 @@ const entryOf = (workedMinutes, over = {}) => ({
   contractDailyMinutes: 480,
   workedMinutesBeforeEntry: 0,
   ...over,
+});
+
+// calculateOvertimeSummary nao tem chamador em src/ hoje, mas e exportado e
+// precisa concordar com a irma incremental: um futuro chamador que nao passe
+// bufferMinutes nao pode silenciosamente ignorar a tolerancia da empresa.
+describe('calculateOvertimeSummary com buffer', () => {
+  it('buffer zera a hora extra do dia, mesmo gatilho da versao incremental', () => {
+    const result = calculateOvertimeSummary({
+      clockIn: WEEKDAY_START,
+      clockOut: new Date(WEEKDAY_START.getTime() + 490 * MINUTE),
+      contractDailyMinutes: 480,
+      bufferMinutes: 10,
+    });
+
+    expect(result.overtimeMinutes).toBe(0);
+    expect(result.overtimeMinutes50).toBe(0);
+    expect(result.overtimeMinutes100).toBe(0);
+    expect(result.overtimePercent).toBe(0);
+  });
+
+  it('buffer 0 reproduz exatamente o comportamento de hoje', () => {
+    const semParametro = calculateOvertimeSummary({
+      clockIn: WEEKDAY_START,
+      clockOut: new Date(WEEKDAY_START.getTime() + 505 * MINUTE),
+      contractDailyMinutes: 480,
+    });
+    const comZero = calculateOvertimeSummary({
+      clockIn: WEEKDAY_START,
+      clockOut: new Date(WEEKDAY_START.getTime() + 505 * MINUTE),
+      contractDailyMinutes: 480,
+      bufferMinutes: 0,
+    });
+
+    expect(semParametro.overtimeMinutes).toBe(25);
+    expect(comZero.overtimeMinutes).toBe(25);
+  });
 });
 
 describe('calculateIncrementalOvertimeSummary com buffer', () => {

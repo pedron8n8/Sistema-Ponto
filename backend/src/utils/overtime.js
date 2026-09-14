@@ -67,7 +67,13 @@ const resolveDayType = (date) => {
   };
 };
 
-const calculateOvertimeSummary = ({ clockIn, clockOut, contractDailyMinutes, breakMinutes = 0 }) => {
+const calculateOvertimeSummary = ({
+  clockIn,
+  clockOut,
+  contractDailyMinutes,
+  breakMinutes = 0,
+  bufferMinutes = 0,
+}) => {
   const start = new Date(clockIn);
   const end = new Date(clockOut);
   const diffMs = end.getTime() - start.getTime();
@@ -88,7 +94,12 @@ const calculateOvertimeSummary = ({ clockIn, clockOut, contractDailyMinutes, bre
     Math.floor(diffMs / (1000 * 60)) - resolveBreakMinutes(breakMinutes)
   );
   const effectiveContractMinutes = resolveContractDailyMinutes(contractDailyMinutes);
-  const overtimeMinutes = Math.max(0, workedMinutes - effectiveContractMinutes);
+  // Mesmo gatilho de calculateIncrementalOvertimeSummary: dentro do buffer,
+  // zero; acima, o excedente inteiro. As duas funcoes nao podem divergir.
+  const overtimeMinutes = applyOvertimeBuffer(
+    Math.max(0, workedMinutes - effectiveContractMinutes),
+    resolveBufferMinutes(bufferMinutes)
+  );
   const { isSpecialDay, dayType } = resolveDayType(start);
 
   return {
