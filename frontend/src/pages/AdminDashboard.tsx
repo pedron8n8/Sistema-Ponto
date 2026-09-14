@@ -1033,10 +1033,13 @@ const AdminDashboard = () => {
     setError('')
     setNotice('')
 
-    const parsed = Number(overtimeBufferForm)
-    // Mesma faixa que o servidor recusa com 400: o campo avisa antes de gastar
-    // uma ida ao servidor, mas quem manda continua sendo o backend.
-    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 120) {
+    const trimmedBuffer = overtimeBufferForm.trim()
+    const parsed = Number(trimmedBuffer)
+    // Campo vazio vira Number('') === 0: sem esta checagem, limpar o campo e
+    // salvar zerava a tolerancia da empresa em vez de mostrar o erro de
+    // validacao. Mesma faixa que o servidor recusa com 400: o campo avisa
+    // antes de gastar uma ida ao servidor, mas quem manda continua sendo o backend.
+    if (!trimmedBuffer || !Number.isInteger(parsed) || parsed < 0 || parsed > 120) {
       setError(
         t(
           'Overtime tolerance must be a whole number of minutes between 0 and 120.',
@@ -1345,7 +1348,7 @@ const AdminDashboard = () => {
             </div>
             <button
               onClick={handleSaveOvertimeSettings}
-              disabled={overtimeSettingsSaving}
+              disabled={overtimeSettingsSaving || overtimeSettingsLoading}
               className="rounded-full bg-teal-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
             >
               {overtimeSettingsSaving
