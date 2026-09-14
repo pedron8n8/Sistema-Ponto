@@ -988,6 +988,10 @@ describe('Supervisor Controller', () => {
     });
 
     // O ponto que separa este endpoint do reject-bulk: a MARCACAO nao e tocada.
+    // A invariante e "este endpoint nao escreve status por NENHUM caminho", nao
+    // so "o payload do updateMany atual nao tem status": por isso a segunda
+    // asercao confere tambem que nenhum update singular (a outra forma de
+    // escrever) foi chamado.
     it('nao altera o status das marcacoes', async () => {
       mockReq.body = { entryIds: ['entry-1'] };
       mockPrisma.timeEntry.findMany.mockResolvedValue([entryWithPendingOvertime('entry-1')]);
@@ -998,6 +1002,7 @@ describe('Supervisor Controller', () => {
       for (const data of writes) {
         expect(data).not.toHaveProperty('status');
       }
+      expect(mockPrisma.timeEntry.update).not.toHaveBeenCalled();
     });
 
     it('escreve com o predicado de HE pendente, nao so com a leitura anterior', async () => {
