@@ -172,4 +172,63 @@ describe('recalculateUserDay', () => {
       expect.objectContaining({ data: { bankHoursBalanceMinutes: { decrement: 120 } } })
     );
   });
+
+  // O snapshot e o que torna o numero auditavel. Sem ele, um ADMIN que sobe o
+  // buffer de 10 para 20 faz a proxima correcao do RH num dia antigo zerar uma
+  // hora extra JA APROVADA e reverter o credito de banco de horas, sem erro em
+  // tela nenhum: recalculateUserDay reprocessa o dia inteiro e re-credita.
+  describe('buffer de hora extra', () => {
+    // 8h20 de turno numa jornada de 8h => 20 minutos acima do contrato.
+    const shortOvertimeShift = (over = {}) => ({
+      id: 'entry-1',
+      userId: 'user-123',
+      clockIn: new Date(DAY.getTime() - 500 * 60 * 1000),
+      clockOut: new Date(DAY.getTime()),
+      breakMinutes: 0,
+      status: 'PENDING',
+      overtimeStatus: 'PENDING',
+      location: null,
+      overtimeBufferMinutes: null,
+      ...over,
+    });
+
+    it('usa o buffer gravado no registro para zerar a hora extra do dia', async () => {
+      const stored = arrangeEntry(shortOvertimeShift({ overtimeBufferMinutes: 30 }));
+
+      const [result] = await recalculateUserDay({ userId: 'user-123', date: DAY });
+
+      expect(result.overtimeMinutes).toBe(0);
+      // Sem hora extra, a pendencia some e o ponto volta a ser aprovavel.
+      expect(stored.overtimeStatus).toBeNull();
+      expect(result.bankHoursAccruedMinutes).toBe(0);
+    });
+
+    it('paga o excedente inteiro quando o dia passa do buffer gravado', async () => {
+      const stored = arrangeEntry(shortOvertimeShift({ overtimeBufferMinutes: 10 }));
+
+      const [result] = await recalculateUserDay({ userId: 'user-123', date: DAY });
+
+      // Gatilho, nao desconto: 20 minutos acima com buffer 10 valem 20, nao 10.
+      expect(result.overtimeMinutes).toBe(20);
+      expect(stored.overtimeStatus).toBe('PENDING');
+    });
+
+    it('trata registro anterior a feature (sem snapshot) como buffer 0', async () => {
+      arrangeEntry(shortOvertimeShift({ overtimeBufferMinutes: null }));
+
+      const [result] = await recalculateUserDay({ userId: 'user-123', date: DAY });
+
+      expect(result.overtimeMinutes).toBe(20);
+    });
+
+    // O guard que impede a regressao inteira: o recalculo NAO pode consultar a
+    // configuracao vigente da empresa.
+    it('nunca le a configuracao atual da empresa', async () => {
+      arrangeEntry(shortOvertimeShift({ overtimeBufferMinutes: 30 }));
+
+      await recalculateUserDay({ userId: 'user-123', date: DAY });
+
+      expect(mockPrisma.appSetting.findUnique).not.toHaveBeenCalled();
+    });
+  });
 });

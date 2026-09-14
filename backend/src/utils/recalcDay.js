@@ -69,7 +69,15 @@ const recalculateUserDay = async ({ userId, date }) => {
       clockOut: { not: null },
     },
     orderBy: { clockIn: 'asc' },
-    select: { id: true, clockIn: true, clockOut: true, breakMinutes: true, status: true, overtimeStatus: true },
+    select: {
+      id: true,
+      clockIn: true,
+      clockOut: true,
+      breakMinutes: true,
+      status: true,
+      overtimeStatus: true,
+      overtimeBufferMinutes: true,
+    },
   });
 
   let workedMinutesBeforeEntry = 0;
@@ -85,6 +93,10 @@ const recalculateUserDay = async ({ userId, date }) => {
       contractDailyMinutes: userConfig?.contractDailyMinutes,
       workedMinutesBeforeEntry,
       breakMinutes: entry.breakMinutes,
+      // O buffer do REGISTRO, nunca o vigente na empresa. Reler a configuracao
+      // atual faria uma correcao do RH num dia antigo zerar hora extra ja
+      // aprovada e reverter o banco de horas, sem erro em tela.
+      bufferMinutes: entry.overtimeBufferMinutes ?? 0,
     });
 
     // HE negada é definitiva: mantém efeito zerado e não re-credita banco de horas,

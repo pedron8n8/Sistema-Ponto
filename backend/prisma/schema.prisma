@@ -172,6 +172,11 @@ model TimeEntry {
   overtimeMinutes50 Int     @default(0)
   overtimeMinutes100 Int    @default(0)
   overtimePercent Int       @default(0)
+  // Parametro com que a hora extra deste registro foi calculada, pelo mesmo
+  // motivo de overtimePercent: o recalculo do dia nao pode reler a configuracao
+  // atual da empresa e mudar hora extra ja aprovada. null = registro anterior a
+  // esta feature, tratado como 0.
+  overtimeBufferMinutes Int?
   bankHoursAccruedMinutes Int @default(0)
   overtimeStatus EntryStatus? // null = sem HE a decidir; decisão prévia obrigatória antes de aprovar/rejeitar o ponto
   status      EntryStatus   @default(PENDING)
