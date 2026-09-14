@@ -968,7 +968,16 @@ describe('Supervisor Controller', () => {
     });
 
     beforeEach(() => {
-      mockPrisma.$transaction.mockResolvedValue([{ count: 2 }, { count: 2 }]);
+      // rejectOvertimeBulk usa transação interativa (a segunda escrita precisa
+      // ver o resultado da primeira), então o mock genérico de array não
+      // serve aqui: o callback recebe o próprio mockPrisma como `tx`.
+      mockPrisma.$transaction.mockImplementation((callback) => callback(mockPrisma));
+      // Default "corrida sem conflito": o UPDATE aceita todo mundo que pediu.
+      // Os testes de corrida sobrescrevem isso para devolver menos ids do que
+      // foi pedido.
+      mockPrisma.timeEntry.updateManyAndReturn.mockImplementation(({ where }) =>
+        Promise.resolve((where?.id?.in || []).map((id) => ({ id })))
+      );
     });
 
     it('nega em lote sem comentario', async () => {
@@ -998,10 +1007,12 @@ describe('Supervisor Controller', () => {
 
       await rejectOvertimeBulk(mockReq, mockRes);
 
-      const writes = mockPrisma.timeEntry.updateMany.mock.calls.map(([args]) => args.data);
+      const writes = mockPrisma.timeEntry.updateManyAndReturn.mock.calls.map(([args]) => args.data);
+      expect(writes.length).toBeGreaterThan(0);
       for (const data of writes) {
         expect(data).not.toHaveProperty('status');
       }
+      expect(mockPrisma.timeEntry.updateMany).not.toHaveBeenCalled();
       expect(mockPrisma.timeEntry.update).not.toHaveBeenCalled();
     });
 
@@ -1011,8 +1022,34 @@ describe('Supervisor Controller', () => {
 
       await rejectOvertimeBulk(mockReq, mockRes);
 
-      const [args] = mockPrisma.timeEntry.updateMany.mock.calls[0];
+      const [args] = mockPrisma.timeEntry.updateManyAndReturn.mock.calls[0];
       expect(args.where).toEqual({ id: { in: ['entry-1'] }, overtimeStatus: 'PENDING' });
+    });
+
+    it('reverte banco de horas so para quem o UPDATE realmente rejeitou numa corrida com aprovacao concorrente', async () => {
+      // entry-2 foi aprovado por outro supervisor entre a leitura e a
+      // transação: o UPDATE (avaliado pelo banco) não encontra mais
+      // overtimeStatus PENDING nele e devolve só entry-1.
+      mockReq.body = { entryIds: ['entry-1', 'entry-2'] };
+      mockPrisma.timeEntry.findMany.mockResolvedValue([
+        entryWithPendingOvertime('entry-1'),
+        entryWithPendingOvertime('entry-2'),
+      ]);
+      mockPrisma.timeEntry.updateManyAndReturn.mockResolvedValue([{ id: 'entry-1' }]);
+
+      await rejectOvertimeBulk(mockReq, mockRes);
+
+      expect(reverseEntryBankHours).toHaveBeenCalledTimes(1);
+      expect(reverseEntryBankHours).toHaveBeenCalledWith('entry-1');
+      expect(reverseEntryBankHours).not.toHaveBeenCalledWith('entry-2');
+
+      const logData = mockPrisma.approvalLog.createMany.mock.calls[0][0].data;
+      expect(logData).toHaveLength(1);
+      expect(logData[0].timeEntryId).toBe('entry-1');
+
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({ overtimeRejectedCount: 1 })
+      );
     });
 
     it('ignora item sem HE pendente em vez de falhar o lote', async () => {

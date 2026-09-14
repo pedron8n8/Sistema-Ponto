@@ -1868,17 +1868,17 @@ const rejectOvertimeBulk = async (req, res) => {
     const overtimeIds = overtimeEntries.map((entry) => entry.id);
     const trimmedComment = typeof comment === 'string' ? comment.trim() : '';
 
-    // Reverte o crédito antes da transação, igual ao rejectOvertime e ao
-    // rejectEntriesBulk. Sequencial: o lote é limitado a 200 registros.
-    for (const id of overtimeIds) {
-      await reverseEntryBankHours(id);
-    }
-
-    // `overtimeStatus: 'PENDING'` no WHERE: o predicado é avaliado pelo banco e
-    // não pela leitura feita acima. Sem ele, dois supervisores negando o mesmo
-    // lote ao mesmo tempo passariam os dois pelo filtro em memória.
-    const [rejected] = await prisma.$transaction([
-      prisma.timeEntry.updateMany({
+    // `overtimeStatus: 'PENDING'` no WHERE + updateManyAndReturn, em transação
+    // interativa: o predicado é avaliado pelo banco, não pela leitura feita
+    // acima, e o log (e a reversão logo abaixo) saem do que o UPDATE realmente
+    // escreveu — mesmo raciocínio de approveEntriesBulk para o crédito
+    // represado. Sem isso, se uma aprovação concorrente decidir a mesma HE
+    // entre a leitura e a escrita, esta rota reverteria o banco de horas de um
+    // registro que ficou 'APPROVED' com seus minutos intactos: saldo debitado,
+    // ledger sumido, ponto aprovado — divergência silenciosa que só uma
+    // recalculateUserDay futura cura.
+    const rejectedEntries = await prisma.$transaction(async (tx) => {
+      const rejected = await tx.timeEntry.updateManyAndReturn({
         where: { id: { in: overtimeIds }, overtimeStatus: 'PENDING' },
         data: {
           overtimeStatus: 'REJECTED',
@@ -1888,18 +1888,40 @@ const rejectOvertimeBulk = async (req, res) => {
           overtimePercent: 0,
           bankHoursAccruedMinutes: 0,
         },
-      }),
-      prisma.approvalLog.createMany({
-        data: overtimeEntries.map((entry) => ({
-          timeEntryId: entry.id,
-          reviewerId: supervisorId,
-          action: 'OVERTIME_REJECTED',
-          comment: buildOvertimeRejectionNote(trimmedComment, entry),
-        })),
-      }),
-    ]);
+        select: { id: true },
+      });
 
-    const overtimeRejectedCount = rejected?.count ?? 0;
+      const rejectedIds = new Set(rejected.map((row) => row.id));
+      // Os minutos originais vêm da leitura anterior: o UPDATE acabou de zerá-los.
+      const entries = overtimeEntries.filter((entry) => rejectedIds.has(entry.id));
+
+      if (entries.length) {
+        await tx.approvalLog.createMany({
+          data: entries.map((entry) => ({
+            timeEntryId: entry.id,
+            reviewerId: supervisorId,
+            action: 'OVERTIME_REJECTED',
+            comment: buildOvertimeRejectionNote(trimmedComment, entry),
+          })),
+        });
+      }
+
+      return entries;
+    });
+
+    // Reversão DEPOIS do write, e só para os ids que o UPDATE realmente
+    // rejeitou (quem perdeu a corrida para uma aprovação concorrente não entra
+    // aqui). A ordem importa: se o processo morrer no meio deste laço, o pior
+    // caso é um colaborador ficar com um crédito de banco de horas que ele não
+    // deveria ter — corrigível por uma recalculateUserDay futura. A ordem
+    // antiga (reverter antes de saber quem o banco realmente rejeitou) podia
+    // deixar o colaborador silenciosamente SEM minutos que lhe eram devidos,
+    // que é o defeito mais perigoso dos dois num relógio de ponto.
+    for (const entry of rejectedEntries) {
+      await reverseEntryBankHours(entry.id);
+    }
+
+    const overtimeRejectedCount = rejectedEntries.length;
 
     console.log(
       `❌ ${overtimeRejectedCount} horas extras negadas em lote por ${req.user.email}`
