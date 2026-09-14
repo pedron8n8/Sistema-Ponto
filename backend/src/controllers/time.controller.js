@@ -13,6 +13,10 @@ const {
   calculateIncrementalOvertimeSummary,
   calculateCurrentDailyProgress,
 } = require('../utils/overtime');
+const {
+  getOvertimeBufferMinutes,
+  resolveOrganizationAdminId,
+} = require('../utils/overtimeBuffer');
 const { accrueBankHours, expireBankHoursIfNeeded } = require('../utils/bankHours');
 const {
   issueTerminalQrToken,
@@ -969,6 +973,9 @@ const clockOut = async (req, res) => {
       select: {
         contractDailyMinutes: true,
         hourlyRate: true,
+        // A empresa decide o buffer de hora extra; sem isto o select trazia so
+        // o contrato e nao havia como resolver o tenant aqui.
+        organizationAdminId: true,
       },
     });
 
@@ -1001,12 +1008,19 @@ const clockOut = async (req, res) => {
       0
     );
 
+    // Configuracao VIGENTE no fechamento — e este valor que passa a valer para
+    // este registro dali em diante, carimbado abaixo.
+    const overtimeBufferMinutes = await getOvertimeBufferMinutes(
+      resolveOrganizationAdminId({ id: userId, organizationAdminId: userConfig?.organizationAdminId })
+    );
+
     const overtime = calculateIncrementalOvertimeSummary({
       clockIn: openEntry.clockIn,
       clockOut: clockOutTime,
       contractDailyMinutes: userConfig?.contractDailyMinutes,
       workedMinutesBeforeEntry,
       breakMinutes: breakSummary.totalMinutes,
+      bufferMinutes: overtimeBufferMinutes,
     });
 
     const financial = calculateFinancialSummary({
@@ -1035,6 +1049,7 @@ const clockOut = async (req, res) => {
         overtimeMinutes100: overtime.overtimeMinutes100,
         overtimePercent: overtime.overtimePercent,
         overtimeStatus: overtime.overtimeMinutes > 0 ? 'PENDING' : null,
+        overtimeBufferMinutes,
       },
       include: {
         user: {
@@ -1488,6 +1503,7 @@ const getCurrentEntry = async (req, res) => {
         where: { id: userId },
         select: {
           contractDailyMinutes: true,
+          organizationAdminId: true,
         },
       }),
       prisma.timeEntry.findMany({
@@ -1520,12 +1536,20 @@ const getCurrentEntry = async (req, res) => {
     const now = new Date();
     const breakSummary = resolveBreakMinutes(openEntry, now);
 
+    // Aqui o buffer vem da configuracao vigente e NAO e gravado: o dia ainda
+    // esta aberto e nenhum registro foi fechado. Sem isto a tela mostra hora
+    // extra acumulando durante o dia e o fechamento entrega zero.
+    const overtimeBufferMinutes = await getOvertimeBufferMinutes(
+      resolveOrganizationAdminId({ id: userId, organizationAdminId: userConfig?.organizationAdminId })
+    );
+
     const dailyProgress = calculateCurrentDailyProgress({
       clockIn: openEntry.clockIn,
       now,
       contractDailyMinutes: userConfig?.contractDailyMinutes,
       workedMinutesBeforeEntry,
       breakMinutes: breakSummary.totalMinutes,
+      bufferMinutes: overtimeBufferMinutes,
     });
 
     // Calcula quanto tempo já passou desde o clock-in
