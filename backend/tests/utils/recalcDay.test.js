@@ -230,5 +230,52 @@ describe('recalculateUserDay', () => {
 
       expect(mockPrisma.appSetting.findUnique).not.toHaveBeenCalled();
     });
+
+    // Bug que nenhum caso acima pegaria: todos tem um unico registro no dia,
+    // entao nada detecta um buffer de UM registro sendo aplicado ao dia
+    // inteiro. recalculateUserDay processa os registros do dia em ordem; aqui
+    // A trabalha 500min (20 acima do contrato de 480) com buffer 30, e B
+    // trabalha mais 30min (fechando o dia em 530, 50 acima do contrato) com
+    // buffer 0. Se o buffer de A vazasse para B, B daria 50 em vez de 30; se o
+    // buffer de B vazasse para A, A daria 20 em vez de 0.
+    it('aplica o buffer de cada registro individualmente, nao o do primeiro registro do dia', async () => {
+      const storedA = {
+        id: 'entry-a',
+        userId: 'user-123',
+        clockIn: new Date(DAY.getTime() - 500 * 60 * 1000),
+        clockOut: new Date(DAY.getTime()),
+        breakMinutes: 0,
+        status: 'PENDING',
+        overtimeStatus: 'PENDING',
+        location: null,
+        overtimeBufferMinutes: 30,
+      };
+      const storedB = {
+        id: 'entry-b',
+        userId: 'user-123',
+        clockIn: new Date(DAY.getTime()),
+        clockOut: new Date(DAY.getTime() + 30 * 60 * 1000),
+        breakMinutes: 0,
+        status: 'PENDING',
+        overtimeStatus: 'PENDING',
+        location: null,
+        overtimeBufferMinutes: 0,
+      };
+      const byId = { [storedA.id]: storedA, [storedB.id]: storedB };
+
+      mockPrisma.user.findUnique.mockResolvedValue({ contractDailyMinutes: 480 });
+      mockPrisma.timeEntry.findMany.mockResolvedValue([storedA, storedB]);
+      mockPrisma.bankHoursEntry.findMany.mockResolvedValue([]);
+      mockPrisma.timeEntry.update.mockImplementation(async ({ where, data }) => {
+        Object.assign(byId[where.id], data);
+        return byId[where.id];
+      });
+      mockPrisma.timeEntry.findUnique.mockImplementation(async ({ where }) => byId[where.id]);
+
+      const [resultA, resultB] = await recalculateUserDay({ userId: 'user-123', date: DAY });
+
+      expect(resultA.overtimeMinutes).toBe(0);
+      expect(resultB.overtimeMinutes).toBe(30);
+    });
   });
 });
