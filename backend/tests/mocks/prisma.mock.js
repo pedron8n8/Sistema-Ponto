@@ -61,6 +61,14 @@ const mockPrisma = {
     count: jest.fn(),
     groupBy: jest.fn(),
   },
+  appSetting: {
+    findUnique: jest.fn(),
+    findMany: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    upsert: jest.fn(),
+    delete: jest.fn(),
+  },
   bankHoursEntry: {
     findUnique: jest.fn(),
     findFirst: jest.fn(),
