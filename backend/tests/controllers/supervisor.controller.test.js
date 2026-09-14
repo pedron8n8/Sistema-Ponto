@@ -16,6 +16,7 @@ const {
   approveEntriesBulk,
   rejectEntry,
   rejectEntriesBulk,
+  rejectOvertime,
   requestEdit,
   getTeamMembers,
   getTeamPresenceSnapshot,
@@ -854,6 +855,94 @@ describe('Supervisor Controller', () => {
       await getTeamPendingEntries(mockReq, mockRes);
 
       expect(mockRes.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  // Negar hora extra deixa de exigir justificativa; negar a MARCACAO continua
+  // exigindo. Sao trilhas diferentes, e a fronteira entre elas nunca teve teste.
+  describe('rejectOvertime: nota opcional', () => {
+    const pendingOvertimeEntry = {
+      id: 'entry-1',
+      status: 'PENDING',
+      clockOut: new Date('2026-08-26T19:00:00.000Z'),
+      overtimeStatus: 'PENDING',
+      overtimeMinutes: 25,
+      overtimeMinutes50: 25,
+      overtimeMinutes100: 0,
+      bankHoursAccruedMinutes: 25,
+      user: {
+        id: 'member-123',
+        name: 'Member',
+        email: 'member@test.com',
+        supervisorId: 'supervisor-123',
+        organizationAdminId: 'admin-1',
+      },
+    };
+
+    beforeEach(() => {
+      mockReq.params = { id: 'entry-1' };
+      mockPrisma.timeEntry.findUnique.mockResolvedValue(pendingOvertimeEntry);
+      mockPrisma.$transaction.mockResolvedValue([{ id: 'entry-1' }, { id: 'log-1' }]);
+    });
+
+    it('nega sem comentario nenhum', async () => {
+      mockReq.body = {};
+
+      await rejectOvertime(mockReq, mockRes);
+
+      expect(mockRes.status).not.toHaveBeenCalledWith(400);
+      expect(reverseEntryBankHours).toHaveBeenCalledWith('entry-1');
+    });
+
+    it('nega com comentario curto, que antes era recusado', async () => {
+      mockReq.body = { comment: 'ok' };
+
+      await rejectOvertime(mockReq, mockRes);
+
+      expect(mockRes.status).not.toHaveBeenCalledWith(400);
+    });
+
+    it('registra os minutos originais no log mesmo sem comentario', async () => {
+      mockReq.body = {};
+
+      await rejectOvertime(mockReq, mockRes);
+
+      const logCreate = mockPrisma.approvalLog.create.mock.calls[0][0];
+      expect(logCreate.data.action).toBe('OVERTIME_REJECTED');
+      expect(logCreate.data.comment).toContain('HE original: 25min');
+      // Sem sobra de espaco nem de separador quando o supervisor nao escreveu nada.
+      expect(logCreate.data.comment.startsWith('[HE original:')).toBe(true);
+    });
+
+    it('mantem o comentario do supervisor antes dos minutos originais', async () => {
+      mockReq.body = { comment: 'combinado na reuniao' };
+
+      await rejectOvertime(mockReq, mockRes);
+
+      const logCreate = mockPrisma.approvalLog.create.mock.calls[0][0];
+      expect(logCreate.data.comment).toContain('combinado na reuniao');
+      expect(logCreate.data.comment).toContain('HE original: 25min');
+    });
+  });
+
+  // Guarda a fronteira do escopo: a exigencia de 5 caracteres PERTENCE a
+  // rejeicao da marcacao e nao pode cair junto.
+  describe('rejeitar a marcacao continua exigindo justificativa', () => {
+    it('rejectEntry sem comentario devolve 400', async () => {
+      mockReq.params = { id: 'entry-1' };
+      mockReq.body = {};
+
+      await rejectEntry(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+    });
+
+    it('rejectEntriesBulk sem comentario devolve 400', async () => {
+      mockReq.body = { entryIds: ['entry-1'] };
+
+      await rejectEntriesBulk(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
     });
   });
 });

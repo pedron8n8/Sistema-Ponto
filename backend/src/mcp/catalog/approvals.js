@@ -146,11 +146,11 @@ module.exports = [
     path: '/supervisor/overtime/:id/reject',
     description:
       'Rejeita a hora extra de uma marcacao e REVERTE o acumulo correspondente no banco de horas ' +
-      'do colaborador. Comentario obrigatorio. A marcacao em si continua podendo ser aprovada ' +
+      'do colaborador. Comentario opcional. A marcacao em si continua podendo ser aprovada ' +
       'depois com approvals_approve.',
     inputSchema: obj(
-      { id: str('Id da marcacao (uuid).'), comment: str('Motivo da rejeicao. Obrigatorio.') },
-      ['id', 'comment']
+      { id: str('Id da marcacao (uuid).'), comment: str('Motivo da rejeicao. Opcional.') },
+      ['id']
     ),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
   },

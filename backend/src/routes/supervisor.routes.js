@@ -104,7 +104,7 @@ router.patch('/overtime/:id/approve', approveOvertime);
 /**
  * PATCH /supervisor/overtime/:id/reject
  * Nega as horas extras de um registro (zera efeito e reverte banco de horas)
- * Body: { comment: string } (obrigatório)
+ * Body: { comment?: string } (opcional)
  */
 router.patch('/overtime/:id/reject', rejectOvertime);
 

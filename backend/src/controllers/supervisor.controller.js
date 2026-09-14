@@ -1734,6 +1734,16 @@ const approveOvertime = async (req, res) => {
 };
 
 /**
+ * Comentário do log de negação de HE: o que o supervisor escreveu (se escreveu)
+ * mais os minutos originais, que é o que permite auditar o número revertido.
+ */
+const buildOvertimeRejectionNote = (trimmedComment, entry) => {
+  const original = `[HE original: ${entry.overtimeMinutes}min (50%: ${entry.overtimeMinutes50}min, 100%: ${entry.overtimeMinutes100}min), banco: ${entry.bankHoursAccruedMinutes}min]`;
+
+  return trimmedComment ? `${trimmedComment} ${original}` : original;
+};
+
+/**
  * PATCH /supervisor/overtime/:id/reject
  * Nega as horas extras de um registro: zera o efeito (não paga, não acumula banco)
  * revertendo o crédito de banco de horas já lançado. O ponto continua aprovável depois.
@@ -1744,13 +1754,10 @@ const rejectOvertime = async (req, res) => {
     const { id } = req.params;
     const { comment } = req.body || {};
 
-    // Comentário obrigatório para negar horas extras
-    if (!comment || comment.trim().length < 5) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Comentário obrigatório para negar horas extras (mínimo 5 caracteres)',
-      });
-    }
+    // A justificativa é opcional para hora extra (continua obrigatória para
+    // rejeitar a MARCAÇÃO, que é outra trilha). O que não é opcional é o
+    // rastro dos minutos originais: sem ele o número negado não volta.
+    const trimmedComment = typeof comment === 'string' ? comment.trim() : '';
 
     const entry = await loadEntryForOvertimeDecision(req, res);
     if (!entry) return;
@@ -1784,7 +1791,7 @@ const rejectOvertime = async (req, res) => {
           timeEntryId: id,
           reviewerId: supervisorId,
           action: 'OVERTIME_REJECTED',
-          comment: `${comment.trim()} [HE original: ${entry.overtimeMinutes}min (50%: ${entry.overtimeMinutes50}min, 100%: ${entry.overtimeMinutes100}min), banco: ${entry.bankHoursAccruedMinutes}min]`,
+          comment: buildOvertimeRejectionNote(trimmedComment, entry),
         },
       }),
     ]);
