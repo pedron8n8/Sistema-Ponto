@@ -4,6 +4,7 @@ const { sendResendEmail } = require('../utils/resendNotifier');
 const { parseLocalDate } = require('../utils/timeCalculations');
 const { resolveVisibleUserIds, canViewUser } = require('../utils/visibleUsers');
 const { isHrLevel } = require('../utils/roles');
+const { getOvertimeBufferMinutes, resolveOrganizationAdminId } = require('../utils/overtimeBuffer');
 
 const TEAM_MEMBER_ROLES = ['INTEGRATOR', 'HR', 'SUPERVISOR', 'MEMBER'];
 
@@ -335,10 +336,20 @@ const updateHrEntry = async (req, res) => {
 
     const before = serializeEntry(entry);
 
+    // So carimba quando o registro estava ABERTO e esta sendo fechado agora —
+    // o espelho do clock-out. Registro ja fechado mantem o snapshot que tem:
+    // re-carimbar com a tolerancia atual e exatamente a regressao que o
+    // snapshot existe para impedir (ADMIN sobe a tolerancia, RH corrige um dia
+    // antigo, hora extra ja aprovada muda sozinha).
+    const isFirstClose = !entry.clockOut && Boolean(nextClockOut);
+    const bufferSnapshot = isFirstClose
+      ? { overtimeBufferMinutes: await getOvertimeBufferMinutes(resolveOrganizationAdminId(entry.user)) }
+      : {};
+
     await prisma.timeEntry.update({
       where: { id },
       // Registro aberto continua rastreando (mantém status atual); só aprovamos ao fechar.
-      data: nextClockOut ? { ...data, status: 'APPROVED' } : data,
+      data: nextClockOut ? { ...data, ...bufferSnapshot, status: 'APPROVED' } : data,
     });
 
     // Recalcula o(s) dia(s) afetado(s) — entrada pode ter mudado de dia.
@@ -395,6 +406,13 @@ const createHrEntry = async (req, res) => {
       return res.status(400).json({ error: 'Bad Request', message: 'breakMinutes inválido.' });
     }
 
+    // Registro nasce fechado: carimba a tolerancia vigente da empresa, como o
+    // clock-out faz. Sem isto o dia esquecido lancado pelo RH valeria 0 para
+    // sempre, mesmo com a empresa configurada.
+    const overtimeBufferMinutes = await getOvertimeBufferMinutes(
+      resolveOrganizationAdminId(target)
+    );
+
     const created = await prisma.timeEntry.create({
       data: {
         userId,
@@ -403,6 +421,7 @@ const createHrEntry = async (req, res) => {
         breakMinutes: normalizedBreak,
         notes: notes == null ? null : String(notes),
         status: 'APPROVED',
+        overtimeBufferMinutes,
       },
     });
 
