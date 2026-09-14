@@ -4,7 +4,13 @@ const path = require('path');
 const { prisma } = require('../config/database');
 const { getUtcDateRangeForDateOnly, resolveTimeZone } = require('../utils/dateFilters');
 const { resolveVisibleUserIds } = require('../utils/visibleUsers');
-const { calculateEntryPaymentRaw, resolveIncurredOvertime, resolveSettledOvertime } = require('../utils/entryPayment');
+const {
+  calculateEntryPaymentRaw,
+  calculateDayPaymentRaw,
+  resolveIncurredOvertime,
+  resolveSettledOvertime,
+} = require('../utils/entryPayment');
+const { resolveContractDailyMinutes } = require('../utils/overtime');
 
 const SUPPORTED_EXPORT_FORMATS = ['csv', 'xlsx'];
 
@@ -417,6 +423,7 @@ const getDailyBreakdown = async (req, res) => {
             email: true,
             hourlyRate: true,
             timeZone: true,
+            contractDailyMinutes: true,
           },
         },
       },
@@ -425,6 +432,12 @@ const getDailyBreakdown = async (req, res) => {
 
     const byUser = new Map();
 
+    // Este endpoint ja e um unico dia de calendario (dateRange acima), entao o teto
+    // contratual do dia se aplica somando TODOS os entries de um usuario neste loop
+    // antes de custear — nunca por entry. Por isso o loop so acumula minutos RAW
+    // (normalMinutes = trabalhado - HE incorrida, somado) e HE (incorrida/settled);
+    // quem aplica o teto e precifica e calculateDayPaymentRaw, uma unica vez por
+    // usuario, depois do loop.
     for (const entry of entries) {
       const workedMinutes =
         entry.workedMinutes && entry.workedMinutes > 0
@@ -436,34 +449,26 @@ const getDailyBreakdown = async (req, res) => {
       const bankAccrued = entry.bankHoursAccruedMinutes || 0;
       const hourlyRate = Number(entry.user.hourlyRate || 0);
 
-      // Pagina de custo: política "incurred" — TODA a HE registrada entra no adicional,
-      // decidida ou não, porque a pergunta aqui é "quanto esse dia custou" (pior caso).
-      // Usa a variante RAW (sem arredondar por entry): a soma por usuário abaixo
-      // acumula estes valores e só arredonda uma vez no fim, como o código original
-      // já fazia — arredondar aqui, por entry, acumularia centavos de erro ao longo
-      // de vários registros do mesmo usuário.
+      // Mesma exclusao de resolveRegularMinutes (reportWorker.js): normal = trabalhado
+      // menos TODA a HE registrada (decidida ou nao), para que HE ainda pendente (ou
+      // ja negada, com as colunas zeradas) nunca seja promovida a hora normal.
       const incurred = resolveIncurredOvertime(entry);
-      const payment = calculateEntryPaymentRaw({
+      const settled = resolveSettledOvertime(entry);
+      const normalMinutesForEntry = Math.max(
+        0,
+        workedMinutes - incurred.overtimeMinutes50 - incurred.overtimeMinutes100
+      );
+
+      // Linha de detalhe por entry (entries[] abaixo): informativa, mostra o custo
+      // "pior caso" (incurred) DESTE entry isolado, sem o teto do dia — igual ao
+      // comportamento de antes desta mudanca. O teto so vale para os agregados
+      // (regularCost/totalCost/settledCost) calculados apos o loop.
+      const entryPayment = calculateEntryPaymentRaw({
         workedMinutes,
         overtimeMinutes50: incurred.overtimeMinutes50,
         overtimeMinutes100: incurred.overtimeMinutes100,
         hourlyRate,
       });
-
-      // HE ainda aguardando decisão = incurred - settled. É o pedaço do custo acima
-      // que NÃO é pagável ainda (o export só paga a HE aprovada). Mesma lógica de
-      // arredondamento único no fim: acumula raw aqui.
-      const settled = resolveSettledOvertime(entry);
-      const pendingOvertimeMinutes50 = Math.max(0, incurred.overtimeMinutes50 - settled.overtimeMinutes50);
-      const pendingOvertimeMinutes100 = Math.max(0, incurred.overtimeMinutes100 - settled.overtimeMinutes100);
-      const pendingOvertimeMinutesForEntry = pendingOvertimeMinutes50 + pendingOvertimeMinutes100;
-      const pendingPremium = calculateEntryPaymentRaw({
-        workedMinutes: pendingOvertimeMinutesForEntry,
-        overtimeMinutes50: pendingOvertimeMinutes50,
-        overtimeMinutes100: pendingOvertimeMinutes100,
-        hourlyRate,
-      });
-      const pendingOvertimeCostForEntry = pendingPremium.overtimeTotalAmount;
 
       if (!byUser.has(entry.userId)) {
         byUser.set(entry.userId, {
@@ -474,14 +479,14 @@ const getDailyBreakdown = async (req, res) => {
             hourlyRate,
             timeZone: entry.user.timeZone,
           },
+          contractDailyMinutes: resolveContractDailyMinutes(entry.user.contractDailyMinutes),
           workedMinutes: 0,
           bankHoursAccruedMinutes: 0,
-          regularCost: 0,
-          overtime50Cost: 0,
-          overtime100Cost: 0,
-          totalCost: 0,
-          pendingOvertimeMinutes: 0,
-          pendingOvertimeCost: 0,
+          normalMinutes: 0,
+          incurredOvertimeMinutes50: 0,
+          incurredOvertimeMinutes100: 0,
+          settledOvertimeMinutes50: 0,
+          settledOvertimeMinutes100: 0,
           entries: [],
         });
       }
@@ -489,36 +494,68 @@ const getDailyBreakdown = async (req, res) => {
       const row = byUser.get(entry.userId);
       row.workedMinutes += workedMinutes;
       row.bankHoursAccruedMinutes += bankAccrued;
-      row.regularCost += payment.regularAmount;
-      row.overtime50Cost += payment.overtime50Amount;
-      row.overtime100Cost += payment.overtime100Amount;
-      row.totalCost += payment.totalAmount;
-      row.pendingOvertimeMinutes += pendingOvertimeMinutesForEntry;
-      row.pendingOvertimeCost += pendingOvertimeCostForEntry;
+      row.normalMinutes += normalMinutesForEntry;
+      row.incurredOvertimeMinutes50 += incurred.overtimeMinutes50;
+      row.incurredOvertimeMinutes100 += incurred.overtimeMinutes100;
+      row.settledOvertimeMinutes50 += settled.overtimeMinutes50;
+      row.settledOvertimeMinutes100 += settled.overtimeMinutes100;
       row.entries.push({
         id: entry.id,
         clockIn: entry.clockIn,
         clockOut: entry.clockOut,
         workedMinutes,
         bankHoursAccruedMinutes: bankAccrued,
-        totalCost: Number(payment.totalAmount.toFixed(2)),
+        totalCost: Number(entryPayment.totalAmount.toFixed(2)),
       });
     }
 
     const rows = Array.from(byUser.values()).map((row) => {
-      const totalCost = Number(row.totalCost.toFixed(2));
-      const pendingOvertimeCost = Number(row.pendingOvertimeCost.toFixed(2));
+      // "Custo" (pior caso): teto do dia + TODA a HE incorrida como adicional.
+      const incurredPayment = calculateDayPaymentRaw({
+        normalMinutes: row.normalMinutes,
+        overtimeMinutes50: row.incurredOvertimeMinutes50,
+        overtimeMinutes100: row.incurredOvertimeMinutes100,
+        contractDailyMinutes: row.contractDailyMinutes,
+        hourlyRate: row.user.hourlyRate,
+      });
+      // "Pagavel agora": mesmo teto do dia (mesmo normalMinutes/contrato — o normal
+      // nao muda com a decisao de HE), so a HE ja APPROVED como adicional.
+      const settledPayment = calculateDayPaymentRaw({
+        normalMinutes: row.normalMinutes,
+        overtimeMinutes50: row.settledOvertimeMinutes50,
+        overtimeMinutes100: row.settledOvertimeMinutes100,
+        contractDailyMinutes: row.contractDailyMinutes,
+        hourlyRate: row.user.hourlyRate,
+      });
+
+      const totalCost = Number(incurredPayment.totalAmount.toFixed(2));
+      // HE ainda aguardando decisão = adicional incurred - adicional settled. O
+      // "regular" e identico nos dois (mesmo normalMinutes/teto), entao essa
+      // diferenca so pode vir do adicional — exatamente a pergunta "quanto do
+      // custo acima ainda nao e pagavel".
+      const pendingOvertimeCost = Number(
+        (incurredPayment.overtimeTotalAmount - settledPayment.overtimeTotalAmount).toFixed(2)
+      );
+      const pendingOvertimeMinutes =
+        row.incurredOvertimeMinutes50 +
+        row.incurredOvertimeMinutes100 -
+        row.settledOvertimeMinutes50 -
+        row.settledOvertimeMinutes100;
+
       return {
-        ...row,
-        regularCost: Number(row.regularCost.toFixed(2)),
-        overtime50Cost: Number(row.overtime50Cost.toFixed(2)),
-        overtime100Cost: Number(row.overtime100Cost.toFixed(2)),
+        user: row.user,
+        workedMinutes: row.workedMinutes,
+        bankHoursAccruedMinutes: row.bankHoursAccruedMinutes,
+        regularCost: Number(incurredPayment.regularAmount.toFixed(2)),
+        overtime50Cost: Number(incurredPayment.overtime50Amount.toFixed(2)),
+        overtime100Cost: Number(incurredPayment.overtime100Amount.toFixed(2)),
         totalCost,
-        pendingOvertimeMinutes: row.pendingOvertimeMinutes,
+        pendingOvertimeMinutes,
         pendingOvertimeCost,
         // Derivado de totalCost - pendingOvertimeCost (não recalculado), para que a
         // igualdade totalCost === settledCost + pendingOvertimeCost valha por construção.
         settledCost: Number((totalCost - pendingOvertimeCost).toFixed(2)),
+        entries: row.entries,
       };
     });
 

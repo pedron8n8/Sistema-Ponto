@@ -414,12 +414,17 @@ describe('Report Controller', () => {
     });
 
     it('soma os valores RAW por usuario e arredonda uma unica vez, sem acumular centavos por entry', async () => {
-      // $8/h e 400min (6h40) por entry: (400/60)*8 = 53.3333... , que arredondado
-      // sozinho vira 53.33. Três entries desse usuário, se cada uma fosse arredondada
-      // ANTES de somar, dariam 3 * 53.33 = 159.99. Somando os valores RAW e
-      // arredondando uma única vez no final (como o código fazia antes da refatoração),
-      // o resultado exato é 3 * 53.333... = 160.00. As duas contas dão respostas
-      // diferentes de propósito — é essa divergência que o teste prova que não acontece.
+      // $8/h e 130min por entry: (130/60)*8 = 17.3333... , que arredondado sozinho
+      // vira 17.33. Três entries desse usuário no mesmo dia, se cada uma fosse
+      // arredondada ANTES de somar, dariam 3 * 17.33 = 51.99. Somando os valores RAW
+      // e arredondando uma única vez no final, o resultado exato é 390/60*8 = 52.00.
+      // As duas contas dão respostas diferentes de propósito — é essa divergência
+      // que o teste prova que não acontece.
+      // (Antes desta mudança este teste usava 3 entries de 400min = 1200min no dia;
+      // com o teto de contrato por dia agora em vigor, 1200min > 480min de contrato
+      // padrão faria o teto — não o arredondamento — dominar o resultado. Trocado
+      // para 130min * 3 = 390min, abaixo do contrato, para continuar testando SÓ o
+      // arredondamento, sem o teto interferir.)
       req.user = { id: 'admin-123', role: 'ADMIN', timeZone: 'UTC' };
       req.query = { date: '2026-05-08' };
 
@@ -427,8 +432,8 @@ describe('Report Controller', () => {
         id,
         userId: 'user-cents',
         clockIn: new Date('2026-05-08T13:00:00Z'),
-        clockOut: new Date('2026-05-08T19:40:00Z'),
-        workedMinutes: 400,
+        clockOut: new Date('2026-05-08T15:10:00Z'),
+        workedMinutes: 130,
         overtimeMinutes50: 0,
         overtimeMinutes100: 0,
         overtimeStatus: null,
@@ -448,15 +453,15 @@ describe('Report Controller', () => {
       const payload = res.json.mock.calls[0][0];
       const row = payload.rows.find((r) => r.user.id === 'user-cents');
 
-      // Soma dos RAW arredondada uma vez: 160.00. NÃO 159.99 (soma dos já arredondados).
-      expect(row.regularCost).toBe(160);
-      expect(row.totalCost).toBe(160);
-      expect(row.settledCost).toBe(160);
-      expect(payload.summary.totalCost).toBe(160);
+      // Soma dos RAW arredondada uma vez: 52.00. NÃO 51.99 (soma dos já arredondados).
+      expect(row.regularCost).toBe(52);
+      expect(row.totalCost).toBe(52);
+      expect(row.settledCost).toBe(52);
+      expect(payload.summary.totalCost).toBe(52);
 
-      // Cada linha individual de entries[] continua arredondada por entry (53.33),
+      // Cada linha individual de entries[] continua arredondada por entry (17.33),
       // exatamente como antes — só a soma por usuário muda de estratégia.
-      expect(row.entries.map((e) => e.totalCost)).toEqual([53.33, 53.33, 53.33]);
+      expect(row.entries.map((e) => e.totalCost)).toEqual([17.33, 17.33, 17.33]);
     });
 
     it('reconcilia totalCost = settledCost + pendingOvertimeCost com HE aprovada, pendente e sem HE', async () => {
@@ -543,6 +548,118 @@ describe('Report Controller', () => {
       expect(payload.summary.pendingOvertimeCost).toBe(35);
       expect(payload.summary.settledCost).toBe(275);
       expect(payload.summary.totalCost).toBe(payload.summary.settledCost + payload.summary.pendingOvertimeCost);
+    });
+
+    // Tabela de verificação do brief: contrato 480min (padrão, sem contractDailyMinutes
+    // no usuário), R$30/h. Cada caso isolado num usuário próprio para não interagir
+    // com o teto dos outros.
+    const makeRowEntry = ({ userId, workedMinutes, overtimeMinutes50 = 0, overtimeMinutes100 = 0, overtimeStatus = null }) => ({
+      id: `entry-${userId}`,
+      userId,
+      clockIn: new Date('2026-05-08T13:00:00Z'),
+      clockOut: new Date('2026-05-08T21:00:00Z'),
+      workedMinutes,
+      overtimeMinutes50,
+      overtimeMinutes100,
+      overtimeStatus,
+      bankHoursAccruedMinutes: 0,
+      user: { id: userId, name: userId, email: `${userId}@test.com`, hourlyRate: 30, timeZone: 'UTC' },
+    });
+
+    it('linha 1: worked 490, tolerância engoliu o excesso (OT 0) -> paga 240, não 245', async () => {
+      req.user = { id: 'admin-123', role: 'ADMIN', timeZone: 'UTC' };
+      req.query = { date: '2026-05-08' };
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'admin-123' }]);
+      mockPrisma.timeEntry.findMany.mockResolvedValue([
+        makeRowEntry({ userId: 'row1', workedMinutes: 490 }),
+      ]);
+
+      await reportController.getDailyBreakdown(req, res);
+
+      const row = res.json.mock.calls[0][0].rows[0];
+      expect(row.regularCost).toBe(240);
+      expect(row.totalCost).toBe(240);
+      expect(row.settledCost).toBe(240);
+    });
+
+    it('linha 2: worked 495, mesma tolerância -> paga 240, não 247.50', async () => {
+      req.user = { id: 'admin-123', role: 'ADMIN', timeZone: 'UTC' };
+      req.query = { date: '2026-05-08' };
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'admin-123' }]);
+      mockPrisma.timeEntry.findMany.mockResolvedValue([
+        makeRowEntry({ userId: 'row2', workedMinutes: 495 }),
+      ]);
+
+      await reportController.getDailyBreakdown(req, res);
+
+      const row = res.json.mock.calls[0][0].rows[0];
+      expect(row.totalCost).toBe(240);
+    });
+
+    it('linha 3: worked 540, HE 60min APROVADA -> inalterado (285)', async () => {
+      req.user = { id: 'admin-123', role: 'ADMIN', timeZone: 'UTC' };
+      req.query = { date: '2026-05-08' };
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'admin-123' }]);
+      mockPrisma.timeEntry.findMany.mockResolvedValue([
+        makeRowEntry({ userId: 'row3', workedMinutes: 540, overtimeMinutes50: 60, overtimeStatus: 'APPROVED' }),
+      ]);
+
+      await reportController.getDailyBreakdown(req, res);
+
+      const row = res.json.mock.calls[0][0].rows[0];
+      expect(row.totalCost).toBe(285);
+      expect(row.settledCost).toBe(285);
+      expect(row.pendingOvertimeCost).toBe(0);
+    });
+
+    it('linha 4: worked 540, HE 60min NEGADA (colunas zeradas) -> não volta como hora normal (240, não 270)', async () => {
+      req.user = { id: 'admin-123', role: 'ADMIN', timeZone: 'UTC' };
+      req.query = { date: '2026-05-08' };
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'admin-123' }]);
+      mockPrisma.timeEntry.findMany.mockResolvedValue([
+        // rejectOvertime zera overtimeMinutes50/100 e marca overtimeStatus REJECTED.
+        makeRowEntry({ userId: 'row4', workedMinutes: 540, overtimeMinutes50: 0, overtimeStatus: 'REJECTED' }),
+      ]);
+
+      await reportController.getDailyBreakdown(req, res);
+
+      const row = res.json.mock.calls[0][0].rows[0];
+      expect(row.totalCost).toBe(240);
+      expect(row.settledCost).toBe(240);
+      expect(row.pendingOvertimeCost).toBe(0);
+    });
+
+    it('teto por dia, não por entry: dois entries de 300 e 240min pagam min(540,480), não 300+240', async () => {
+      req.user = { id: 'admin-123', role: 'ADMIN', timeZone: 'UTC' };
+      req.query = { date: '2026-05-08' };
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'admin-123' }]);
+      mockPrisma.timeEntry.findMany.mockResolvedValue([
+        { ...makeRowEntry({ userId: 'split', workedMinutes: 300 }), id: 'entry-split-1' },
+        { ...makeRowEntry({ userId: 'split', workedMinutes: 240 }), id: 'entry-split-2' },
+      ]);
+
+      await reportController.getDailyBreakdown(req, res);
+
+      const row = res.json.mock.calls[0][0].rows[0];
+      // min(540, 480) = 480min a R$30/h = 240, não 300+240=540min (270).
+      expect(row.workedMinutes).toBe(540);
+      expect(row.totalCost).toBe(240);
+      expect(row.settledCost).toBe(240);
+    });
+
+    it('dia abaixo do contrato fica inalterado: 400 trabalhado paga 400min (200)', async () => {
+      req.user = { id: 'admin-123', role: 'ADMIN', timeZone: 'UTC' };
+      req.query = { date: '2026-05-08' };
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'admin-123' }]);
+      mockPrisma.timeEntry.findMany.mockResolvedValue([
+        makeRowEntry({ userId: 'below', workedMinutes: 400 }),
+      ]);
+
+      await reportController.getDailyBreakdown(req, res);
+
+      const row = res.json.mock.calls[0][0].rows[0];
+      expect(row.totalCost).toBe(200);
+      expect(row.settledCost).toBe(200);
     });
   });
 });

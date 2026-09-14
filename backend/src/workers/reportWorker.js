@@ -4,8 +4,9 @@ const redis = require('../config/redis');
 const fs = require('fs');
 const path = require('path');
 const xlsx = require('xlsx');
-const { parseDateFilter } = require('../utils/dateFilters');
-const { calculateEntryPaymentRaw, resolveSettledOvertime } = require('../utils/entryPayment');
+const { parseDateFilter, resolveTimeZone } = require('../utils/dateFilters');
+const { calculateEntryPaymentRaw, calculateDayPaymentRaw, resolveSettledOvertime } = require('../utils/entryPayment');
+const { resolveContractDailyMinutes } = require('../utils/overtime');
 
 // Fila de exportação de relatórios
 const QUEUE_NAME = process.env.NODE_ENV === 'development' ? 'report-export-dev' : 'report-export';
@@ -42,6 +43,26 @@ const formatTime = (value) =>
 
 const resolveStatusLabel = (status) => STATUS_LABELS[status] || status || '';
 const resolveActionLabel = (action) => ACTION_LABELS[action] || action || '';
+
+// Chave de dia (YYYY-MM-DD) no fuso do usuário — o teto contratual é por dia
+// civil DAQUELA pessoa, não por UTC nem pelo fuso de quem pediu o export.
+// Mesma técnica de getDateKeyForTimeZone em workers/proactiveAlertWorker.js
+// (Intl.DateTimeFormat 'en-CA', que já devolve no formato YYYY-MM-DD), só que
+// generalizada para uma data qualquer — lá é sempre "agora". resolveTimeZone
+// (utils/dateFilters, já importado acima para parseDateFilter) dá o mesmo
+// fallback de fuso usado no resto do relatório quando o usuário não tem um.
+const resolveDayKeyForUser = (date, timeZone) => {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: resolveTimeZone(timeZone),
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date(date));
+  } catch (_error) {
+    return new Date(date).toISOString().slice(0, 10);
+  }
+};
 
 const resolveBreakMinutes = (value) => {
   const parsed = Number(value);
@@ -113,11 +134,12 @@ const resolveRegularMinutes = (entry) => {
 // normais aprovadas + HE aprovada — de forma que a subtração interna da
 // função reproduza exatamente resolveRegularMinutes(entry) minutos de hora normal.
 //
-// Usa a variante RAW (sem arredondar): buildSummary soma este valor entre vários
-// entries do mesmo usuário e só arredonda uma vez no fim (toMoney); arredondar
-// aqui por entry acumularia 1-2 centavos de erro ao longo de vários registros.
-// buildDailyLogs, que consome uma linha por vez, também já arredonda no ponto
-// de saída — devolver o valor raw aqui não muda nada para ele.
+// Único consumidor hoje é buildDailyLogs (uma linha por entry, informativa — não
+// leva o teto do contrato do dia, que é um conceito agregado por usuário/dia).
+// buildSummary NÃO usa mais esta função: ela precisa do teto por (usuário, dia),
+// então soma minutos crus por dia e precifica com entryPayment.calculateDayPaymentRaw
+// (ver dayBuckets ali). Aqui devolvemos RAW (sem arredondar) só por convenção —
+// buildDailyLogs arredonda no ponto de saída de qualquer forma.
 const resolveEntryPayment = (entry) => {
   const rate = resolveHourlyRate(entry.user);
   if (rate <= 0) {
@@ -223,54 +245,78 @@ const buildSummary = (entries) => {
     'Payment Settled',
   ];
 
-  const grouped = new Map();
-
+  // Passo 1: agrupa por (usuário, dia civil DO USUÁRIO) — o teto contratual é por
+  // pessoa-dia, nunca pela janela inteira do relatório nem por entry isolado.
   // ponytail: REJECTED não entra em nenhum bucket — hora rejeitada não é hora a pagar.
+  const dayBuckets = new Map();
+
   entries
     .filter((entry) => entry.status === 'PENDING' || entry.status === 'APPROVED')
     .forEach((entry) => {
-      const userKey = entry.user.id;
-      if (!grouped.has(userKey)) {
-        grouped.set(userKey, {
-          user: entry.user,
-          pendingEntries: 0,
-          approvedEntries: 0,
-          normalMinutes: 0,
-          approvedOtMinutes: 0,
-          pendingMinutes: 0,
-          approvedMinutes: 0,
-          totalBreakMinutes: 0,
-          pendingPayment: 0,
-          approvedPayment: 0,
-          hasAccrual: false,
-          hasPending: false,
-        });
+      const dayKey = resolveDayKeyForUser(entry.clockIn, entry.user.timeZone);
+      const bucketKey = `${entry.user.id}::${dayKey}`;
+      if (!dayBuckets.has(bucketKey)) {
+        dayBuckets.set(bucketKey, { user: entry.user, entries: [] });
       }
+      dayBuckets.get(bucketKey).entries.push(entry);
+    });
 
-      const summary = grouped.get(userKey);
+  // Passo 2: dentro de cada dia de cada usuário, capa os minutos normais do DIA
+  // INTEIRO (soma de todos os entries daquele dia, decidido ou não — mesma
+  // exclusão de resolveRegularMinutes) no contrato, e só então soma no total do
+  // usuário. Aprovado tem prioridade sobre o teto (já confirmado, não perde
+  // minutos por causa de um entry pendente no mesmo dia); pendente fica com o
+  // que sobrar do teto — nunca inventa minutos normais além dele. HE pendente
+  // nunca leva adicional, decisão que já existia e não muda aqui.
+  const grouped = new Map();
+
+  dayBuckets.forEach((bucket) => {
+    const userKey = bucket.user.id;
+    if (!grouped.has(userKey)) {
+      grouped.set(userKey, {
+        user: bucket.user,
+        pendingEntries: 0,
+        approvedEntries: 0,
+        normalMinutes: 0,
+        approvedOtMinutes: 0,
+        pendingMinutes: 0,
+        approvedMinutes: 0,
+        totalBreakMinutes: 0,
+        pendingPayment: 0,
+        approvedPayment: 0,
+        hasAccrual: false,
+        hasPending: false,
+      });
+    }
+
+    const summary = grouped.get(userKey);
+    const contractDailyMinutes = resolveContractDailyMinutes(bucket.user.contractDailyMinutes);
+    const rate = resolveHourlyRate(bucket.user);
+
+    let dayNormalMinutesRaw = 0;
+    let dayApprovedNormalMinutesRaw = 0;
+    let dayApprovedOt50 = 0;
+    let dayApprovedOt100 = 0;
+
+    bucket.entries.forEach((entry) => {
       const regularMinutes = resolveRegularMinutes(entry);
       const { ot50, ot100 } = resolveApprovedOvertime(entry);
-      // Horas faturáveis: só tempo normal + HE aprovada. HE pendente fica fora do resumo
-      // até ser decidida, por isso não é a mesma coisa que workedMinutes.
-      const billableMinutes = regularMinutes + ot50 + ot100;
-      const payment = resolveEntryPayment(entry);
-      const accrual = entry.bankHoursEntries?.[0];
 
-      summary.normalMinutes += regularMinutes;
-      summary.approvedOtMinutes += ot50 + ot100;
-
-      if (entry.status === 'PENDING') {
-        summary.pendingEntries += 1;
-        summary.pendingMinutes += billableMinutes;
-        summary.pendingPayment += payment;
-      } else {
-        summary.approvedEntries += 1;
-        summary.approvedMinutes += billableMinutes;
-        summary.approvedPayment += payment;
+      dayNormalMinutesRaw += regularMinutes;
+      if (entry.status === 'APPROVED') {
+        dayApprovedNormalMinutesRaw += regularMinutes;
       }
+      dayApprovedOt50 += ot50;
+      dayApprovedOt100 += ot100;
 
       summary.totalBreakMinutes += resolveBreakMinutes(entry.breakMinutes);
+      if (entry.status === 'PENDING') {
+        summary.pendingEntries += 1;
+      } else {
+        summary.approvedEntries += 1;
+      }
 
+      const accrual = entry.bankHoursEntries?.[0];
       if (accrual) {
         summary.hasAccrual = true;
         if (accrual.paymentStatus === 'PENDING') {
@@ -278,6 +324,30 @@ const buildSummary = (entries) => {
         }
       }
     });
+
+    // Teto do dia inteiro (qualquer status) e a fatia dele que HE aprovada usa —
+    // ver comentário do passo 2 acima para a prioridade aprovado-primeiro.
+    const dayCappedNormalMinutes = Math.min(dayNormalMinutesRaw, contractDailyMinutes);
+    const approvedNormalMinutes = Math.min(dayApprovedNormalMinutesRaw, contractDailyMinutes);
+    const pendingNormalMinutes = Math.max(0, dayCappedNormalMinutes - approvedNormalMinutes);
+
+    const approvedPayment = calculateDayPaymentRaw({
+      normalMinutes: approvedNormalMinutes,
+      overtimeMinutes50: dayApprovedOt50,
+      overtimeMinutes100: dayApprovedOt100,
+      contractDailyMinutes,
+      hourlyRate: rate,
+    });
+
+    summary.normalMinutes += dayCappedNormalMinutes;
+    summary.approvedOtMinutes += dayApprovedOt50 + dayApprovedOt100;
+    summary.approvedMinutes += approvedNormalMinutes + dayApprovedOt50 + dayApprovedOt100;
+    summary.pendingMinutes += pendingNormalMinutes;
+    summary.approvedPayment += approvedPayment.totalAmount;
+    // Pendente nunca leva adicional (HE ainda não decidida não é paga) — só o
+    // que sobrou do teto do dia, à taxa normal.
+    summary.pendingPayment += rate > 0 ? (pendingNormalMinutes / 60) * rate : 0;
+  });
 
   const toHours = (minutes) => (minutes > 0 ? (minutes / 60).toFixed(2) : '0.00');
 
@@ -359,6 +429,8 @@ const getReportData = async (filters) => {
           email: true,
           role: true,
           hourlyRate: true,
+          timeZone: true,
+          contractDailyMinutes: true,
           supervisor: {
             select: {
               name: true,

@@ -3,6 +3,7 @@
 
 const {
   calculateEntryPayment,
+  calculateDayPaymentRaw,
   resolveSettledOvertime,
   resolveIncurredOvertime,
 } = require('../../src/utils/entryPayment');
@@ -166,5 +167,123 @@ describe('incurred = settled + pending', () => {
     const settled = resolveSettledOvertime(entry);
 
     expect(incurred).toEqual(settled);
+  });
+});
+
+// calculateDayPaymentRaw recebe `normalMinutes` JÁ somado do dia inteiro e JÁ
+// excluindo HE (trabalhado - HE incorrida, responsabilidade do chamador — a mesma
+// exclusão de resolveRegularMinutes/resolveIncurredOvertime) e só então aplica o
+// teto do contrato. As quatro linhas abaixo são a tabela de verificação do brief:
+// contrato 480min, R$30/h.
+describe('calculateDayPaymentRaw', () => {
+  it('linha 1: worked 490 com tolerância engolindo o excesso (OT 0) -> paga só o teto (240, não 245)', () => {
+    // normalMinutes = 490 trabalhado - 0 HE incorrida (colunas em 0, status null)
+    const result = calculateDayPaymentRaw({
+      normalMinutes: 490,
+      overtimeMinutes50: 0,
+      overtimeMinutes100: 0,
+      contractDailyMinutes: 480,
+      hourlyRate: 30,
+    });
+
+    expect(result.regularMinutes).toBe(480);
+    expect(result.regularAmount).toBe(240);
+    expect(result.totalAmount).toBe(240);
+  });
+
+  it('linha 2: worked 495, mesma tolerância -> mesmo teto (240, não 247.50)', () => {
+    const result = calculateDayPaymentRaw({
+      normalMinutes: 495,
+      overtimeMinutes50: 0,
+      overtimeMinutes100: 0,
+      contractDailyMinutes: 480,
+      hourlyRate: 30,
+    });
+
+    expect(result.regularAmount).toBe(240);
+    expect(result.totalAmount).toBe(240);
+  });
+
+  it('linha 3: worked 540, HE 60min APROVADA -> inalterado (285)', () => {
+    // normalMinutes = 540 trabalhado - 60 HE incorrida = 480 (já no teto, sem sobra
+    // acima dele) — por isso o teto não muda nada aqui, igual ao valor de antes.
+    const result = calculateDayPaymentRaw({
+      normalMinutes: 480,
+      overtimeMinutes50: 60,
+      overtimeMinutes100: 0,
+      contractDailyMinutes: 480,
+      hourlyRate: 30,
+    });
+
+    expect(result.regularAmount).toBe(240);
+    expect(result.overtime50Amount).toBe(45);
+    expect(result.totalAmount).toBe(285);
+  });
+
+  it('linha 4: worked 540, HE 60min NEGADA (colunas zeradas) -> não vira hora normal (240, não 270)', () => {
+    // rejectOvertime zera as colunas: HE incorrida = 0, então normalMinutes = 540 -
+    // 0 = 540 (não 480); e overtimeMinutes50/100 aqui é a HE SETTLED (aprovada),
+    // que para uma HE negada é sempre 0 — é o teto do contrato, sozinho, que
+    // impede os 540 de virarem 540min de hora normal.
+    const result = calculateDayPaymentRaw({
+      normalMinutes: 540,
+      overtimeMinutes50: 0,
+      overtimeMinutes100: 0,
+      contractDailyMinutes: 480,
+      hourlyRate: 30,
+    });
+
+    expect(result.regularMinutes).toBe(480);
+    expect(result.regularAmount).toBe(240);
+    expect(result.overtimeTotalAmount).toBe(0);
+    expect(result.totalAmount).toBe(240);
+  });
+
+  it('o teto é por DIA, não por entry: 300+240 já somados pagam min(540,480), não 300+240', () => {
+    const result = calculateDayPaymentRaw({
+      normalMinutes: 300 + 240,
+      overtimeMinutes50: 0,
+      overtimeMinutes100: 0,
+      contractDailyMinutes: 480,
+      hourlyRate: 30,
+    });
+
+    expect(result.regularMinutes).toBe(480);
+    expect(result.regularAmount).toBe(240);
+    expect(result.totalAmount).toBe(240);
+  });
+
+  it('dia abaixo do contrato fica inalterado: 400 trabalhado paga 400', () => {
+    const result = calculateDayPaymentRaw({
+      normalMinutes: 400,
+      overtimeMinutes50: 0,
+      overtimeMinutes100: 0,
+      contractDailyMinutes: 480,
+      hourlyRate: 30,
+    });
+
+    expect(result.regularMinutes).toBe(400);
+    expect(result.regularAmount).toBe(200);
+    expect(result.totalAmount).toBe(200);
+  });
+
+  it('retorna tudo zerado quando a taxa é zero', () => {
+    expect(
+      calculateDayPaymentRaw({
+        normalMinutes: 600,
+        overtimeMinutes50: 60,
+        overtimeMinutes100: 0,
+        contractDailyMinutes: 480,
+        hourlyRate: 0,
+      })
+    ).toEqual({
+      hourlyRate: 0,
+      regularMinutes: 0,
+      regularAmount: 0,
+      overtime50Amount: 0,
+      overtime100Amount: 0,
+      overtimeTotalAmount: 0,
+      totalAmount: 0,
+    });
   });
 });
