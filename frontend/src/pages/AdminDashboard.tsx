@@ -275,6 +275,9 @@ const AdminDashboard = () => {
     centerLng: '',
     radiusMeters: '200',
   })
+  const [overtimeBufferForm, setOvertimeBufferForm] = useState('0')
+  const [overtimeSettingsLoading, setOvertimeSettingsLoading] = useState(false)
+  const [overtimeSettingsSaving, setOvertimeSettingsSaving] = useState(false)
   const [errorByUser, setErrorByUser] = useState<Record<string, string>>({})
   const [noticeByUser, setNoticeByUser] = useState<Record<string, string>>({})
   const [form, setForm] = useState({
@@ -441,6 +444,22 @@ const AdminDashboard = () => {
     }
   }
 
+  // Sem gate de plano, ao contrario de loadLocationSettings: a tolerancia decide
+  // folha de pagamento e nao e recurso de pacote.
+  const loadOvertimeSettings = async () => {
+    if (!token) return
+    setOvertimeSettingsLoading(true)
+    try {
+      const response = await apiFetch<{ overtimeSettings: { bufferMinutes: number } }>(
+        '/admin/overtime-settings',
+        { token }
+      )
+      setOvertimeBufferForm(String(response.overtimeSettings?.bufferMinutes ?? 0))
+    } finally {
+      setOvertimeSettingsLoading(false)
+    }
+  }
+
   useEffect(() => {
     loadUsers().catch(() => undefined)
   }, [token, isSuperAdmin, selectedAdminId])
@@ -459,6 +478,10 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     loadLocationSettings().catch(() => undefined)
+  }, [token])
+
+  useEffect(() => {
+    loadOvertimeSettings().catch(() => undefined)
   }, [token])
 
   useEffect(() => {
@@ -1005,6 +1028,55 @@ const AdminDashboard = () => {
     }
   }
 
+  const handleSaveOvertimeSettings = async () => {
+    if (!token) return
+    setError('')
+    setNotice('')
+
+    const parsed = Number(overtimeBufferForm)
+    // Mesma faixa que o servidor recusa com 400: o campo avisa antes de gastar
+    // uma ida ao servidor, mas quem manda continua sendo o backend.
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 120) {
+      setError(
+        t(
+          'Overtime tolerance must be a whole number of minutes between 0 and 120.',
+          'A tolerancia de hora extra deve ser um numero inteiro de minutos entre 0 e 120.'
+        )
+      )
+      return
+    }
+
+    setOvertimeSettingsSaving(true)
+    try {
+      // skipIdempotency: salvar o mesmo valor duas vezes no mesmo dia voltaria
+      // 202 sem overtimeSettings no corpo, e a tela leria undefined.
+      const response = await apiFetch<{
+        overtimeSettings: { bufferMinutes: number }
+        message: string
+      }>('/admin/overtime-settings', {
+        token,
+        method: 'PATCH',
+        body: { bufferMinutes: parsed },
+        skipIdempotency: true,
+      })
+
+      setOvertimeBufferForm(String(response.overtimeSettings.bufferMinutes))
+      setNotice(
+        response.message
+          ? translateApiMessage(response.message)
+          : t('Overtime settings updated.', 'Configuracao de hora extra atualizada.')
+      )
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : t('Could not save overtime settings.', 'Erro ao salvar configuracao de hora extra')
+      )
+    } finally {
+      setOvertimeSettingsSaving(false)
+    }
+  }
+
   return (
     <section className="grid gap-6">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
@@ -1234,6 +1306,61 @@ const AdminDashboard = () => {
           </div>
         </div>
         ) : null}
+
+        <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm lg:col-span-2">
+          <h3 className="text-lg font-semibold text-slate-900">
+            {t('Overtime tolerance', 'Tolerancia de hora extra')}
+          </h3>
+          <p className="mt-2 text-xs text-slate-500">
+            {t(
+              'Minutes past the daily contract that do not generate overtime. It is a trigger, not a discount: with a 10-minute tolerance, 25 extra minutes are still worth 25, not 15. Applies to the whole day, and the value in force at clock-out is the one stored on the entry.',
+              'Minutos acima da jornada diaria que nao geram hora extra. E um gatilho, nao um desconto: com tolerancia de 10, 25 minutos extras continuam valendo 25, e nao 15. Vale para o dia inteiro, e o valor vigente no fechamento e o que fica gravado no registro.'
+            )}
+          </p>
+
+          {overtimeSettingsLoading ? (
+            <p className="mt-2 text-xs text-slate-500">
+              {t('Loading overtime settings...', 'Carregando configuracao de hora extra...')}
+            </p>
+          ) : null}
+
+          <div className="mt-4 flex flex-wrap items-end gap-3">
+            <div>
+              <label
+                htmlFor="overtime-buffer-minutes"
+                className="block text-[11px] font-semibold text-slate-700"
+              >
+                {t('Tolerance (minutes)', 'Tolerancia (minutos)')}
+              </label>
+              <input
+                id="overtime-buffer-minutes"
+                type="number"
+                min={0}
+                max={120}
+                step={1}
+                value={overtimeBufferForm}
+                onChange={(event) => setOvertimeBufferForm(event.target.value)}
+                className="mt-1 w-32 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+              />
+            </div>
+            <button
+              onClick={handleSaveOvertimeSettings}
+              disabled={overtimeSettingsSaving}
+              className="rounded-full bg-teal-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              {overtimeSettingsSaving
+                ? t('Saving...', 'Salvando...')
+                : t('Save overtime tolerance', 'Salvar tolerancia de hora extra')}
+            </button>
+          </div>
+
+          <p className="mt-3 text-xs text-slate-500">
+            {t(
+              '0 disables the tolerance: any minute past the contract generates overtime, which is how the system behaved before this setting existed. Changing it never recalculates past days.',
+              '0 desliga a tolerancia: qualquer minuto acima da jornada gera hora extra, que e como o sistema se comportava antes desta configuracao existir. Mudar o valor nunca recalcula dias passados.'
+            )}
+          </p>
+        </div>
 
         <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
           <h3 className="text-lg font-semibold text-slate-900">{t('Users', 'Usuarios')}</h3>
