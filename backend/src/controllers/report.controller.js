@@ -4,7 +4,7 @@ const path = require('path');
 const { prisma } = require('../config/database');
 const { getUtcDateRangeForDateOnly, resolveTimeZone } = require('../utils/dateFilters');
 const { resolveVisibleUserIds } = require('../utils/visibleUsers');
-const { calculateEntryPayment, resolveIncurredOvertime, resolveSettledOvertime } = require('../utils/entryPayment');
+const { calculateEntryPaymentRaw, resolveIncurredOvertime, resolveSettledOvertime } = require('../utils/entryPayment');
 
 const SUPPORTED_EXPORT_FORMATS = ['csv', 'xlsx'];
 
@@ -438,8 +438,12 @@ const getDailyBreakdown = async (req, res) => {
 
       // Pagina de custo: política "incurred" — TODA a HE registrada entra no adicional,
       // decidida ou não, porque a pergunta aqui é "quanto esse dia custou" (pior caso).
+      // Usa a variante RAW (sem arredondar por entry): a soma por usuário abaixo
+      // acumula estes valores e só arredonda uma vez no fim, como o código original
+      // já fazia — arredondar aqui, por entry, acumularia centavos de erro ao longo
+      // de vários registros do mesmo usuário.
       const incurred = resolveIncurredOvertime(entry);
-      const payment = calculateEntryPayment({
+      const payment = calculateEntryPaymentRaw({
         workedMinutes,
         overtimeMinutes50: incurred.overtimeMinutes50,
         overtimeMinutes100: incurred.overtimeMinutes100,
@@ -447,12 +451,13 @@ const getDailyBreakdown = async (req, res) => {
       });
 
       // HE ainda aguardando decisão = incurred - settled. É o pedaço do custo acima
-      // que NÃO é pagável ainda (o export só paga a HE aprovada).
+      // que NÃO é pagável ainda (o export só paga a HE aprovada). Mesma lógica de
+      // arredondamento único no fim: acumula raw aqui.
       const settled = resolveSettledOvertime(entry);
       const pendingOvertimeMinutes50 = Math.max(0, incurred.overtimeMinutes50 - settled.overtimeMinutes50);
       const pendingOvertimeMinutes100 = Math.max(0, incurred.overtimeMinutes100 - settled.overtimeMinutes100);
       const pendingOvertimeMinutesForEntry = pendingOvertimeMinutes50 + pendingOvertimeMinutes100;
-      const pendingPremium = calculateEntryPayment({
+      const pendingPremium = calculateEntryPaymentRaw({
         workedMinutes: pendingOvertimeMinutesForEntry,
         overtimeMinutes50: pendingOvertimeMinutes50,
         overtimeMinutes100: pendingOvertimeMinutes100,

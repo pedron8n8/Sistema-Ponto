@@ -15,8 +15,16 @@
 // Se um dia alguem "unificar" essas duas politicas em uma so, essa pessoa esta
 // apagando uma das duas perguntas que este modulo responde — nao corrigindo uma
 // duplicacao.
-
-const calculateEntryPayment = ({ workedMinutes, overtimeMinutes50, overtimeMinutes100, hourlyRate }) => {
+//
+// Arredondamento: calculateEntryPaymentRaw NAO arredonda nada — devolve os
+// valores exatos em ponto flutuante. calculateEntryPayment arredonda por cima
+// dela para 2 casas, e e a forma certa para um valor que sai sozinho (a
+// resposta do clock-out, uma linha de export). Quem SOMA o pagamento de varios
+// entries de um mesmo usuario (relatorio de custo, resumo do export) deve
+// somar os valores RAW e arredondar uma unica vez no final — exatamente como o
+// codigo original fazia — para nao acumular 1-2 centavos de erro por causa de
+// arredondar entry por entry antes de somar.
+const calculateEntryPaymentRaw = ({ workedMinutes, overtimeMinutes50, overtimeMinutes100, hourlyRate }) => {
   const rate = Number(hourlyRate || 0);
   if (!Number.isFinite(rate) || rate <= 0) {
     return {
@@ -37,12 +45,29 @@ const calculateEntryPayment = ({ workedMinutes, overtimeMinutes50, overtimeMinut
   const totalAmount = regularAmount + overtimeTotalAmount;
 
   return {
-    hourlyRate: Number(rate.toFixed(2)),
-    regularAmount: Number(regularAmount.toFixed(2)),
-    overtime50Amount: Number(overtime50Amount.toFixed(2)),
-    overtime100Amount: Number(overtime100Amount.toFixed(2)),
-    overtimeTotalAmount: Number(overtimeTotalAmount.toFixed(2)),
-    totalAmount: Number(totalAmount.toFixed(2)),
+    hourlyRate: rate,
+    regularAmount,
+    overtime50Amount,
+    overtime100Amount,
+    overtimeTotalAmount,
+    totalAmount,
+  };
+};
+
+const roundMoney = (value) => (Number.isFinite(value) ? Number(value.toFixed(2)) : 0);
+
+// Wrapper fino de arredondamento sobre calculateEntryPaymentRaw. Forma e valores
+// identicos ao antigo calculateFinancialSummary — e o que a resposta do
+// clock-out e qualquer outro consumidor de UM valor isolado devem usar.
+const calculateEntryPayment = (args) => {
+  const raw = calculateEntryPaymentRaw(args);
+  return {
+    hourlyRate: roundMoney(raw.hourlyRate),
+    regularAmount: roundMoney(raw.regularAmount),
+    overtime50Amount: roundMoney(raw.overtime50Amount),
+    overtime100Amount: roundMoney(raw.overtime100Amount),
+    overtimeTotalAmount: roundMoney(raw.overtimeTotalAmount),
+    totalAmount: roundMoney(raw.totalAmount),
   };
 };
 
@@ -67,6 +92,7 @@ const resolveIncurredOvertime = (entry) => ({
 
 module.exports = {
   calculateEntryPayment,
+  calculateEntryPaymentRaw,
   resolveSettledOvertime,
   resolveIncurredOvertime,
 };

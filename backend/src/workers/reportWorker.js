@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const xlsx = require('xlsx');
 const { parseDateFilter } = require('../utils/dateFilters');
-const { calculateEntryPayment, resolveSettledOvertime } = require('../utils/entryPayment');
+const { calculateEntryPaymentRaw, resolveSettledOvertime } = require('../utils/entryPayment');
 
 // Fila de exportação de relatórios
 const QUEUE_NAME = process.env.NODE_ENV === 'development' ? 'report-export-dev' : 'report-export';
@@ -105,13 +105,19 @@ const resolveRegularMinutes = (entry) => {
   return Math.max(0, resolveWorkedMinutes(entry) - ot50 - ot100);
 };
 
-// Usa a aritmética compartilhada (entryPayment.calculateEntryPayment), mas a política
-// do export diverge da de custo: horas normais continuam descontando TODA a HE
-// (resolveRegularMinutes, inalterado), enquanto o adicional só entra para a HE já
-// aprovada (resolveApprovedOvertime). Para reaproveitar a mesma função pura sem
-// duplicar a fórmula, passamos um "workedMinutes" sintético — normais aprovadas +
-// HE aprovada — de forma que a subtração interna da função reproduza exatamente
-// resolveRegularMinutes(entry) minutos de hora normal.
+// Usa a aritmética compartilhada (entryPayment.calculateEntryPaymentRaw), mas a
+// política do export diverge da de custo: horas normais continuam descontando
+// TODA a HE (resolveRegularMinutes, inalterado), enquanto o adicional só entra
+// para a HE já aprovada (resolveApprovedOvertime). Para reaproveitar a mesma
+// função pura sem duplicar a fórmula, passamos um "workedMinutes" sintético —
+// normais aprovadas + HE aprovada — de forma que a subtração interna da
+// função reproduza exatamente resolveRegularMinutes(entry) minutos de hora normal.
+//
+// Usa a variante RAW (sem arredondar): buildSummary soma este valor entre vários
+// entries do mesmo usuário e só arredonda uma vez no fim (toMoney); arredondar
+// aqui por entry acumularia 1-2 centavos de erro ao longo de vários registros.
+// buildDailyLogs, que consome uma linha por vez, também já arredonda no ponto
+// de saída — devolver o valor raw aqui não muda nada para ele.
 const resolveEntryPayment = (entry) => {
   const rate = resolveHourlyRate(entry.user);
   if (rate <= 0) {
@@ -121,7 +127,7 @@ const resolveEntryPayment = (entry) => {
   const { ot50, ot100 } = resolveApprovedOvertime(entry);
   const regularMinutes = resolveRegularMinutes(entry);
 
-  const { totalAmount } = calculateEntryPayment({
+  const { totalAmount } = calculateEntryPaymentRaw({
     workedMinutes: regularMinutes + ot50 + ot100,
     overtimeMinutes50: ot50,
     overtimeMinutes100: ot100,

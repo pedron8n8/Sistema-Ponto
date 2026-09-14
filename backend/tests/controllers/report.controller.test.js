@@ -413,6 +413,52 @@ describe('Report Controller', () => {
       );
     });
 
+    it('soma os valores RAW por usuario e arredonda uma unica vez, sem acumular centavos por entry', async () => {
+      // $8/h e 400min (6h40) por entry: (400/60)*8 = 53.3333... , que arredondado
+      // sozinho vira 53.33. Três entries desse usuário, se cada uma fosse arredondada
+      // ANTES de somar, dariam 3 * 53.33 = 159.99. Somando os valores RAW e
+      // arredondando uma única vez no final (como o código fazia antes da refatoração),
+      // o resultado exato é 3 * 53.333... = 160.00. As duas contas dão respostas
+      // diferentes de propósito — é essa divergência que o teste prova que não acontece.
+      req.user = { id: 'admin-123', role: 'ADMIN', timeZone: 'UTC' };
+      req.query = { date: '2026-05-08' };
+
+      const makeEntry = (id) => ({
+        id,
+        userId: 'user-cents',
+        clockIn: new Date('2026-05-08T13:00:00Z'),
+        clockOut: new Date('2026-05-08T19:40:00Z'),
+        workedMinutes: 400,
+        overtimeMinutes50: 0,
+        overtimeMinutes100: 0,
+        overtimeStatus: null,
+        bankHoursAccruedMinutes: 0,
+        user: { id: 'user-cents', name: 'Cents', email: 'cents@test.com', hourlyRate: 8, timeZone: 'UTC' },
+      });
+
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'admin-123' }]);
+      mockPrisma.timeEntry.findMany.mockResolvedValue([
+        makeEntry('entry-1'),
+        makeEntry('entry-2'),
+        makeEntry('entry-3'),
+      ]);
+
+      await reportController.getDailyBreakdown(req, res);
+
+      const payload = res.json.mock.calls[0][0];
+      const row = payload.rows.find((r) => r.user.id === 'user-cents');
+
+      // Soma dos RAW arredondada uma vez: 160.00. NÃO 159.99 (soma dos já arredondados).
+      expect(row.regularCost).toBe(160);
+      expect(row.totalCost).toBe(160);
+      expect(row.settledCost).toBe(160);
+      expect(payload.summary.totalCost).toBe(160);
+
+      // Cada linha individual de entries[] continua arredondada por entry (53.33),
+      // exatamente como antes — só a soma por usuário muda de estratégia.
+      expect(row.entries.map((e) => e.totalCost)).toEqual([53.33, 53.33, 53.33]);
+    });
+
     it('reconcilia totalCost = settledCost + pendingOvertimeCost com HE aprovada, pendente e sem HE', async () => {
       req.user = { id: 'admin-123', role: 'ADMIN', timeZone: 'UTC' };
       req.query = { date: '2026-05-08' };
