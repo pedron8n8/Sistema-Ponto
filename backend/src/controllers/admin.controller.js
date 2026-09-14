@@ -12,6 +12,13 @@ const {
 
 const { isHrLevel } = require('../utils/roles');
 
+const {
+  getOvertimeBufferMinutes,
+  resolveOrganizationAdminId,
+  buildOvertimeBufferKey,
+  MAX_OVERTIME_BUFFER_MINUTES,
+} = require('../utils/overtimeBuffer');
+
 const TEAM_MEMBER_ROLES = ['INTEGRATOR', 'HR', 'SUPERVISOR', 'MEMBER'];
 
 const resolveTenantOwnerId = (user) => {
@@ -1341,6 +1348,88 @@ const updateLocationSettings = async (req, res) => {
   }
 };
 
+/**
+ * GET /admin/overtime-settings
+ * Tolerancia (buffer) de hora extra da empresa de quem chama.
+ */
+const getOvertimeSettings = async (req, res) => {
+  try {
+    const bufferMinutes = await getOvertimeBufferMinutes(resolveOrganizationAdminId(req.user));
+
+    res.json({ overtimeSettings: { bufferMinutes } });
+  } catch (error) {
+    console.error('❌ Erro ao buscar configuração de hora extra:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao buscar configuração de hora extra',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
+/**
+ * PATCH /admin/overtime-settings
+ * Define a tolerancia de hora extra da empresa. Body: { bufferMinutes }
+ */
+const updateOvertimeSettings = async (req, res) => {
+  try {
+    const { bufferMinutes } = req.body || {};
+
+    // Fora da faixa devolve 400 em vez de truncar: na escrita a intencao do
+    // usuario e explicita, e truncar esconde erro de digitacao. A normalizacao
+    // silenciosa fica so na leitura, onde o calculo nao pode falhar.
+    if (
+      typeof bufferMinutes !== 'number' ||
+      !Number.isInteger(bufferMinutes) ||
+      bufferMinutes < 0 ||
+      bufferMinutes > MAX_OVERTIME_BUFFER_MINUTES
+    ) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: `bufferMinutes deve ser um número inteiro entre 0 e ${MAX_OVERTIME_BUFFER_MINUTES}.`,
+      });
+    }
+
+    // SUPERADMIN atravessa roleCheck em qualquer rota /admin, mas nao pertence a
+    // empresa nenhuma: gravaria numa chave que nenhum calculo le.
+    if (req.user?.role === 'SUPERADMIN') {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'SUPERADMIN não pertence a uma empresa. Configure a tolerância pelo ADMIN da empresa.',
+      });
+    }
+
+    const organizationAdminId = resolveOrganizationAdminId(req.user);
+    if (!organizationAdminId) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Não foi possível resolver a empresa deste usuário.',
+      });
+    }
+
+    const key = buildOvertimeBufferKey(organizationAdminId);
+    const value = { bufferMinutes };
+
+    await prisma.appSetting.upsert({
+      where: { key },
+      create: { key, value },
+      update: { value },
+    });
+
+    res.json({
+      message: 'Configuração de hora extra atualizada com sucesso.',
+      overtimeSettings: { bufferMinutes },
+    });
+  } catch (error) {
+    console.error('❌ Erro ao atualizar configuração de hora extra:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao atualizar configuração de hora extra',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
 module.exports = {
   getTimeEntryAuditLog,
   getUserTimeEntries,
@@ -1355,4 +1444,6 @@ module.exports = {
   payUserBankHours,
   getLocationSettings,
   updateLocationSettings,
+  getOvertimeSettings,
+  updateOvertimeSettings,
 };

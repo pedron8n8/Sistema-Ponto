@@ -14,6 +14,8 @@ const {
   payUserBankHours,
   getLocationSettings,
   updateLocationSettings,
+  getOvertimeSettings,
+  updateOvertimeSettings,
 } = require('../controllers/admin.controller');
 const {
   getProFeatureSettings,
@@ -112,6 +114,22 @@ router.get('/location-settings', requirePlan(['GROWTH', 'PRO']), getLocationSett
  * Atualiza método de validação e localização do estabelecimento
  */
 router.patch('/location-settings', requirePlan(['GROWTH', 'PRO']), updateLocationSettings);
+
+/**
+ * GET /admin/overtime-settings
+ * Tolerância de hora extra da empresa (buffer em minutos)
+ */
+router.get('/overtime-settings', getOvertimeSettings);
+
+/**
+ * PATCH /admin/overtime-settings
+ * Define a tolerância de hora extra da empresa
+ * Body: { bufferMinutes: number } (0..120)
+ *
+ * Sem requirePlan, ao contrário de location-settings: a tolerância decide folha
+ * de pagamento e não é um recurso de pacote.
+ */
+router.patch('/overtime-settings', updateOvertimeSettings);
 
 /**
  * GET /admin/pro/settings
