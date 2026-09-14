@@ -17,6 +17,7 @@ const {
   rejectEntry,
   rejectEntriesBulk,
   rejectOvertime,
+  rejectOvertimeBulk,
   requestEdit,
   getTeamMembers,
   getTeamPresenceSnapshot,
@@ -942,6 +943,116 @@ describe('Supervisor Controller', () => {
 
       await rejectEntriesBulk(mockReq, mockRes);
 
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+    });
+  });
+
+  describe('rejectOvertimeBulk', () => {
+    const entryWithPendingOvertime = (id, over = {}) => ({
+      id,
+      status: 'PENDING',
+      clockOut: new Date('2026-08-26T19:00:00.000Z'),
+      overtimeStatus: 'PENDING',
+      overtimeMinutes: 25,
+      overtimeMinutes50: 25,
+      overtimeMinutes100: 0,
+      bankHoursAccruedMinutes: 25,
+      user: {
+        id: 'member-123',
+        name: 'Member',
+        email: 'member@test.com',
+        supervisorId: 'supervisor-123',
+        organizationAdminId: 'admin-1',
+      },
+      ...over,
+    });
+
+    beforeEach(() => {
+      mockPrisma.$transaction.mockResolvedValue([{ count: 2 }, { count: 2 }]);
+    });
+
+    it('nega em lote sem comentario', async () => {
+      mockReq.body = { entryIds: ['entry-1', 'entry-2'] };
+      mockPrisma.timeEntry.findMany.mockResolvedValue([
+        entryWithPendingOvertime('entry-1'),
+        entryWithPendingOvertime('entry-2'),
+      ]);
+
+      await rejectOvertimeBulk(mockReq, mockRes);
+
+      expect(mockRes.status).not.toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({ overtimeRejectedCount: 2 })
+      );
+      expect(reverseEntryBankHours).toHaveBeenCalledTimes(2);
+    });
+
+    // O ponto que separa este endpoint do reject-bulk: a MARCACAO nao e tocada.
+    it('nao altera o status das marcacoes', async () => {
+      mockReq.body = { entryIds: ['entry-1'] };
+      mockPrisma.timeEntry.findMany.mockResolvedValue([entryWithPendingOvertime('entry-1')]);
+
+      await rejectOvertimeBulk(mockReq, mockRes);
+
+      const writes = mockPrisma.timeEntry.updateMany.mock.calls.map(([args]) => args.data);
+      for (const data of writes) {
+        expect(data).not.toHaveProperty('status');
+      }
+    });
+
+    it('escreve com o predicado de HE pendente, nao so com a leitura anterior', async () => {
+      mockReq.body = { entryIds: ['entry-1'] };
+      mockPrisma.timeEntry.findMany.mockResolvedValue([entryWithPendingOvertime('entry-1')]);
+
+      await rejectOvertimeBulk(mockReq, mockRes);
+
+      const [args] = mockPrisma.timeEntry.updateMany.mock.calls[0];
+      expect(args.where).toEqual({ id: { in: ['entry-1'] }, overtimeStatus: 'PENDING' });
+    });
+
+    it('ignora item sem HE pendente em vez de falhar o lote', async () => {
+      mockReq.body = { entryIds: ['entry-1', 'entry-2'] };
+      mockPrisma.timeEntry.findMany.mockResolvedValue([
+        entryWithPendingOvertime('entry-1'),
+        entryWithPendingOvertime('entry-2', { overtimeStatus: null }),
+      ]);
+
+      await rejectOvertimeBulk(mockReq, mockRes);
+
+      const payload = mockRes.json.mock.calls[0][0];
+      expect(payload.skipped).toContainEqual({ id: 'entry-2', reason: 'OVERTIME_NOT_PENDING' });
+    });
+
+    it('ignora id inexistente', async () => {
+      mockReq.body = { entryIds: ['entry-1', 'sumiu'] };
+      mockPrisma.timeEntry.findMany.mockResolvedValue([entryWithPendingOvertime('entry-1')]);
+
+      await rejectOvertimeBulk(mockReq, mockRes);
+
+      const payload = mockRes.json.mock.calls[0][0];
+      expect(payload.skipped).toContainEqual({ id: 'sumiu', reason: 'NOT_FOUND' });
+    });
+
+    it('devolve 409 quando nao sobra nada elegivel', async () => {
+      mockReq.body = { entryIds: ['entry-1'] };
+      mockPrisma.timeEntry.findMany.mockResolvedValue([
+        entryWithPendingOvertime('entry-1', { overtimeStatus: 'APPROVED' }),
+      ]);
+
+      await rejectOvertimeBulk(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(409);
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('recusa lote vazio ou acima de 200 ids', async () => {
+      mockReq.body = { entryIds: [] };
+      await rejectOvertimeBulk(mockReq, mockRes);
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+
+      mockRes.status.mockClear();
+      mockReq.body = { entryIds: Array.from({ length: 201 }, (_, i) => `e-${i}`) };
+      await rejectOvertimeBulk(mockReq, mockRes);
       expect(mockRes.status).toHaveBeenCalledWith(400);
     });
   });

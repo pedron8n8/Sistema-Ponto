@@ -8,6 +8,7 @@ const {
   rejectEntriesBulk,
   approveOvertime,
   rejectOvertime,
+  rejectOvertimeBulk,
   requestEdit,
   getEntryDetails,
   getTeamMembers,
@@ -107,6 +108,13 @@ router.patch('/overtime/:id/approve', approveOvertime);
  * Body: { comment?: string } (opcional)
  */
 router.patch('/overtime/:id/reject', rejectOvertime);
+
+/**
+ * POST /supervisor/overtime/bulk/reject
+ * Nega só as horas extras pendentes de um lote (não mexe no status das marcações)
+ * Body: { entryIds: string[], comment?: string }
+ */
+router.post('/overtime/bulk/reject', rejectOvertimeBulk);
 
 /**
  * PATCH /supervisor/request-edit/:id

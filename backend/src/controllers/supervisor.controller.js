@@ -1814,6 +1814,113 @@ const rejectOvertime = async (req, res) => {
 };
 
 /**
+ * POST /supervisor/overtime/bulk/reject
+ * Nega SÓ as horas extras pendentes de um lote de registros: zera o efeito e
+ * reverte o crédito de banco de horas, sem tocar no status das marcações.
+ * Body: { entryIds: string[], comment?: string }
+ *
+ * Separado de rejectEntriesBulk de propósito: lá a negação é da marcação e a
+ * justificativa continua obrigatória.
+ */
+const rejectOvertimeBulk = async (req, res) => {
+  try {
+    const supervisorId = req.user.id;
+    const { entryIds, comment } = req.body || {};
+
+    if (!Array.isArray(entryIds) || entryIds.length === 0 || entryIds.length > 200) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Informe entryIds como um array com 1 a 200 registros.',
+      });
+    }
+
+    const entries = await prisma.timeEntry.findMany({
+      where: { id: { in: entryIds } },
+      include: BULK_ENTRY_INCLUDE,
+    });
+
+    const foundIds = new Set(entries.map((entry) => entry.id));
+    const notFound = entryIds
+      .filter((id) => !foundIds.has(id))
+      .map((id) => ({ id, reason: 'NOT_FOUND' }));
+
+    // Mesma autorização e mesmos motivos de ignorar do resto do lote.
+    const { eligible, skipped } = await classifyBulkEntries(req.user, entries, notFound);
+
+    const overtimeEntries = [];
+    for (const entry of eligible) {
+      if (entry.overtimeStatus === 'PENDING') {
+        overtimeEntries.push(entry);
+      } else {
+        skipped.push({ id: entry.id, reason: 'OVERTIME_NOT_PENDING' });
+      }
+    }
+
+    if (overtimeEntries.length === 0) {
+      return res.status(409).json({
+        error: 'Conflict',
+        message: 'Nenhuma hora extra pendente no lote. Atualize a lista.',
+        overtimeRejectedCount: 0,
+        skipped,
+      });
+    }
+
+    const overtimeIds = overtimeEntries.map((entry) => entry.id);
+    const trimmedComment = typeof comment === 'string' ? comment.trim() : '';
+
+    // Reverte o crédito antes da transação, igual ao rejectOvertime e ao
+    // rejectEntriesBulk. Sequencial: o lote é limitado a 200 registros.
+    for (const id of overtimeIds) {
+      await reverseEntryBankHours(id);
+    }
+
+    // `overtimeStatus: 'PENDING'` no WHERE: o predicado é avaliado pelo banco e
+    // não pela leitura feita acima. Sem ele, dois supervisores negando o mesmo
+    // lote ao mesmo tempo passariam os dois pelo filtro em memória.
+    const [rejected] = await prisma.$transaction([
+      prisma.timeEntry.updateMany({
+        where: { id: { in: overtimeIds }, overtimeStatus: 'PENDING' },
+        data: {
+          overtimeStatus: 'REJECTED',
+          overtimeMinutes: 0,
+          overtimeMinutes50: 0,
+          overtimeMinutes100: 0,
+          overtimePercent: 0,
+          bankHoursAccruedMinutes: 0,
+        },
+      }),
+      prisma.approvalLog.createMany({
+        data: overtimeEntries.map((entry) => ({
+          timeEntryId: entry.id,
+          reviewerId: supervisorId,
+          action: 'OVERTIME_REJECTED',
+          comment: buildOvertimeRejectionNote(trimmedComment, entry),
+        })),
+      }),
+    ]);
+
+    const overtimeRejectedCount = rejected?.count ?? 0;
+
+    console.log(
+      `❌ ${overtimeRejectedCount} horas extras negadas em lote por ${req.user.email}`
+    );
+
+    res.json({
+      message: `${overtimeRejectedCount} hora(s) extra(s) negada(s)`,
+      overtimeRejectedCount,
+      skipped,
+    });
+  } catch (error) {
+    console.error('❌ Erro ao negar horas extras em lote:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao negar horas extras em lote',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
+/**
  * PATCH /supervisor/request-edit/:id
  * Solicita edição do colaborador (volta para PENDING com comentário)
  */
@@ -2533,6 +2640,7 @@ module.exports = {
   rejectEntriesBulk,
   approveOvertime,
   rejectOvertime,
+  rejectOvertimeBulk,
   requestEdit,
   getEntryDetails,
   getTeamMembers,
