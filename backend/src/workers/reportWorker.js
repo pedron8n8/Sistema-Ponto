@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const xlsx = require('xlsx');
 const { parseDateFilter, resolveTimeZone } = require('../utils/dateFilters');
-const { calculateEntryPaymentRaw, calculateDayPaymentRaw, resolveSettledOvertime } = require('../utils/entryPayment');
+const { calculateDayPaymentRaw, resolveSettledOvertime } = require('../utils/entryPayment');
 const { resolveContractDailyMinutes } = require('../utils/overtime');
 
 // Fila de exportação de relatórios
@@ -126,43 +126,98 @@ const resolveRegularMinutes = (entry) => {
   return Math.max(0, resolveWorkedMinutes(entry) - ot50 - ot100);
 };
 
-// Usa a aritmética compartilhada (entryPayment.calculateEntryPaymentRaw), mas a
-// política do export diverge da de custo: horas normais continuam descontando
-// TODA a HE (resolveRegularMinutes, inalterado), enquanto o adicional só entra
-// para a HE já aprovada (resolveApprovedOvertime). Para reaproveitar a mesma
-// função pura sem duplicar a fórmula, passamos um "workedMinutes" sintético —
-// normais aprovadas + HE aprovada — de forma que a subtração interna da
-// função reproduza exatamente resolveRegularMinutes(entry) minutos de hora normal.
+// Agrupa entries por (usuário, dia civil DO USUÁRIO) — mesma chave usada pelo
+// teto do contrato em toda esta planilha. REJECTED nunca entra num bucket: hora
+// rejeitada não é hora a pagar, e não deve consumir nem ceder fatia do teto do
+// dia de mais ninguém.
+const buildDayBuckets = (entries) => {
+  const buckets = new Map();
+
+  entries
+    .filter((entry) => entry.status === 'PENDING' || entry.status === 'APPROVED')
+    .forEach((entry) => {
+      const dayKey = resolveDayKeyForUser(entry.clockIn, entry.user.timeZone);
+      const bucketKey = `${entry.user.id}::${dayKey}`;
+      if (!buckets.has(bucketKey)) {
+        buckets.set(bucketKey, { user: entry.user, entries: [] });
+      }
+      buckets.get(bucketKey).entries.push(entry);
+    });
+
+  return buckets;
+};
+
+// A ÚNICA função que decide quanto CADA entry paga. buildDailyLogs e buildSummary
+// só consultam o resultado (por id) — nenhuma das duas recalcula por conta
+// própria — para que as duas planilhas do mesmo workbook nunca mais possam
+// divergir uma da outra (foi exatamente aí que a rodada anterior quebrou:
+// buildDailyLogs usava minutos normais crus, sem teto, e buildSummary já capava).
 //
-// Único consumidor hoje é buildDailyLogs (uma linha por entry, informativa — não
-// leva o teto do contrato do dia, que é um conceito agregado por usuário/dia).
-// buildSummary NÃO usa mais esta função: ela precisa do teto por (usuário, dia),
-// então soma minutos crus por dia e precifica com entryPayment.calculateDayPaymentRaw
-// (ver dayBuckets ali). Aqui devolvemos RAW (sem arredondar) só por convenção —
-// buildDailyLogs arredonda no ponto de saída de qualquer forma.
-const resolveEntryPayment = (entry) => {
-  const rate = resolveHourlyRate(entry.user);
-  if (rate <= 0) {
-    return 0;
-  }
+// Como o teto é por (usuário, dia) mas cada entry paga sua própria linha,
+// distribuímos os minutos normais do dia por ENCHIMENTO CRONOLÓGICO: ordena os
+// entries do dia por clockIn e cada um consome, em ordem, a fatia do teto que
+// ainda sobra; uma vez esgotado, os entries seguintes daquele dia (qualquer
+// status) ficam com 0 minuto normal — são literalmente os últimos minutos
+// trabalhados no dia, e é essa a explicação para quem lê a planilha. HE
+// aprovada fica anexada ao próprio entry (resolveApprovedOvertime), sem entrar
+// nesse enchimento — o teto nunca reduz o adicional já decidido.
+const computeEntryPayments = (entries) => {
+  const paymentByEntryId = new Map();
+  const buckets = buildDayBuckets(entries);
 
-  const { ot50, ot100 } = resolveApprovedOvertime(entry);
-  const regularMinutes = resolveRegularMinutes(entry);
+  buckets.forEach((bucket) => {
+    const contractDailyMinutes = resolveContractDailyMinutes(bucket.user.contractDailyMinutes);
+    const rate = resolveHourlyRate(bucket.user);
+    const sorted = [...bucket.entries].sort((a, b) => new Date(a.clockIn) - new Date(b.clockIn));
 
-  const { totalAmount } = calculateEntryPaymentRaw({
-    workedMinutes: regularMinutes + ot50 + ot100,
-    overtimeMinutes50: ot50,
-    overtimeMinutes100: ot100,
-    hourlyRate: rate,
+    let cumulativeBeforeRaw = 0;
+
+    sorted.forEach((entry) => {
+      const regularMinutes = resolveRegularMinutes(entry);
+      const cumulativeAfterRaw = cumulativeBeforeRaw + regularMinutes;
+      // min(cumulativo, contrato) antes e depois: a diferença é exatamente a
+      // fatia do teto que sobrava quando este entry começou a consumi-lo — o
+      // mesmo "gatilho, não desconto" incremental que calculateIncrementalOvertimeSummary
+      // já usa (utils/overtime.js) para HE, aqui aplicado ao teto do normal.
+      const paidNormalMinutes = Math.max(
+        0,
+        Math.min(cumulativeAfterRaw, contractDailyMinutes) - Math.min(cumulativeBeforeRaw, contractDailyMinutes)
+      );
+      cumulativeBeforeRaw = cumulativeAfterRaw;
+
+      const { ot50, ot100 } = resolveApprovedOvertime(entry);
+      const payment = calculateDayPaymentRaw({
+        normalMinutes: paidNormalMinutes,
+        overtimeMinutes50: ot50,
+        overtimeMinutes100: ot100,
+        contractDailyMinutes,
+        hourlyRate: rate,
+      });
+
+      paymentByEntryId.set(entry.id, {
+        paidNormalMinutes,
+        approvedOt50: ot50,
+        approvedOt100: ot100,
+        totalAmount: payment.totalAmount,
+      });
+    });
   });
 
-  return totalAmount;
+  return paymentByEntryId;
 };
 
 // Número (não string) para que a planilha permita somar/filtrar os valores.
 const toMoney = (value) => (Number.isFinite(value) ? Number(value.toFixed(2)) : 0);
 
-const buildDailyLogs = (entries) => {
+// `paymentByEntryId` tem que vir do MESMO computeEntryPayments(entries) chamado
+// sobre a lista CHEIA do período (PENDING + APPROVED + REJECTED juntos) — nunca
+// recalculado a partir do subconjunto que esta função recebe (reviewedEntries ou
+// pendingEntries, já filtrados por status). Calcular aqui a partir de um
+// subconjunto perderia os entries do MESMO dia que caíram no outro subconjunto,
+// reintroduzindo exatamente a divergência entre esta planilha e "Summary &
+// Payments" que este parâmetro existe para impedir. Entry sem entrada no mapa
+// (REJECTED, ou fora do escopo PENDING/APPROVED) paga 0.
+const buildDailyLogs = (entries, paymentByEntryId) => {
   const headers = [
     'Entry ID',
     'User',
@@ -193,7 +248,7 @@ const buildDailyLogs = (entries) => {
     const workedHours = workedMinutes > 0 ? (workedMinutes / 60).toFixed(2) : '';
     const breakMinutes = resolveBreakMinutes(entry.breakMinutes);
     const lastLog = entry.logs[0];
-    const payment = resolveEntryPayment(entry);
+    const payment = paymentByEntryId.get(entry.id)?.totalAmount || 0;
     const pendingPayment = entry.status === 'PENDING' ? payment : 0;
     const approvedPayment = entry.status === 'APPROVED' ? payment : 0;
 
@@ -245,78 +300,62 @@ const buildSummary = (entries) => {
     'Payment Settled',
   ];
 
-  // Passo 1: agrupa por (usuário, dia civil DO USUÁRIO) — o teto contratual é por
-  // pessoa-dia, nunca pela janela inteira do relatório nem por entry isolado.
-  // ponytail: REJECTED não entra em nenhum bucket — hora rejeitada não é hora a pagar.
-  const dayBuckets = new Map();
+  // O teto do dia é aplicado por computeEntryPayments (enchimento cronológico),
+  // a MESMA função que buildDailyLogs consulta — nenhuma das duas recalcula o
+  // teto com sua própria regra. Isso é o que garante as duas planilhas do
+  // workbook sempre reconciliarem: mesma função, mesmo resultado por entry.
+  const paymentByEntryId = computeEntryPayments(entries);
+  const grouped = new Map();
 
   entries
     .filter((entry) => entry.status === 'PENDING' || entry.status === 'APPROVED')
     .forEach((entry) => {
-      const dayKey = resolveDayKeyForUser(entry.clockIn, entry.user.timeZone);
-      const bucketKey = `${entry.user.id}::${dayKey}`;
-      if (!dayBuckets.has(bucketKey)) {
-        dayBuckets.set(bucketKey, { user: entry.user, entries: [] });
+      const userKey = entry.user.id;
+      if (!grouped.has(userKey)) {
+        grouped.set(userKey, {
+          user: entry.user,
+          pendingEntries: 0,
+          approvedEntries: 0,
+          normalMinutes: 0,
+          approvedOtMinutes: 0,
+          pendingMinutes: 0,
+          approvedMinutes: 0,
+          totalBreakMinutes: 0,
+          pendingPayment: 0,
+          approvedPayment: 0,
+          hasAccrual: false,
+          hasPending: false,
+        });
       }
-      dayBuckets.get(bucketKey).entries.push(entry);
-    });
 
-  // Passo 2: dentro de cada dia de cada usuário, capa os minutos normais do DIA
-  // INTEIRO (soma de todos os entries daquele dia, decidido ou não — mesma
-  // exclusão de resolveRegularMinutes) no contrato, e só então soma no total do
-  // usuário. Aprovado tem prioridade sobre o teto (já confirmado, não perde
-  // minutos por causa de um entry pendente no mesmo dia); pendente fica com o
-  // que sobrar do teto — nunca inventa minutos normais além dele. HE pendente
-  // nunca leva adicional, decisão que já existia e não muda aqui.
-  const grouped = new Map();
+      const summary = grouped.get(userKey);
+      const allocation = paymentByEntryId.get(entry.id) || {
+        paidNormalMinutes: 0,
+        approvedOt50: 0,
+        approvedOt100: 0,
+        totalAmount: 0,
+      };
+      // Horas faturáveis: minuto normal já capado no teto do dia (enchimento
+      // cronológico) + HE aprovada deste entry. HE pendente fica fora até ser
+      // decidida, por isso não é a mesma coisa que workedMinutes.
+      const billableMinutes = allocation.paidNormalMinutes + allocation.approvedOt50 + allocation.approvedOt100;
+      const accrual = entry.bankHoursEntries?.[0];
 
-  dayBuckets.forEach((bucket) => {
-    const userKey = bucket.user.id;
-    if (!grouped.has(userKey)) {
-      grouped.set(userKey, {
-        user: bucket.user,
-        pendingEntries: 0,
-        approvedEntries: 0,
-        normalMinutes: 0,
-        approvedOtMinutes: 0,
-        pendingMinutes: 0,
-        approvedMinutes: 0,
-        totalBreakMinutes: 0,
-        pendingPayment: 0,
-        approvedPayment: 0,
-        hasAccrual: false,
-        hasPending: false,
-      });
-    }
+      summary.normalMinutes += allocation.paidNormalMinutes;
+      summary.approvedOtMinutes += allocation.approvedOt50 + allocation.approvedOt100;
 
-    const summary = grouped.get(userKey);
-    const contractDailyMinutes = resolveContractDailyMinutes(bucket.user.contractDailyMinutes);
-    const rate = resolveHourlyRate(bucket.user);
-
-    let dayNormalMinutesRaw = 0;
-    let dayApprovedNormalMinutesRaw = 0;
-    let dayApprovedOt50 = 0;
-    let dayApprovedOt100 = 0;
-
-    bucket.entries.forEach((entry) => {
-      const regularMinutes = resolveRegularMinutes(entry);
-      const { ot50, ot100 } = resolveApprovedOvertime(entry);
-
-      dayNormalMinutesRaw += regularMinutes;
-      if (entry.status === 'APPROVED') {
-        dayApprovedNormalMinutesRaw += regularMinutes;
-      }
-      dayApprovedOt50 += ot50;
-      dayApprovedOt100 += ot100;
-
-      summary.totalBreakMinutes += resolveBreakMinutes(entry.breakMinutes);
       if (entry.status === 'PENDING') {
         summary.pendingEntries += 1;
+        summary.pendingMinutes += billableMinutes;
+        summary.pendingPayment += allocation.totalAmount;
       } else {
         summary.approvedEntries += 1;
+        summary.approvedMinutes += billableMinutes;
+        summary.approvedPayment += allocation.totalAmount;
       }
 
-      const accrual = entry.bankHoursEntries?.[0];
+      summary.totalBreakMinutes += resolveBreakMinutes(entry.breakMinutes);
+
       if (accrual) {
         summary.hasAccrual = true;
         if (accrual.paymentStatus === 'PENDING') {
@@ -324,30 +363,6 @@ const buildSummary = (entries) => {
         }
       }
     });
-
-    // Teto do dia inteiro (qualquer status) e a fatia dele que HE aprovada usa —
-    // ver comentário do passo 2 acima para a prioridade aprovado-primeiro.
-    const dayCappedNormalMinutes = Math.min(dayNormalMinutesRaw, contractDailyMinutes);
-    const approvedNormalMinutes = Math.min(dayApprovedNormalMinutesRaw, contractDailyMinutes);
-    const pendingNormalMinutes = Math.max(0, dayCappedNormalMinutes - approvedNormalMinutes);
-
-    const approvedPayment = calculateDayPaymentRaw({
-      normalMinutes: approvedNormalMinutes,
-      overtimeMinutes50: dayApprovedOt50,
-      overtimeMinutes100: dayApprovedOt100,
-      contractDailyMinutes,
-      hourlyRate: rate,
-    });
-
-    summary.normalMinutes += dayCappedNormalMinutes;
-    summary.approvedOtMinutes += dayApprovedOt50 + dayApprovedOt100;
-    summary.approvedMinutes += approvedNormalMinutes + dayApprovedOt50 + dayApprovedOt100;
-    summary.pendingMinutes += pendingNormalMinutes;
-    summary.approvedPayment += approvedPayment.totalAmount;
-    // Pendente nunca leva adicional (HE ainda não decidida não é paga) — só o
-    // que sobrou do teto do dia, à taxa normal.
-    summary.pendingPayment += rate > 0 ? (pendingNormalMinutes / 60) * rate : 0;
-  });
 
   const toHours = (minutes) => (minutes > 0 ? (minutes / 60).toFixed(2) : '0.00');
 
@@ -476,8 +491,14 @@ const getReportData = async (filters) => {
   const pendingEntries = entries.filter((entry) => entry.status === 'PENDING');
   const reviewedEntries = entries.filter((entry) => entry.status !== 'PENDING');
 
-  const daily = buildDailyLogs(reviewedEntries);
-  const pendingDaily = buildDailyLogs(pendingEntries);
+  // Uma única chamada sobre a lista CHEIA (todos os status, todo o período) —
+  // reviewedEntries e pendingEntries são só como as linhas são SEPARADAS em
+  // abas; o cálculo de quanto cada entry paga precisa ver o dia inteiro de cada
+  // usuário, mesmo quando parte dele cai numa aba e parte na outra.
+  const paymentByEntryId = computeEntryPayments(entries);
+
+  const daily = buildDailyLogs(reviewedEntries, paymentByEntryId);
+  const pendingDaily = buildDailyLogs(pendingEntries, paymentByEntryId);
   const summary = buildSummary(entries);
 
   return {
@@ -626,6 +647,7 @@ module.exports = {
   generateTimeEntriesXLSX,
   buildDailyLogs,
   buildSummary,
+  computeEntryPayments,
   REPORTS_DIR,
   QUEUE_NAME,
 };

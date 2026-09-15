@@ -5,7 +5,7 @@ jest.mock('bullmq', () => ({
 jest.mock('../../src/config/redis', () => ({}));
 jest.mock('../../src/config/database', () => ({ prisma: {} }));
 
-const { buildDailyLogs, buildSummary } = require('../../src/workers/reportWorker');
+const { buildDailyLogs, buildSummary, computeEntryPayments } = require('../../src/workers/reportWorker');
 
 const makeEntry = ({
   status,
@@ -36,11 +36,20 @@ const columnOf = (headers, rows, name) => rows.map((row) => row[headers.indexOf(
 
 describe('reportWorker payment columns', () => {
   it('preenche pagamento pendente e aprovado nas linhas diárias', () => {
-    const { headers, rows } = buildDailyLogs([
-      makeEntry({ status: 'PENDING', workedMinutes: 480, rate: 10 }),
-      makeEntry({ status: 'APPROVED', workedMinutes: 300, rate: 10 }),
-      makeEntry({ status: 'REJECTED', workedMinutes: 120, rate: 10 }),
-    ]);
+    // Cada entry num dia diferente: buildDailyLogs agora precisa do mapa de
+    // pagamento pré-computado (computeEntryPayments), que capa por (usuário,
+    // dia). Com os três no mesmo dia (como antes desta mudança), o PENDING de
+    // 480min (primeiro no enchimento cronológico, mesmo clockIn) esgotaria
+    // sozinho o contrato de 480min e o APPROVED de 300min pagaria 0 — o que
+    // testaria o teto, não o roteamento por status que este teste quer provar.
+    // Om dias distintos nenhum dia isolado passa do contrato e os valores
+    // originais (80/50/0) continuam valendo.
+    const entries = [
+      makeEntry({ status: 'PENDING', workedMinutes: 480, rate: 10, day: '2026-08-10' }),
+      makeEntry({ status: 'APPROVED', workedMinutes: 300, rate: 10, day: '2026-08-11' }),
+      makeEntry({ status: 'REJECTED', workedMinutes: 120, rate: 10, day: '2026-08-12' }),
+    ];
+    const { headers, rows } = buildDailyLogs(entries, computeEntryPayments(entries));
 
     expect(columnOf(headers, rows, 'Pending Payment')).toEqual([80, 0, 0]);
     expect(columnOf(headers, rows, 'Approved Payment')).toEqual([0, 50, 0]);
@@ -50,9 +59,10 @@ describe('reportWorker payment columns', () => {
 
   it('aplica adicional de 50% e 100% nas horas extras aprovadas', () => {
     // 240min normais + 60min a 1.5x + 60min a 2x, a $10/h => 40 + 15 + 20
-    const { headers, rows } = buildDailyLogs([
+    const entries = [
       makeEntry({ status: 'APPROVED', workedMinutes: 360, rate: 10, overtime50: 60, overtime100: 60 }),
-    ]);
+    ];
+    const { headers, rows } = buildDailyLogs(entries, computeEntryPayments(entries));
 
     expect(columnOf(headers, rows, 'Approved Payment')).toEqual([75]);
   });
@@ -60,7 +70,7 @@ describe('reportWorker payment columns', () => {
   it('não paga adicional de HE ainda pendente de decisão', () => {
     // Mesma jornada do teste anterior, mas com a HE aguardando decisão:
     // só os 240min normais entram => 40. Nada de 1.5x/2x.
-    const { headers, rows } = buildDailyLogs([
+    const entries = [
       makeEntry({
         status: 'APPROVED',
         workedMinutes: 360,
@@ -69,7 +79,8 @@ describe('reportWorker payment columns', () => {
         overtime100: 60,
         overtimeStatus: 'PENDING',
       }),
-    ]);
+    ];
+    const { headers, rows } = buildDailyLogs(entries, computeEntryPayments(entries));
 
     expect(columnOf(headers, rows, 'Approved Payment')).toEqual([40]);
   });
@@ -184,6 +195,52 @@ describe('reportWorker payment columns', () => {
       ]);
 
       expect(columnOf(headers, rows, 'Approved Payment')).toEqual([200]);
+    });
+  });
+
+  // Round 1 do fix: buildDailyLogs pagava o valor pré-teto (por entry, sem cap) e
+  // buildSummary já pagava o valor capado — as duas abas do MESMO workbook
+  // discordavam para o mesmo dia. A partir de agora as duas consultam o mesmo
+  // computeEntryPayments (enchimento cronológico), então isto tem que valer
+  // sempre que o teto é atingido — é essa invariante que ninguém testava antes.
+  describe('reconciliação entre Daily Logs e Summary (mesmo total, sempre)', () => {
+    const sumTotalPayment = ({ headers, rows }) => {
+      const col = headers.indexOf('Total Payment');
+      return rows.reduce((sum, row) => sum + row[col], 0);
+    };
+
+    const expectSheetsReconcile = (entries) => {
+      const paymentByEntryId = computeEntryPayments(entries);
+      const daily = buildDailyLogs(entries, paymentByEntryId);
+      const summary = buildSummary(entries);
+
+      const dailyTotal = sumTotalPayment(daily);
+      const summaryTotal = sumTotalPayment(summary);
+      expect(dailyTotal).toBe(summaryTotal);
+
+      return dailyTotal;
+    };
+
+    it('tolerância engoliu o excesso (worked 490, OT 0): mesmo total nas duas abas (240)', () => {
+      const total = expectSheetsReconcile([
+        makeEntry({ status: 'APPROVED', workedMinutes: 490, rate: 30 }),
+      ]);
+      expect(total).toBe(240);
+    });
+
+    it('HE negada (worked 540, colunas zeradas): mesmo total nas duas abas (240, não 270)', () => {
+      const total = expectSheetsReconcile([
+        makeEntry({ status: 'APPROVED', workedMinutes: 540, rate: 30, overtime50: 0, overtimeStatus: 'REJECTED' }),
+      ]);
+      expect(total).toBe(240);
+    });
+
+    it('dia partido em 300+240min: mesmo total nas duas abas (240, não 270)', () => {
+      const total = expectSheetsReconcile([
+        makeEntry({ status: 'APPROVED', workedMinutes: 300, rate: 30 }),
+        makeEntry({ status: 'APPROVED', workedMinutes: 240, rate: 30 }),
+      ]);
+      expect(total).toBe(240);
     });
   });
 });
