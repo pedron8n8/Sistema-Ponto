@@ -404,5 +404,183 @@ describe('Report Controller', () => {
       // (480/60) * 10 = 80. Se o custo ressuscitasse os 500 brutos, daria 83.33.
       expect(payload.rows[0].totalCost).toBe(80);
     });
+
+    it('calcula regularCost/overtime50Cost/overtime100Cost/totalCost por linha e no summary', async () => {
+      req.user = { id: 'admin-123', role: 'ADMIN', timeZone: 'UTC' };
+      req.query = { date: '2026-05-08' };
+
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'admin-123' }]);
+      mockPrisma.timeEntry.findMany.mockResolvedValue([
+        {
+          id: 'entry-a',
+          userId: 'user-a',
+          clockIn: new Date('2026-05-08T13:00:00Z'),
+          clockOut: new Date('2026-05-08T21:00:00Z'),
+          workedMinutes: 480,
+          overtimeMinutes50: 0,
+          overtimeMinutes100: 0,
+          overtimeStatus: null,
+          bankHoursAccruedMinutes: 0,
+          user: { id: 'user-a', name: 'Ana', email: 'ana@test.com', hourlyRate: 20, timeZone: 'UTC' },
+        },
+      ]);
+
+      await reportController.getDailyBreakdown(req, res);
+
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.rows).toHaveLength(1);
+      // 480min a $20/h, sem HE: 8h * 20 = 160
+      expect(payload.rows[0]).toEqual(
+        expect.objectContaining({
+          regularCost: 160,
+          overtime50Cost: 0,
+          overtime100Cost: 0,
+          totalCost: 160,
+          pendingOvertimeMinutes: 0,
+          pendingOvertimeCost: 0,
+          settledCost: 160,
+        })
+      );
+      expect(payload.summary).toEqual(
+        expect.objectContaining({
+          totalCost: 160,
+          pendingOvertimeMinutes: 0,
+          pendingOvertimeCost: 0,
+          settledCost: 160,
+        })
+      );
+    });
+
+    it('reconcilia totalCost = settledCost + pendingOvertimeCost com HE aprovada, pendente e sem HE', async () => {
+      req.user = { id: 'admin-123', role: 'ADMIN', timeZone: 'UTC' };
+      req.query = { date: '2026-05-08' };
+
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'admin-123' }]);
+      mockPrisma.timeEntry.findMany.mockResolvedValue([
+        // Sem HE: 480min a $20/h => 160, nada pendente.
+        {
+          id: 'entry-plain',
+          userId: 'user-plain',
+          clockIn: new Date('2026-05-08T13:00:00Z'),
+          clockOut: new Date('2026-05-08T21:00:00Z'),
+          workedMinutes: 480,
+          overtimeMinutes50: 0,
+          overtimeMinutes100: 0,
+          overtimeStatus: null,
+          bankHoursAccruedMinutes: 0,
+          user: { id: 'user-plain', name: 'Plain', email: 'plain@test.com', hourlyRate: 20, timeZone: 'UTC' },
+        },
+        // HE aprovada: 240min normais + 60 a 1.5x + 60 a 2x, $10/h => 40+15+20 = 75, tudo já pagável.
+        {
+          id: 'entry-approved',
+          userId: 'user-approved',
+          clockIn: new Date('2026-05-08T13:00:00Z'),
+          clockOut: new Date('2026-05-08T19:00:00Z'),
+          workedMinutes: 360,
+          overtimeMinutes50: 60,
+          overtimeMinutes100: 60,
+          overtimeStatus: 'APPROVED',
+          bankHoursAccruedMinutes: 0,
+          user: { id: 'user-approved', name: 'Approved', email: 'approved@test.com', hourlyRate: 10, timeZone: 'UTC' },
+        },
+        // Mesma jornada, mas HE ainda pendente de decisão: mesmo total de custo (75, pior
+        // caso), porém só 40 já são pagáveis — os outros 35 (15+20 de adicional) ficam
+        // pendentes. É EXATAMENTE o mesmo cenário e os mesmos números do teste
+        // "não paga adicional de HE ainda pendente de decisão" em reportWorker.test.js,
+        // que fixa o "Approved Payment" do export em 40 para este entry.
+        {
+          id: 'entry-pending',
+          userId: 'user-pending',
+          clockIn: new Date('2026-05-08T13:00:00Z'),
+          clockOut: new Date('2026-05-08T19:00:00Z'),
+          workedMinutes: 360,
+          overtimeMinutes50: 60,
+          overtimeMinutes100: 60,
+          overtimeStatus: 'PENDING',
+          bankHoursAccruedMinutes: 0,
+          user: { id: 'user-pending', name: 'Pending', email: 'pending@test.com', hourlyRate: 10, timeZone: 'UTC' },
+        },
+      ]);
+
+      await reportController.getDailyBreakdown(req, res);
+
+      const payload = res.json.mock.calls[0][0];
+      const rowByUser = Object.fromEntries(payload.rows.map((row) => [row.user.id, row]));
+
+      const plain = rowByUser['user-plain'];
+      expect(plain.totalCost).toBe(160);
+      expect(plain.pendingOvertimeCost).toBe(0);
+      expect(plain.settledCost).toBe(160);
+      expect(plain.totalCost).toBe(plain.settledCost + plain.pendingOvertimeCost);
+
+      const approved = rowByUser['user-approved'];
+      expect(approved.totalCost).toBe(75);
+      expect(approved.pendingOvertimeCost).toBe(0);
+      expect(approved.settledCost).toBe(75);
+      expect(approved.totalCost).toBe(approved.settledCost + approved.pendingOvertimeCost);
+
+      const pending = rowByUser['user-pending'];
+      expect(pending.totalCost).toBe(75);
+      expect(pending.pendingOvertimeMinutes).toBe(120);
+      expect(pending.pendingOvertimeCost).toBe(35);
+      // O que sobra pagável agora (40) é exatamente o que o export (reportWorker,
+      // política resolveSettledOvertime) pagaria para o mesmo entry — prova que as
+      // duas telas reconciliam por construção, não por coincidência de arredondamento.
+      expect(pending.settledCost).toBe(40);
+      expect(pending.totalCost).toBe(pending.settledCost + pending.pendingOvertimeCost);
+
+      // Também vale agregado, no summary.
+      expect(payload.summary.totalCost).toBe(310);
+      expect(payload.summary.pendingOvertimeMinutes).toBe(120);
+      expect(payload.summary.pendingOvertimeCost).toBe(35);
+      expect(payload.summary.settledCost).toBe(275);
+      expect(payload.summary.totalCost).toBe(payload.summary.settledCost + payload.summary.pendingOvertimeCost);
+    });
+
+    it('soma os valores RAW por usuario e arredonda uma unica vez, sem acumular centavos por entry', async () => {
+      // $8/h e 400min (6h40) por entry: (400/60)*8 = 53.3333... , que arredondado
+      // sozinho vira 53.33. Três entries desse usuário, se cada uma fosse arredondada
+      // ANTES de somar, dariam 3 * 53.33 = 159.99. Somando os valores RAW e
+      // arredondando uma única vez no final (como o código fazia antes da refatoração),
+      // o resultado exato é 3 * 53.333... = 160.00. As duas contas dão respostas
+      // diferentes de propósito — é essa divergência que o teste prova que não acontece.
+      req.user = { id: 'admin-123', role: 'ADMIN', timeZone: 'UTC' };
+      req.query = { date: '2026-05-08' };
+
+      const makeEntry = (id) => ({
+        id,
+        userId: 'user-cents',
+        clockIn: new Date('2026-05-08T13:00:00Z'),
+        clockOut: new Date('2026-05-08T19:40:00Z'),
+        workedMinutes: 400,
+        overtimeMinutes50: 0,
+        overtimeMinutes100: 0,
+        overtimeStatus: null,
+        bankHoursAccruedMinutes: 0,
+        user: { id: 'user-cents', name: 'Cents', email: 'cents@test.com', hourlyRate: 8, timeZone: 'UTC' },
+      });
+
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'admin-123' }]);
+      mockPrisma.timeEntry.findMany.mockResolvedValue([
+        makeEntry('entry-1'),
+        makeEntry('entry-2'),
+        makeEntry('entry-3'),
+      ]);
+
+      await reportController.getDailyBreakdown(req, res);
+
+      const payload = res.json.mock.calls[0][0];
+      const row = payload.rows.find((r) => r.user.id === 'user-cents');
+
+      // Soma dos RAW arredondada uma vez: 160.00. NÃO 159.99 (soma dos já arredondados).
+      expect(row.regularCost).toBe(160);
+      expect(row.totalCost).toBe(160);
+      expect(row.settledCost).toBe(160);
+      expect(payload.summary.totalCost).toBe(160);
+
+      // Cada linha individual de entries[] continua arredondada por entry (53.33),
+      // exatamente como antes — só a soma por usuário muda de estratégia.
+      expect(row.entries.map((e) => e.totalCost)).toEqual([53.33, 53.33, 53.33]);
+    });
   });
 });

@@ -41,6 +41,9 @@ type DailyBreakdownRow = {
   workedMinutes: number
   bankHoursAccruedMinutes: number
   totalCost: number
+  pendingOvertimeMinutes: number
+  pendingOvertimeCost: number
+  settledCost: number
 }
 
 type DailyBreakdownResponse = {
@@ -51,6 +54,9 @@ type DailyBreakdownResponse = {
     totalWorkedMinutes: number
     totalBankHoursAccruedMinutes: number
     totalCost: number
+    pendingOvertimeMinutes: number
+    pendingOvertimeCost: number
+    settledCost: number
   }
 }
 
@@ -653,6 +659,15 @@ const Reports = () => {
                     </div>
                   </div>
 
+                  {dailyBreakdown.summary.pendingOvertimeCost > 0 ? (
+                    <p className="mt-2 text-xs text-slate-500">
+                      {t(
+                        `Total cost ${formatCurrency(dailyBreakdown.summary.totalCost)}, of which ${formatCurrency(dailyBreakdown.summary.pendingOvertimeCost)} is overtime awaiting decision`,
+                        `Custo total ${formatCurrency(dailyBreakdown.summary.totalCost)}, dos quais ${formatCurrency(dailyBreakdown.summary.pendingOvertimeCost)} de hora extra aguardando decisao`
+                      )}
+                    </p>
+                  ) : null}
+
                   <div className="mt-4 max-h-[50vh] space-y-2 overflow-y-auto pr-1">
                     {dailyBreakdown.rows.length === 0 ? (
                       <p className="text-sm text-slate-500">{t('No data for this day.', 'Sem dados para este dia.')}</p>
@@ -679,6 +694,14 @@ const Reports = () => {
                               {t('Cost:', 'Custo:')} {formatCurrency(row.totalCost)}
                             </span>
                           </div>
+                          {row.pendingOvertimeCost > 0 ? (
+                            <p className="mt-2 text-[11px] text-slate-500">
+                              {t(
+                                `${formatCurrency(row.pendingOvertimeCost)} pending overtime decision`,
+                                `${formatCurrency(row.pendingOvertimeCost)} de hora extra aguardando decisao`
+                              )}
+                            </p>
+                          ) : null}
                         </div>
                       ))
                     )}
