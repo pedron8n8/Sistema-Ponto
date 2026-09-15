@@ -9,6 +9,7 @@ jest.mock('../../src/config/database', () => ({ prisma: mockPrisma }));
 const {
   OVERTIME_BUFFER_KEY_PREFIX,
   MAX_OVERTIME_BUFFER_MINUTES,
+  DEFAULT_OVERTIME_BUFFER_MINUTES,
   resolveOrganizationAdminId,
   normalizeBufferMinutes,
   getOvertimeBufferMinutes,
@@ -58,15 +59,23 @@ describe('getOvertimeBufferMinutes', () => {
     });
   });
 
-  it('devolve 0 quando a empresa nunca configurou', async () => {
+  // Regra do produto: sem configuracao o buffer vem LIGADO em 15.
+  it('devolve o default de 15 quando a empresa nunca configurou', async () => {
     mockPrisma.appSetting.findUnique.mockResolvedValue(null);
 
-    await expect(getOvertimeBufferMinutes('admin-1')).resolves.toBe(0);
+    await expect(getOvertimeBufferMinutes('admin-1')).resolves.toBe(DEFAULT_OVERTIME_BUFFER_MINUTES);
+    expect(DEFAULT_OVERTIME_BUFFER_MINUTES).toBe(15);
   });
 
-  it('devolve 0 sem consultar o banco quando nao ha empresa', async () => {
-    await expect(getOvertimeBufferMinutes(null)).resolves.toBe(0);
+  it('devolve o default sem consultar o banco quando nao ha empresa', async () => {
+    await expect(getOvertimeBufferMinutes(null)).resolves.toBe(15);
     expect(mockPrisma.appSetting.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('respeita 0 explicito gravado pelo admin (desligado)', async () => {
+    mockPrisma.appSetting.findUnique.mockResolvedValue({ value: { bufferMinutes: 0 } });
+
+    await expect(getOvertimeBufferMinutes('admin-1')).resolves.toBe(0);
   });
 
   it('devolve 0 quando o valor gravado e lixo', async () => {
@@ -75,10 +84,10 @@ describe('getOvertimeBufferMinutes', () => {
     await expect(getOvertimeBufferMinutes('admin-1')).resolves.toBe(0);
   });
 
-  // Erro de configuracao nao pode impedir alguem de bater ponto.
-  it('devolve 0 quando a leitura estoura, sem propagar', async () => {
+  // Erro de configuracao nao pode impedir alguem de bater ponto, nem desligar a regra.
+  it('devolve o default quando a leitura estoura, sem propagar', async () => {
     mockPrisma.appSetting.findUnique.mockRejectedValue(new Error('connection refused'));
 
-    await expect(getOvertimeBufferMinutes('admin-1')).resolves.toBe(0);
+    await expect(getOvertimeBufferMinutes('admin-1')).resolves.toBe(15);
   });
 });

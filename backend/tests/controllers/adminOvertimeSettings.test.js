@@ -40,12 +40,12 @@ describe('configuracao de hora extra da empresa', () => {
       expect(mockRes.json).toHaveBeenCalledWith({ overtimeSettings: { bufferMinutes: 10 } });
     });
 
-    it('devolve 0 quando a empresa nunca configurou', async () => {
+    it('devolve o default de 15 quando a empresa nunca configurou', async () => {
       mockPrisma.appSetting.findUnique.mockResolvedValue(null);
 
       await getOvertimeSettings(mockReq, mockRes);
 
-      expect(mockRes.json).toHaveBeenCalledWith({ overtimeSettings: { bufferMinutes: 0 } });
+      expect(mockRes.json).toHaveBeenCalledWith({ overtimeSettings: { bufferMinutes: 15 } });
     });
   });
 
@@ -94,11 +94,10 @@ describe('configuracao de hora extra da empresa', () => {
       expect(mockPrisma.appSetting.upsert).not.toHaveBeenCalled();
     });
 
-    it('grava na empresa do ator, nao no id dele, quando ele nao e o ADMIN dono', async () => {
-      // Um SUPERVISOR nunca alcanca esta rota (roleCheck(['ADMIN'])), mas o
-      // escopo e resolvido pelo mesmo helper em todo lugar: a empresa vem de
-      // organizationAdminId quando ele existe.
-      mockReq.user = { id: 'someone-2', role: 'ADMIN', organizationAdminId: 'admin-9' };
+    it('grava na empresa do ator, nao no id dele, quando ele nao e o ADMIN dono (INTEGRATOR)', async () => {
+      // A rota aceita ADMIN e INTEGRATOR; o INTEGRATOR carrega organizationAdminId
+      // apontando para o ADMIN dele, e e essa a empresa que recebe a chave.
+      mockReq.user = { id: 'integrator-2', role: 'INTEGRATOR', organizationAdminId: 'admin-9' };
       mockReq.body = { bufferMinutes: 20 };
 
       await updateOvertimeSettings(mockReq, mockRes);

@@ -10,6 +10,13 @@ import { passwordPolicyHint, validateStrongPassword } from '../lib/passwordPolic
 import { useAuth } from '../context/AuthContext'
 import { usePlan } from '../hooks/usePlan'
 import { TIME_ZONE_OPTIONS } from '../lib/timezone'
+import {
+  OVERTIME_BUFFER_DEFAULT,
+  OVERTIME_BUFFER_MAX,
+  fetchOvertimeSettings,
+  parseBufferMinutes,
+  saveOvertimeSettings,
+} from '../lib/overtimeSettings'
 import UserAvatar from '../components/UserAvatar'
 import { useTranslation } from 'react-i18next'
 
@@ -275,7 +282,7 @@ const AdminDashboard = () => {
     centerLng: '',
     radiusMeters: '200',
   })
-  const [overtimeBufferForm, setOvertimeBufferForm] = useState('0')
+  const [overtimeBufferForm, setOvertimeBufferForm] = useState(String(OVERTIME_BUFFER_DEFAULT))
   const [overtimeSettingsLoading, setOvertimeSettingsLoading] = useState(false)
   const [overtimeSettingsSaving, setOvertimeSettingsSaving] = useState(false)
   const [errorByUser, setErrorByUser] = useState<Record<string, string>>({})
@@ -450,11 +457,7 @@ const AdminDashboard = () => {
     if (!token) return
     setOvertimeSettingsLoading(true)
     try {
-      const response = await apiFetch<{ overtimeSettings: { bufferMinutes: number } }>(
-        '/admin/overtime-settings',
-        { token }
-      )
-      setOvertimeBufferForm(String(response.overtimeSettings?.bufferMinutes ?? 0))
+      setOvertimeBufferForm(String(await fetchOvertimeSettings(token)))
     } finally {
       setOvertimeSettingsLoading(false)
     }
@@ -1033,17 +1036,12 @@ const AdminDashboard = () => {
     setError('')
     setNotice('')
 
-    const trimmedBuffer = overtimeBufferForm.trim()
-    const parsed = Number(trimmedBuffer)
-    // Campo vazio vira Number('') === 0: sem esta checagem, limpar o campo e
-    // salvar zerava a tolerancia da empresa em vez de mostrar o erro de
-    // validacao. Mesma faixa que o servidor recusa com 400: o campo avisa
-    // antes de gastar uma ida ao servidor, mas quem manda continua sendo o backend.
-    if (!trimmedBuffer || !Number.isInteger(parsed) || parsed < 0 || parsed > 120) {
+    const parsed = parseBufferMinutes(overtimeBufferForm)
+    if (parsed === null) {
       setError(
         t(
-          'Overtime tolerance must be a whole number of minutes between 0 and 120.',
-          'A tolerancia de hora extra deve ser um numero inteiro de minutos entre 0 e 120.'
+          `Overtime tolerance must be a whole number of minutes between 0 and ${OVERTIME_BUFFER_MAX}.`,
+          `A tolerancia de hora extra deve ser um numero inteiro de minutos entre 0 e ${OVERTIME_BUFFER_MAX}.`
         )
       )
       return
@@ -1051,17 +1049,7 @@ const AdminDashboard = () => {
 
     setOvertimeSettingsSaving(true)
     try {
-      // skipIdempotency: salvar o mesmo valor duas vezes no mesmo dia voltaria
-      // 202 sem overtimeSettings no corpo, e a tela leria undefined.
-      const response = await apiFetch<{
-        overtimeSettings: { bufferMinutes: number }
-        message: string
-      }>('/admin/overtime-settings', {
-        token,
-        method: 'PATCH',
-        body: { bufferMinutes: parsed },
-        skipIdempotency: true,
-      })
+      const response = await saveOvertimeSettings(token, parsed)
 
       setOvertimeBufferForm(String(response.overtimeSettings.bufferMinutes))
       setNotice(
@@ -1339,7 +1327,7 @@ const AdminDashboard = () => {
                 id="overtime-buffer-minutes"
                 type="number"
                 min={0}
-                max={120}
+                max={OVERTIME_BUFFER_MAX}
                 step={1}
                 value={overtimeBufferForm}
                 onChange={(event) => setOvertimeBufferForm(event.target.value)}
@@ -1359,8 +1347,8 @@ const AdminDashboard = () => {
 
           <p className="mt-3 text-xs text-slate-500">
             {t(
-              '0 disables the tolerance: any minute past the contract generates overtime, which is how the system behaved before this setting existed. Changing it never recalculates past days.',
-              '0 desliga a tolerancia: qualquer minuto acima da jornada gera hora extra, que e como o sistema se comportava antes desta configuracao existir. Mudar o valor nunca recalcula dias passados.'
+              'Default is 15 minutes, in force even before you save anything. 0 disables the tolerance: any minute past the contract generates overtime. Changing it never recalculates past days.',
+              'O padrao e 15 minutos, valendo mesmo antes de salvar qualquer coisa. 0 desliga a tolerancia: qualquer minuto acima da jornada gera hora extra. Mudar o valor nunca recalcula dias passados.'
             )}
           </p>
         </div>

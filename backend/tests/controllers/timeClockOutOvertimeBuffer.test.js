@@ -136,14 +136,14 @@ describe('clock-out com buffer de hora extra', () => {
     });
   });
 
-  it('mantem o comportamento de hoje quando a empresa nunca configurou', async () => {
+  it('usa o default de 15 quando a empresa nunca configurou', async () => {
     mockPrisma.appSetting.findUnique.mockResolvedValue(null);
 
-    await closeShiftOf(481);
+    await closeShiftOf(495);
 
-    expect(updateArgs().data.overtimeMinutes).toBe(1);
-    expect(updateArgs().data.overtimeStatus).toBe('PENDING');
-    expect(updateArgs().data.overtimeBufferMinutes).toBe(0);
+    expect(updateArgs().data.overtimeMinutes).toBe(0);
+    expect(updateArgs().data.overtimeStatus).toBeNull();
+    expect(updateArgs().data.overtimeBufferMinutes).toBe(15);
   });
 
   it('nao derruba o clock-out quando a leitura do buffer falha', async () => {
@@ -153,6 +153,6 @@ describe('clock-out com buffer de hora extra', () => {
 
     expect(mockRes.status).not.toHaveBeenCalledWith(500);
     expect(updateArgs().data.overtimeMinutes).toBe(25);
-    expect(updateArgs().data.overtimeBufferMinutes).toBe(0);
+    expect(updateArgs().data.overtimeBufferMinutes).toBe(15);
   });
 });

@@ -7,6 +7,7 @@ const {
   listReports,
   deleteReport,
   getDailyBreakdown,
+  getWeeklyTimesheet,
 } = require('../controllers/report.controller');
 
 const router = express.Router();
@@ -44,6 +45,18 @@ router.get('/download/:filename', downloadReport);
  * Detalhamento diário por colaborador
  */
 router.get('/daily-breakdown', getDailyBreakdown);
+
+/**
+ * GET /reports/weekly-timesheet
+ * Timesheet da semana ao vivo, calculado na hora e sem fila.
+ * Query: weekStart=YYYY-MM-DD&userId?&timeZone?
+ *
+ * Fica ACIMA do `router.delete('/:filename')` e sem roleCheck de propósito:
+ * herda só o authMiddleware do topo, porque o escopo de quem pode ser
+ * consultado é decidido dentro do handler por canViewUser — um MEMBER precisa
+ * ler o próprio timesheet, e um SUPERVISOR só a equipe dele.
+ */
+router.get('/weekly-timesheet', getWeeklyTimesheet);
 
 /**
  * DELETE /reports/:filename

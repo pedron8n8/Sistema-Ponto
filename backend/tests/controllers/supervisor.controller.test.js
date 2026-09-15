@@ -7,9 +7,15 @@ jest.mock('../../src/config/database', () => ({ prisma: mockPrisma }));
 jest.mock('../../src/utils/recalcDay', () => ({
   recalculateUserDay: jest.fn(),
   reverseEntryBankHours: jest.fn().mockResolvedValue(undefined),
+  // O reject em LOTE nao usa mais reverseEntryBankHours: ele planeja a reversao
+  // e escreve DENTRO da propria transacao. O default devolve "nada a reverter";
+  // cada teste que precisa de accrual sobrescreve.
+  planEntryBankHoursReversal: jest
+    .fn()
+    .mockResolvedValue({ accrualIds: [], decrementsByUser: [], reversedMinutes: 0 }),
 }));
 
-const { reverseEntryBankHours } = require('../../src/utils/recalcDay');
+const { reverseEntryBankHours, planEntryBankHoursReversal } = require('../../src/utils/recalcDay');
 const {
   getTeamPendingEntries,
   approveEntry,
@@ -358,6 +364,7 @@ describe('Supervisor Controller', () => {
         status: 'PENDING',
         clockOut: new Date(),
         overtimeStatus: null,
+        workedMinutes: 480,
         overtimeMinutes: 0,
         overtimeMinutes50: 0,
         overtimeMinutes100: 0,
@@ -369,6 +376,8 @@ describe('Supervisor Controller', () => {
         status: 'PENDING',
         clockOut: new Date(),
         overtimeStatus: 'PENDING',
+        // 570 trabalhados com 90 de HE => 480 reconhecidos se a HE for negada.
+        workedMinutes: 570,
         overtimeMinutes: 90,
         overtimeMinutes50: 90,
         overtimeMinutes100: 0,
@@ -425,7 +434,12 @@ describe('Supervisor Controller', () => {
     // beforeEach (e nao so no captureOps) para que um teste que nao instrumenta
     // as operacoes ainda receba uma contagem real em vez de 0 silencioso.
     const countMatching = (args) => {
-      const ids = args.where?.id?.in || [];
+      // A negacao de HE em lote escreve UM updateMany POR LINHA (o tempo
+      // reconhecido depende do registro e updateMany so grava valor
+      // constante), entao o WHERE vem com `id` ESCALAR e nao `id: { in: [...] }`.
+      // Sem aceitar as duas formas, o count saia 0 e overtimeRejectedCount
+      // reportaria zero negacao num lote que negou.
+      const ids = args.where?.id?.in || (args.where?.id ? [args.where.id] : []);
       const matched = bulkEntries.filter((entry) => {
         if (!ids.includes(entry.id)) return false;
         if (args.where?.status && entry.status !== args.where.status) return false;
@@ -444,6 +458,14 @@ describe('Supervisor Controller', () => {
       // O controller agora lê o RESULTADO da transação, então o mock precisa
       // devolvê-lo em vez de undefined.
       mockPrisma.$transaction.mockImplementation((operations) => Promise.all(operations));
+      // `resetMocks: true` no jest.config apaga a implementação declarada no
+      // factory do jest.mock antes de CADA teste, então o valor de retorno tem
+      // de ser reposto aqui — sem isso o controller recebe undefined e estoura.
+      planEntryBankHoursReversal.mockResolvedValue({
+        accrualIds: [],
+        decrementsByUser: [],
+        reversedMinutes: 0,
+      });
     });
 
     it('aprova o lote e decide a HE pendente junto', async () => {
@@ -507,12 +529,19 @@ describe('Supervisor Controller', () => {
         })
       );
 
-      expect(reverseEntryBankHours).toHaveBeenCalledWith('entry-ot');
-      expect(reverseEntryBankHours).toHaveBeenCalledTimes(1);
+      // A reversão do banco de horas é PLANEJADA (leitura) e escrita dentro da
+      // transação. Antes era um laço de reverseEntryBankHours ANTES dela, e uma
+      // falha da transação deixava as marcações PENDING sem o crédito.
+      expect(planEntryBankHoursReversal).toHaveBeenCalledWith(['entry-ot']);
+      expect(reverseEntryBankHours).not.toHaveBeenCalled();
 
+      // Um UPDATE por linha, não um updateMany na lista: o tempo reconhecido é
+      // calculado por registro. O predicado de estado continua em cada linha.
       const otUpdate = ops.find((op) => op.data?.overtimeStatus === 'REJECTED');
-      expect(otUpdate.where.id.in).toEqual(['entry-ot']);
+      expect(otUpdate.where).toEqual({ id: 'entry-ot', overtimeStatus: 'PENDING' });
       expect(otUpdate.data).toMatchObject({
+        // 570 trabalhados menos os 90 de HE negada.
+        workedMinutes: 480,
         overtimeMinutes: 0,
         overtimeMinutes50: 0,
         overtimeMinutes100: 0,
@@ -639,7 +668,7 @@ describe('Supervisor Controller', () => {
         expect(mockRes.json).toHaveBeenCalledWith(
           expect.objectContaining({ rejectedCount: 2, overtimeRejectedCount: 1 })
         );
-        expect(reverseEntryBankHours).toHaveBeenCalledWith('entry-ot');
+        expect(planEntryBankHoursReversal).toHaveBeenCalledWith(['entry-ot']);
       });
 
       it('recusa colaborador fora do escopo do ator', async () => {
@@ -650,6 +679,98 @@ describe('Supervisor Controller', () => {
         expect(mockRes.status).toHaveBeenCalledWith(403);
         expect(mockPrisma.timeEntry.updateMany).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  // Negar HE desconta o tempo negado do tempo reconhecido da entrada. Antes a
+  // HE ia a zero mas workedMinutes continuava cheio, então o total do período, o
+  // KPI e o relatório seguiam mostrando as horas que o supervisor negou.
+  describe('rejectOvertime', () => {
+    const pendingOvertimeEntry = (over = {}) => ({
+      id: 'entry-ot',
+      userId: 'member-123',
+      status: 'PENDING',
+      clockIn: new Date('2026-08-28T11:00:00.000Z'),
+      clockOut: new Date('2026-08-28T20:30:00.000Z'),
+      overtimeStatus: 'PENDING',
+      workedMinutes: 570,
+      overtimeMinutes: 90,
+      overtimeMinutes50: 90,
+      overtimeMinutes100: 0,
+      bankHoursAccruedMinutes: 90,
+      user: {
+        id: 'member-123',
+        name: 'Member',
+        email: 'm@test.com',
+        supervisorId: 'supervisor-123',
+        organizationAdminId: 'admin-1',
+      },
+      ...over,
+    });
+
+    beforeEach(() => {
+      mockReq.params = { id: 'entry-ot' };
+      mockPrisma.timeEntry.findUnique.mockResolvedValue(pendingOvertimeEntry());
+      mockPrisma.$transaction.mockImplementation((operations) => Promise.all(operations));
+      // A negacao passou a escrever com updateMany + predicado de estado, para
+      // o perdedor de uma corrida perder. count: 1 = venceu a corrida.
+      mockPrisma.timeEntry.updateMany.mockResolvedValue({ count: 1 });
+      mockPrisma.approvalLog.create.mockResolvedValue({ id: 'log-1' });
+    });
+
+    it('desconta a HE negada do tempo reconhecido da entrada', async () => {
+      mockReq.body = { comment: 'Fora do combinado com o cliente' };
+
+      await rejectOvertime(mockReq, mockRes);
+
+      const update = mockPrisma.timeEntry.updateMany.mock.calls[0][0];
+      // O predicado de estado viaja no UPDATE, nao so na leitura anterior.
+      expect(update.where).toEqual({ id: 'entry-ot', overtimeStatus: 'PENDING' });
+      expect(update.data).toMatchObject({
+        overtimeStatus: 'REJECTED',
+        // 570 trabalhados menos os 90 de HE negada.
+        workedMinutes: 480,
+        overtimeMinutes: 0,
+        overtimeMinutes50: 0,
+        overtimeMinutes100: 0,
+        overtimePercent: 0,
+        bankHoursAccruedMinutes: 0,
+      });
+      // clockIn/clockOut são o fato bruto e não entram no update.
+      expect(update.data).not.toHaveProperty('clockIn');
+      expect(update.data).not.toHaveProperty('clockOut');
+      expect(reverseEntryBankHours).toHaveBeenCalledWith('entry-ot');
+    });
+
+    // Entrada que era HE de ponta a ponta (turno extra colado num dia já
+    // completo): o reconhecido vai a zero, e é justamente o caso que fazia o
+    // relatório recalcular a duração cheia de clockIn/clockOut.
+    it('zera o reconhecido quando a entrada inteira era hora extra', async () => {
+      mockPrisma.timeEntry.findUnique.mockResolvedValue(
+        pendingOvertimeEntry({ workedMinutes: 60, overtimeMinutes: 60, overtimeMinutes50: 60 })
+      );
+      mockReq.body = { comment: 'Turno extra nao autorizado' };
+
+      await rejectOvertime(mockReq, mockRes);
+
+      expect(mockPrisma.timeEntry.updateMany.mock.calls[0][0].data).toMatchObject({
+        workedMinutes: 0,
+        overtimeMinutes: 0,
+      });
+    });
+
+    // Quem perde a corrida tem que SABER que perdeu, em vez de receber 200 e
+    // acreditar que a decisao dele entrou.
+    it('devolve 409 quando outra pessoa ja decidiu a HE', async () => {
+      mockPrisma.timeEntry.updateMany.mockResolvedValue({ count: 0 });
+      mockReq.body = { comment: 'Fora do combinado com o cliente' };
+
+      await rejectOvertime(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(409);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'OVERTIME_NOT_PENDING' })
+      );
     });
   });
 

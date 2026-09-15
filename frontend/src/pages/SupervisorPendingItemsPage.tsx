@@ -3,6 +3,7 @@ import { apiFetch } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useTranslation } from 'react-i18next'
 import JourneyModal from '../components/JourneyModal'
+import OvertimeReviewList from '../components/OvertimeReviewList'
 
 type Entry = {
   id: string
@@ -47,6 +48,14 @@ const GLOBAL_BULK_KEY = '__period__'
 // Espelha MAX_SCOPE_ENTRIES do backend, so para nao oferecer um botao que vai voltar 400.
 // A autoridade continua sendo o servidor (supervisor.controller.js).
 const MAX_PERIOD_BULK = 500
+
+// Tamanho da pagina da listagem. Antes era um `limit=500` fixo sem paginacao:
+// a acao do PERIODO INTEIRO nao se enganava com isso (manda `{ scope }` e o
+// servidor resolve, e o contador vem de `pagination.total`), mas as acoes POR
+// COLABORADOR montam `entryIds` a partir de `entries` — e a confirmacao delas
+// dizia "todos os N registros pendentes ... NESTE PERIODO". Com a lista
+// truncada isso era promessa falsa: aprovava so o que tinha sido carregado.
+const PAGE_SIZE = 200
 
 type PeriodBulkScope = { startDate: string; endDate: string; userId?: string; groupId?: string }
 type BulkBody = { entryIds: string[]; comment?: string } | { scope: PeriodBulkScope; comment?: string }
@@ -94,8 +103,17 @@ const getPeriodRange = (periodType: PeriodType, anchorDate: string) => {
 
 const fmtHM = (minutes: number) => `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`
 
+// Negar hora extra desconta os minutos negados do tempo reconhecido no backend, e
+// uma entrada que era HE de ponta a ponta (turno extra colado num dia que ja
+// batia o contrato) fica com 0. O fallback abaixo trata 0 como "servidor nao
+// calculou" e recalcularia a duracao cheia, somando de volta ao total do periodo
+// exatamente as horas que o supervisor acabou de negar.
+//
+// overtimeStatus REJECTED e o discriminador: alguem decidiu, entao o 0 e valor e
+// nao ausencia. Mesma regra de backend/src/utils/recognizedMinutes.js.
 const entryMinutes = (entry: Entry) => {
   if (typeof entry.workedMinutes === 'number' && entry.workedMinutes > 0) return entry.workedMinutes
+  if (typeof entry.workedMinutes === 'number' && entry.overtimeStatus === 'REJECTED') return 0
   if (!entry.clockOut) return 0
   return Math.max(0, Math.floor((new Date(entry.clockOut).getTime() - new Date(entry.clockIn).getTime()) / 60000))
 }
@@ -124,6 +142,10 @@ const SupervisorPendingItemsPage = () => {
   // Total do servidor para o periodo/filtro atual: a listagem para em 500, entao o
   // contador das acoes globais nao pode sair de `entries`.
   const [periodTotal, setPeriodTotal] = useState(0)
+  // Quantas paginas estao na tela. Precisa ser lembrado porque a lista e relida
+  // depois de cada decisao: reler so a pagina 1 devolveria o supervisor ao
+  // inicio de uma fila que ele acabou de percorrer.
+  const [pagesLoaded, setPagesLoaded] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -132,6 +154,11 @@ const SupervisorPendingItemsPage = () => {
   const [bulkLoadingByUser, setBulkLoadingByUser] = useState<Record<string, boolean>>({})
   const [bulkCommentByUser, setBulkCommentByUser] = useState<Record<string, string>>({})
   const [detailEntryId, setDetailEntryId] = useState<string | null>(null)
+  // Trabalho normal e hora extra viraram abas: sao duas decisoes diferentes na
+  // mesma fila, e misturar os botoes fazia o supervisor decidir HE sem querer ao
+  // varrer o ponto. A ORDEM nao mudou — aprovar o ponto continua bloqueado
+  // enquanto a HE estiver pendente; a aba so torna essa ordem visivel.
+  const [activeTab, setActiveTab] = useState<'WORK' | 'OVERTIME'>('WORK')
 
   const [filters, setFilters] = useState({
     status: 'PENDING',
@@ -149,44 +176,81 @@ const SupervisorPendingItemsPage = () => {
     setAnchorDate(toYmd(boundary))
   }
 
-  const loadData = async () => {
+  // Carrega o intervalo fechado [fromPage, toPage]. `fromPage === 1` SUBSTITUI a
+  // lista; acima disso concatena. A acao do PERIODO INTEIRO nao depende disto —
+  // ela manda `{ scope }` e o servidor resolve. As acoes POR COLABORADOR sim:
+  // elas mandam `entryIds` montados a partir de `entries`, entao o que nao
+  // chegou aqui nao e aprovado nem negado.
+  const loadRange = async (fromPage: number, toPage: number) => {
     if (!token) return
 
     setLoading(true)
     setError('')
 
     try {
-      const query = new URLSearchParams()
-      if (filters.status) query.set('status', filters.status)
-      if (filters.userId) query.set('userId', filters.userId)
-      if (filters.groupId) query.set('groupId', filters.groupId)
-      query.set('startDate', startDate)
-      query.set('endDate', endDate)
-      query.set('limit', '500')
+      const collected: Entry[] = []
+      let lastStats: Stats | null = null
+      let subs: Subordinate[] | null = null
+      let total = 0
 
-      const entriesResponse = await apiFetch<{
-        entries: Entry[]
-        stats: Stats
-        subordinates: Subordinate[]
-        pagination?: { total: number }
-      }>(`/supervisor/entries?${query.toString()}`, { token })
+      // Sequencial, nao em paralelo: as paginas sao fatias de um mesmo ORDER BY,
+      // e respostas tiradas de estados diferentes do banco se misturariam.
+      for (let page = fromPage; page <= toPage; page += 1) {
+        const query = new URLSearchParams()
+        if (filters.status) query.set('status', filters.status)
+        if (filters.userId) query.set('userId', filters.userId)
+        if (filters.groupId) query.set('groupId', filters.groupId)
+        query.set('startDate', startDate)
+        query.set('endDate', endDate)
+        query.set('limit', String(PAGE_SIZE))
+        // `page`, 1-based: e o que o controller le
+        // (`skip = (parseInt(page) - 1) * limit`). Um `offset` seria ignorado em
+        // silencio e cada pagina nova repetiria a primeira.
+        query.set('page', String(page))
 
-      setEntries(entriesResponse.entries || [])
-      setStats(entriesResponse.stats || defaultStats)
-      setSubordinates(entriesResponse.subordinates || [])
-      setPeriodTotal(entriesResponse.pagination?.total || 0)
+        const entriesResponse = await apiFetch<{
+          entries: Entry[]
+          stats: Stats
+          subordinates: Subordinate[]
+          pagination?: { total: number }
+        }>(`/supervisor/entries?${query.toString()}`, { token })
+
+        collected.push(...(entriesResponse.entries || []))
+        if (entriesResponse.stats) lastStats = entriesResponse.stats
+        if (entriesResponse.subordinates) subs = entriesResponse.subordinates
+        total = entriesResponse.pagination?.total ?? total
+      }
+
+      setEntries((prev) => (fromPage === 1 ? collected : [...prev, ...collected]))
+      if (lastStats) setStats(lastStats)
+      if (subs) setSubordinates(subs)
+      setPeriodTotal(total)
+      setPagesLoaded(toPage)
     } catch (err) {
-      setEntries([])
-      setStats(defaultStats)
-      setPeriodTotal(0)
+      // Falha na primeira pagina significa que nao ha lista. Falha ao carregar
+      // mais preserva o que estava na tela: apagar tudo por um erro de rede
+      // jogaria fora a leitura de quem estava no meio da fila.
+      if (fromPage === 1) {
+        setEntries([])
+        setStats(defaultStats)
+        setPeriodTotal(0)
+        setPagesLoaded(1)
+      }
       setError(err instanceof Error ? err.message : t('Could not load pending items.', 'Erro ao carregar pendencias'))
     } finally {
       setLoading(false)
     }
   }
 
+  // Releitura depois de uma decisao: mantem as paginas JA abertas, senao o
+  // supervisor voltaria ao inicio de uma fila que acabou de percorrer.
+  const loadData = () => loadRange(1, pagesLoaded)
+
   useEffect(() => {
-    loadData().catch(() => undefined)
+    // Trocar filtro volta para a pagina 1 de proposito: `page` e um recorte do
+    // resultado do filtro ANTERIOR e nao significa nada no novo.
+    setPagesLoaded(1)
+    loadRange(1, 1).catch(() => undefined)
   }, [token, filters.status, filters.userId, filters.groupId, startDate, endDate])
 
   // Grupo = quem realmente tem gente abaixo, seja qual for o cargo. Filtrar por
@@ -196,6 +260,19 @@ const SupervisorPendingItemsPage = () => {
     const headIds = new Set(subordinates.map((s) => s.supervisorId).filter(Boolean))
     return subordinates.filter((s) => headIds.has(s.id))
   }, [subordinates])
+
+  // Recorte da aba de hora extra: sai da MESMA listagem do periodo, sem segunda
+  // chamada de API. Inclui as ja decididas para o supervisor conferir o que
+  // negou; o filtro de status do ponto continua valendo para as duas abas.
+  const overtimeEntries = useMemo(
+    () => entries.filter((entry) => entry.overtimeStatus || (entry.overtimeMinutes ?? 0) > 0),
+    [entries]
+  )
+
+  const pendingOvertimeEntries = useMemo(
+    () => overtimeEntries.filter((entry) => entry.overtimeStatus === 'PENDING'),
+    [overtimeEntries]
+  )
 
   const visibleSubordinates = useMemo(() => {
     if (!filters.groupId) return subordinates
@@ -334,7 +411,10 @@ const SupervisorPendingItemsPage = () => {
       setNotice(
         decision === 'APPROVE'
           ? t('Overtime approved. You can now review the entry.', 'Horas extras aprovadas. Agora voce pode revisar o ponto.')
-          : t('Overtime denied (not paid). You can now review the entry.', 'Horas extras negadas (nao pagas). Agora voce pode revisar o ponto.')
+          : t(
+              'Overtime denied: the denied minutes left the recognized total. You can now review the entry.',
+              'Horas extras negadas: os minutos negados sairam do total reconhecido. Agora voce pode revisar o ponto.'
+            )
       )
 
       setCommentByEntry((prev) => ({ ...prev, [entryId]: '' }))
@@ -421,6 +501,18 @@ const SupervisorPendingItemsPage = () => {
     return comment
   }
 
+  // A lista na tela cobre o periodo inteiro, ou e um pedaco dele?
+  const isTruncated = periodTotal > 0 && entries.length < periodTotal
+
+  // Ressalva de escopo das acoes POR COLABORADOR. Elas operam sobre os ids que
+  // estao na tela, entao dizer "neste periodo" com a lista truncada e mentira:
+  // o supervisor clicaria achando que fechou o colaborador e sobrariam
+  // registros que ele nunca viu. Com a lista completa, a frase antiga vale.
+  const scopeCaveat = () =>
+    isTruncated
+      ? t(' — only the ones loaded on screen, not the whole period', ' — apenas os carregados na tela, nao o periodo inteiro')
+      : t(' in this period', ' neste periodo')
+
   const handleBulkApprove = (group: WorkerGroup) => {
     if (group.approvableIds.length === 0) return
     const otWarning =
@@ -436,8 +528,8 @@ const SupervisorPendingItemsPage = () => {
       loadingKey: group.user.id || group.user.email,
       confirmText:
         t(
-          `Approve all ${group.approvableIds.length} pending entries of ${group.user.name} in this period?`,
-          `Aprovar todos os ${group.approvableIds.length} registros pendentes de ${group.user.name} neste periodo?`
+          `Approve ${group.approvableIds.length} pending entries of ${group.user.name}${scopeCaveat()}?`,
+          `Aprovar ${group.approvableIds.length} registros pendentes de ${group.user.name}${scopeCaveat()}?`
         ) + otWarning,
     })
   }
@@ -461,8 +553,8 @@ const SupervisorPendingItemsPage = () => {
       loadingKey: userKey,
       confirmText:
         t(
-          `Deny all ${group.approvableIds.length} pending entries of ${group.user.name} in this period?`,
-          `Negar todos os ${group.approvableIds.length} registros pendentes de ${group.user.name} neste periodo?`
+          `Deny ${group.approvableIds.length} pending entries of ${group.user.name}${scopeCaveat()}?`,
+          `Negar ${group.approvableIds.length} registros pendentes de ${group.user.name}${scopeCaveat()}?`
         ) + otWarning,
     })
     setBulkCommentByUser((prev) => ({ ...prev, [userKey]: '' }))
@@ -592,7 +684,7 @@ const SupervisorPendingItemsPage = () => {
     entry.overtimeStatus === 'APPROVED'
       ? t('approved', 'aprovadas')
       : entry.overtimeStatus === 'REJECTED'
-        ? t('denied (not paid)', 'negadas (nao pagas)')
+        ? t('denied (out of the total)', 'negadas (fora do total)')
         : t('awaiting decision', 'aguardando decisao')
 
   /**
@@ -780,6 +872,81 @@ const SupervisorPendingItemsPage = () => {
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-4 shadow-sm md:p-6">
         <h3 className="text-lg font-semibold text-slate-900">{t('Items', 'Itens')}</h3>
 
+        {/* Uma lista truncada nao pode parecer uma lista terminada: as acoes por
+            colaborador operam sobre o que esta aqui. A barra do periodo inteiro
+            continua correta e cobre o caso grande — por isso o aviso aponta
+            para ela em vez de exigir carregar tudo. */}
+        {isTruncated ? (
+          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-2xl bg-amber-50 p-3">
+            <p className="text-xs text-amber-800">
+              {t(
+                `Showing ${entries.length} of ${periodTotal} entries. Per-member actions only cover what is loaded; use the whole-period action above to cover everything.`,
+                `Mostrando ${entries.length} de ${periodTotal} registros. As acoes por colaborador cobrem so o que esta carregado; use a acao do periodo inteiro acima para cobrir tudo.`
+              )}
+            </p>
+            <button
+              type="button"
+              onClick={() => loadRange(pagesLoaded + 1, pagesLoaded + 1)}
+              disabled={loading}
+              className="min-h-[44px] rounded-full border border-amber-300 bg-white px-4 text-xs font-semibold text-amber-800 disabled:opacity-50 md:min-h-0 md:py-2"
+            >
+              {loading ? t('Loading...', 'Carregando...') : t('Load more', 'Carregar mais')}
+            </button>
+          </div>
+        ) : null}
+
+        {/* Abas: trabalho normal e hora extra sao decisoes diferentes sobre a mesma
+            fila. role="tablist" com setas do teclado nao foi usado de proposito —
+            sao dois botoes que trocam a lista, e o leitor de tela ja anuncia o
+            estado por aria-pressed. */}
+        <div className="mt-4 flex gap-2" role="group" aria-label={t('View', 'Visao')}>
+          <button
+            type="button"
+            onClick={() => setActiveTab('WORK')}
+            aria-pressed={activeTab === 'WORK'}
+            className={`min-h-[44px] flex-1 rounded-full px-4 text-sm font-medium md:min-h-0 md:flex-none md:py-2 ${
+              activeTab === 'WORK'
+                ? 'bg-teal-700 text-white'
+                : 'border border-slate-200 bg-white text-slate-700'
+            }`}
+          >
+            {t('Normal work', 'Trabalho normal')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('OVERTIME')}
+            aria-pressed={activeTab === 'OVERTIME'}
+            className={`min-h-[44px] flex-1 rounded-full px-4 text-sm font-medium md:min-h-0 md:flex-none md:py-2 ${
+              activeTab === 'OVERTIME'
+                ? 'bg-teal-700 text-white'
+                : 'border border-slate-200 bg-white text-slate-700'
+            }`}
+          >
+            {t('Overtime', 'Hora extra')}
+            {pendingOvertimeEntries.length > 0 ? ` (${pendingOvertimeEntries.length})` : ''}
+          </button>
+        </div>
+
+        {activeTab === 'OVERTIME' ? (
+          <div className="mt-4">
+            <OvertimeReviewList
+              entries={overtimeEntries}
+              comment={commentByEntry}
+              onCommentChange={(entryId, value) =>
+                setCommentByEntry((prev) => ({ ...prev, [entryId]: value }))
+              }
+              onDecision={handleOvertimeReview}
+              loadingByEntry={actionLoadingByEntry}
+              locale={locale}
+              emptyLabel={t(
+                'No overtime in the current filters.',
+                'Nenhuma hora extra no filtro atual.'
+              )}
+            />
+          </div>
+        ) : (
+          <>
+
         {/* Celular: a acao do periodo inteiro fica fixada acima da lista de cartoes.
             E a MESMA funcao usada no desktop, entao o contador (pagination.total via
             periodTotal), o teto de MAX_PERIOD_BULK e o gate de 5 caracteres para negar
@@ -960,32 +1127,25 @@ const SupervisorPendingItemsPage = () => {
                               className="mt-1 h-20 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
                             />
 
-                            {/* HE primeiro: enquanto a HE estiver PENDING, aprovar/rejeitar
-                                o ponto fica desabilitado, igual ao desktop (OVERTIME_FIRST). */}
+                            {/* HE primeiro: aprovar/rejeitar o ponto fica desabilitado
+                                enquanto a HE estiver PENDING (OVERTIME_FIRST). A decisao
+                                em si mudou de lugar — vive na aba "Hora extra" — para o
+                                supervisor nao decidir HE sem querer ao varrer o ponto. */}
                             {entry.overtimeStatus === 'PENDING' ? (
-                              <div className="mt-3">
-                                <div className="grid grid-cols-2 gap-2">
-                                  <button
-                                    onClick={() => handleOvertimeReview(entry.id, 'APPROVE')}
-                                    disabled={Boolean(actionLoadingByEntry[entry.id])}
-                                    className="min-h-[44px] rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                                  >
-                                    {t('Approve OT', 'Aprovar HE')}
-                                  </button>
-                                  <button
-                                    onClick={() => handleOvertimeReview(entry.id, 'REJECT')}
-                                    disabled={Boolean(actionLoadingByEntry[entry.id])}
-                                    className="min-h-[44px] rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 disabled:opacity-50"
-                                  >
-                                    {t('Deny OT', 'Negar HE')}
-                                  </button>
-                                </div>
-                                <p className="mt-2 text-xs text-amber-700">
+                              <div className="mt-3 rounded-2xl bg-amber-50 p-3">
+                                <p className="text-xs text-amber-800">
                                   {t(
-                                    'Decide the overtime before reviewing the entry.',
-                                    'Decida as horas extras antes de revisar o ponto.'
+                                    'Pending overtime. Decide it in the Overtime tab before reviewing the entry.',
+                                    'Hora extra pendente. Decida na aba Hora extra antes de revisar o ponto.'
                                   )}
                                 </p>
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveTab('OVERTIME')}
+                                  className="mt-2 min-h-[44px] w-full rounded-full border border-amber-300 bg-white px-4 text-sm font-semibold text-amber-800 md:min-h-0 md:w-auto md:py-2"
+                                >
+                                  {t('Go to overtime', 'Ir para hora extra')}
+                                </button>
                               </div>
                             ) : null}
 
@@ -1143,7 +1303,7 @@ const SupervisorPendingItemsPage = () => {
                                     {entry.overtimeStatus === 'APPROVED'
                                       ? t('approved', 'aprovadas')
                                       : entry.overtimeStatus === 'REJECTED'
-                                        ? t('denied (not paid)', 'negadas (nao pagas)')
+                                        ? t('denied (out of the total)', 'negadas (fora do total)')
                                         : t('awaiting decision', 'aguardando decisao')}
                                   </span>
                                 </p>
@@ -1181,27 +1341,24 @@ const SupervisorPendingItemsPage = () => {
                                     className="mt-3 h-20 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs"
                                   />
 
+                                  {/* Mesma separacao da lista compacta: a decisao de HE
+                                      vive na aba "Hora extra"; aqui fica so o aviso de
+                                      que ela bloqueia a revisao do ponto. */}
                                   {entry.overtimeStatus === 'PENDING' ? (
-                                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                                      <button
-                                        onClick={() => handleOvertimeReview(entry.id, 'APPROVE')}
-                                        disabled={Boolean(actionLoadingByEntry[entry.id])}
-                                        className="min-h-[44px] rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50 md:min-h-0 md:px-3"
-                                      >
-                                        {t('Approve OT', 'Aprovar HE')}
-                                      </button>
-
-                                      <button
-                                        onClick={() => handleOvertimeReview(entry.id, 'REJECT')}
-                                        disabled={Boolean(actionLoadingByEntry[entry.id])}
-                                        className="rounded-full border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50"
-                                      >
-                                        {t('Deny OT', 'Negar HE')}
-                                      </button>
-
-                                      <span className="text-xs text-amber-700">
-                                        {t('Decide the overtime before reviewing the entry.', 'Decida as horas extras antes de revisar o ponto.')}
+                                    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-2xl bg-amber-50 p-3">
+                                      <span className="text-xs text-amber-800">
+                                        {t(
+                                          'Pending overtime. Decide it in the Overtime tab first.',
+                                          'Hora extra pendente. Decida na aba Hora extra primeiro.'
+                                        )}
                                       </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveTab('OVERTIME')}
+                                        className="min-h-[44px] rounded-full border border-amber-300 bg-white px-4 py-2 text-xs font-semibold text-amber-800 md:min-h-0 md:px-3"
+                                      >
+                                        {t('Go to overtime', 'Ir para hora extra')}
+                                      </button>
                                     </div>
                                   ) : null}
 
@@ -1249,7 +1406,9 @@ const SupervisorPendingItemsPage = () => {
               )
             })
           )}
-        </div>
+            </div>
+          </>
+        )}
       </div>
 
       {detailEntryId

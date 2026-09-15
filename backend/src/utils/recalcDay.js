@@ -11,6 +11,60 @@ const { getStartOfDay, getEndOfDay } = require('./timeCalculations');
  * Créditos já PAGOS não são revertidos (não há como "despagar"); apenas têm o vínculo
  * com o registro removido pelo chamador, quando necessário.
  */
+/**
+ * Le o que precisa ser revertido de banco de horas para VARIAS marcacoes de uma
+ * vez, e devolve um plano — sem escrever nada.
+ *
+ * Existe para que o reject em lote possa reverter DENTRO da sua transacao. Antes
+ * ele chamava reverseEntryBankHours num laco sequencial ANTES da transacao: o
+ * accrual ja tinha sido apagado e o saldo decrementado quando a transacao rodava,
+ * entao uma falha dela deixava as marcacoes PENDING com o credito de banco de
+ * horas perdido, sem nenhuma escrita compensatoria. Era tambem o gargalo que
+ * limitava o lote (N x 3 queries sequenciais viram 1 leitura).
+ *
+ * A LEITURA fica de fora de proposito: ler antes nao causa dano, e manter as
+ * escritas em `$transaction([...])` (em lote, nao interativa) evita o timeout de
+ * transacao interativa que 200 registros x 4 queries estouraria.
+ *
+ * @param {string[]} timeEntryIds
+ * @returns {Promise<{accrualIds: string[], decrementsByUser: Array<{userId: string, minutes: number}>, reversedMinutes: number}>}
+ */
+const planEntryBankHoursReversal = async (timeEntryIds) => {
+  const ids = (Array.isArray(timeEntryIds) ? timeEntryIds : []).filter(Boolean);
+  if (!ids.length) return { accrualIds: [], decrementsByUser: [], reversedMinutes: 0 };
+
+  const pendingAccruals = await prisma.bankHoursEntry.findMany({
+    where: {
+      timeEntryId: { in: ids },
+      type: 'ACCRUAL',
+      paymentStatus: 'PENDING',
+      expiredAt: null,
+    },
+    select: { id: true, minutes: true, userId: true },
+  });
+
+  if (!pendingAccruals.length) return { accrualIds: [], decrementsByUser: [], reversedMinutes: 0 };
+
+  // Agrupa por colaborador: um lote pode cobrir varias pessoas, e o saldo vive
+  // na linha de cada uma.
+  const byUser = new Map();
+  let reversedMinutes = 0;
+
+  for (const accrual of pendingAccruals) {
+    const minutes = Math.max(0, accrual.minutes);
+    reversedMinutes += minutes;
+    byUser.set(accrual.userId, (byUser.get(accrual.userId) || 0) + minutes);
+  }
+
+  return {
+    accrualIds: pendingAccruals.map((item) => item.id),
+    decrementsByUser: [...byUser.entries()]
+      .filter(([, minutes]) => minutes > 0)
+      .map(([userId, minutes]) => ({ userId, minutes })),
+    reversedMinutes,
+  };
+};
+
 const reverseEntryBankHours = async (timeEntryId) => {
   if (!timeEntryId) return { reversedMinutes: 0 };
 
@@ -102,10 +156,20 @@ const recalculateUserDay = async ({ userId, date }) => {
     // HE negada é definitiva: mantém efeito zerado e não re-credita banco de horas,
     // mesmo que o recálculo do dia volte a produzir horas extras para este registro.
     if (entry.overtimeStatus === 'REJECTED') {
+      // O tempo negado sai do reconhecido: turno de 12h numa jornada de 8h com a
+      // HE negada vale 480min, não 720. Sem descontar aqui também, o recálculo
+      // do dia (edição do RH, batida offline sincronizada) regravava o valor
+      // cheio e desfazia em silêncio o que o supervisor negou.
+      //
+      // Desconta a HE da própria entrada em vez de cortar no contrato: num dia
+      // com várias entradas a HE é incremental e a segunda entrada pode ser HE
+      // de ponta a ponta, onde cortar em 480 daria número errado.
+      const recognizedMinutes = Math.max(0, overtime.workedMinutes - overtime.overtimeMinutes);
+
       await prisma.timeEntry.update({
         where: { id: entry.id },
         data: {
-          workedMinutes: overtime.workedMinutes,
+          workedMinutes: recognizedMinutes,
           overtimeMinutes: 0,
           overtimeMinutes50: 0,
           overtimeMinutes100: 0,
@@ -114,10 +178,15 @@ const recalculateUserDay = async ({ userId, date }) => {
         },
       });
 
+      // Acumula o tempo CHEIO, não o reconhecido: o colaborador trabalhou
+      // aqueles minutos e negar é sobre reconhecimento, não sobre rebobinar o
+      // relógio do dia. É também neutro para a HE das entradas seguintes — a
+      // diferença cai inteira na faixa acima do contrato, então otAfter-otBefore
+      // não muda (coberto por recalcDay.test.js).
       workedMinutesBeforeEntry += overtime.workedMinutes;
       results.push({
         id: entry.id,
-        workedMinutes: overtime.workedMinutes,
+        workedMinutes: recognizedMinutes,
         overtimeMinutes: 0,
         bankHoursAccruedMinutes: 0,
       });
@@ -201,4 +270,5 @@ const recalculateUserDay = async ({ userId, date }) => {
 module.exports = {
   recalculateUserDay,
   reverseEntryBankHours,
+  planEntryBankHoursReversal,
 };

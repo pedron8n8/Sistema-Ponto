@@ -1431,6 +1431,8 @@ const updateOvertimeSettings = async (req, res) => {
 };
 
 module.exports = {
+  getOvertimeSettings,
+  updateOvertimeSettings,
   getTimeEntryAuditLog,
   getUserTimeEntries,
   changeUserSupervisor,

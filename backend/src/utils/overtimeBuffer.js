@@ -9,6 +9,10 @@ const OVERTIME_BUFFER_KEY_PREFIX = 'overtimeBuffer:';
 // Acima disto deixa de ser tolerancia de relogio e vira jornada nao remunerada.
 const MAX_OVERTIME_BUFFER_MINUTES = 120;
 
+// Regra do produto: empresa sem configuracao tem buffer LIGADO em 15 minutos.
+// Zero explicito gravado pelo admin desliga.
+const DEFAULT_OVERTIME_BUFFER_MINUTES = 15;
+
 /** A empresa de um usuario: um ADMIN e a propria empresa, e seus colaboradores apontam para ele. */
 const resolveOrganizationAdminId = (user) => {
   if (!user) return null;
@@ -29,28 +33,31 @@ const buildOvertimeBufferKey = (organizationAdminId) =>
   `${OVERTIME_BUFFER_KEY_PREFIX}${organizationAdminId}`;
 
 /**
- * Buffer vigente da empresa, em minutos. Nunca lanca: ausencia, valor invalido
- * ou falha de leitura viram 0, porque um erro de configuracao nao pode impedir
- * alguem de bater ponto.
+ * Buffer vigente da empresa, em minutos. Nunca lanca: sem empresa, sem linha
+ * gravada ou falha de leitura viram o DEFAULT (15), porque um erro de
+ * configuracao nao pode impedir alguem de bater ponto nem desligar a regra.
+ * Linha existente com valor invalido vira 0 (admin gravou, respeita-se).
  */
 const getOvertimeBufferMinutes = async (organizationAdminId) => {
-  if (!organizationAdminId) return 0;
+  if (!organizationAdminId) return DEFAULT_OVERTIME_BUFFER_MINUTES;
 
   try {
     const row = await prisma.appSetting.findUnique({
       where: { key: buildOvertimeBufferKey(organizationAdminId) },
     });
 
-    return normalizeBufferMinutes(row?.value?.bufferMinutes);
+    if (row == null) return DEFAULT_OVERTIME_BUFFER_MINUTES;
+    return normalizeBufferMinutes(row.value?.bufferMinutes);
   } catch (error) {
     console.warn('[overtimeBuffer] Nao foi possivel ler o buffer da empresa:', error.message);
-    return 0;
+    return DEFAULT_OVERTIME_BUFFER_MINUTES;
   }
 };
 
 module.exports = {
   OVERTIME_BUFFER_KEY_PREFIX,
   MAX_OVERTIME_BUFFER_MINUTES,
+  DEFAULT_OVERTIME_BUFFER_MINUTES,
   resolveOrganizationAdminId,
   normalizeBufferMinutes,
   buildOvertimeBufferKey,

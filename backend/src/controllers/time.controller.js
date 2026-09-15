@@ -17,6 +17,11 @@ const {
   getOvertimeBufferMinutes,
   resolveOrganizationAdminId,
 } = require('../utils/overtimeBuffer');
+const {
+  isWorkedMinutesAuthoritative,
+  RECOGNIZED_MINUTES_SELECT,
+  assertOvertimeStatusSelected,
+} = require('../utils/recognizedMinutes');
 const { accrueBankHours, expireBankHoursIfNeeded } = require('../utils/bankHours');
 const { calculateEntryPayment } = require('../utils/entryPayment');
 const {
@@ -401,6 +406,16 @@ const resolveWorkedMinutes = (entry) => {
     return Math.floor(storedWorkedMinutes);
   }
 
+  // Entrada com HE negada que era HE de ponta a ponta tem 0 reconhecido DE
+  // PROPOSITO. Sem este guard, o fallback abaixo devolvia a duracao cheia e os
+  // minutos negados voltavam para workedMinutesBeforeEntry — inflando o total
+  // do dia, o painel ao vivo e a HE da marcacao seguinte, que ganhava hora
+  // extra empilhada sobre tempo ja negado.
+  assertOvertimeStatusSelected(entry, 'time.resolveWorkedMinutes');
+  if (isWorkedMinutesAuthoritative(entry)) {
+    return 0;
+  }
+
   const calculatedDuration = calculateDuration(
     entry.clockIn,
     entry.clockOut,
@@ -408,6 +423,30 @@ const resolveWorkedMinutes = (entry) => {
   );
   return Math.max(0, Math.floor(Number(calculatedDuration?.totalMinutes) || 0));
 };
+
+// Selects nomeados e exportados para que um teste possa afirmar a FORMA da
+// query. O mock do Prisma ignora `select`, entao asercao de comportamento nao
+// pega campo faltando — e foi um campo faltando aqui que deixou o clock-out
+// gravar HE dentro do buffer da empresa, estampada como PENDING, o que
+// BLOQUEIA a aprovacao do ponto.
+const CLOCK_OUT_USER_CONFIG_SELECT = {
+  contractDailyMinutes: true,
+  hourlyRate: true,
+  // A empresa decide o buffer de hora extra; sem isto nao ha como resolver o tenant.
+  organizationAdminId: true,
+};
+
+// Marcacoes anteriores do dia: alimentam workedMinutesBeforeEntry via
+// resolveWorkedMinutes, que precisa de overtimeStatus para distinguir um 0
+// autoritativo (HE negada) de um 0 por falta de calculo.
+const PRIOR_ENTRIES_SELECT = {
+  clockIn: true,
+  clockOut: true,
+  ...RECOGNIZED_MINUTES_SELECT,
+};
+
+const getClockOutUserConfigSelect = () => CLOCK_OUT_USER_CONFIG_SELECT;
+const getPriorEntriesSelect = () => PRIOR_ENTRIES_SELECT;
 
 const LOCATION_SOURCE_TERMINAL_QR =
   LOCATION_VALIDATION_SOURCES?.TERMINAL_QR || 'TERMINAL_QR';
@@ -941,13 +980,7 @@ const clockOut = async (req, res) => {
 
     const userConfig = await prisma.user.findUnique({
       where: { id: userId },
-      select: {
-        contractDailyMinutes: true,
-        hourlyRate: true,
-        // A empresa decide o buffer de hora extra; sem isto o select trazia so
-        // o contrato e nao havia como resolver o tenant aqui.
-        organizationAdminId: true,
-      },
+      select: CLOCK_OUT_USER_CONFIG_SELECT,
     });
 
     const dayStart = getStartOfDay(clockOutTime);
@@ -965,11 +998,7 @@ const clockOut = async (req, res) => {
           not: null,
         },
       },
-      select: {
-        clockIn: true,
-        clockOut: true,
-        workedMinutes: true,
-      },
+      select: PRIOR_ENTRIES_SELECT,
     });
 
     const normalizedPriorEntriesToday = Array.isArray(priorEntriesToday) ? priorEntriesToday : [];
@@ -1489,11 +1518,7 @@ const getCurrentEntry = async (req, res) => {
             not: null,
           },
         },
-        select: {
-          clockIn: true,
-          clockOut: true,
-          workedMinutes: true,
-        },
+        select: PRIOR_ENTRIES_SELECT,
       }),
     ]);
 
@@ -1899,4 +1924,9 @@ module.exports = {
   getTimeEntryById,
   updateMyEntryNotes,
   requestCorrection,
+  // Exportados para asercao de FORMA da query nos testes: o mock do Prisma
+  // ignora `select`, entao esta e a unica forma de provar que o limiar do
+  // tenant e o overtimeStatus chegam a quem precisa deles.
+  getClockOutUserConfigSelect,
+  getPriorEntriesSelect,
 };

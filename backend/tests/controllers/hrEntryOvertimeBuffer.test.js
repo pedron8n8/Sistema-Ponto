@@ -74,14 +74,14 @@ describe('snapshot do buffer nos registros do RH', () => {
       });
     });
 
-    it('grava 0 quando a empresa nunca configurou', async () => {
+    it('grava o default de 15 quando a empresa nunca configurou', async () => {
       mockPrisma.appSetting.findUnique.mockResolvedValue(null);
 
       await createHrEntry(mockReq, mockRes);
 
       expect(mockPrisma.timeEntry.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ overtimeBufferMinutes: 0 }),
+          data: expect.objectContaining({ overtimeBufferMinutes: 15 }),
         })
       );
     });
