@@ -101,6 +101,12 @@ const buildWeeklyTimesheet = ({
     // nao tem HE gravada nenhuma.
     const overtimeMinutes = applyMinOvertimeMinutes(workedMinutes - contract, minOvertimeMinutes);
 
+    // Mesmo corte da origem: o minuto que o limiar engoliu nao e hora extra E
+    // nao e hora normal reconhecida. Sem isto, o dia aberto mostra 490 e o
+    // mesmo dia fechado mostra 480.
+    const recognizedDayMinutes =
+      overtimeMinutes === 0 ? Math.min(workedMinutes, contract) : workedMinutes;
+
     return {
       dateKey,
       // Cada linha ganha os minutos reconhecidos ao lado do workedMinutes
@@ -111,7 +117,7 @@ const buildWeeklyTimesheet = ({
         ...entry,
         recognizedMinutes: recognizedEntryMinutes(entry),
       })),
-      workedMinutes,
+      workedMinutes: recognizedDayMinutes,
       overtimeMinutes,
       isOpen: dayEntries.some((entry) => !entry.clockOut),
     };

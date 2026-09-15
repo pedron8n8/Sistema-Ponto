@@ -366,5 +366,43 @@ describe('Report Controller', () => {
         })
       );
     });
+
+    // Task 2 corta na ORIGEM (recalcDay/clock-out), nao na camada de
+    // relatorio: este teste confirma que o custo nao precisa de nenhuma
+    // mudanca porque ele le o workedMinutes GRAVADO, que ja chega cortado.
+    it('paga o dia pelo minuto reconhecido ja gravado, cortado pelo limiar na origem', async () => {
+      req.user = { id: 'admin-123', role: 'ADMIN', timeZone: 'UTC' };
+      req.query = { date: '2026-05-08', timeZone: 'UTC' };
+
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'admin-123', isActive: true }]);
+      mockPrisma.timeEntry.findMany.mockResolvedValue([
+        {
+          id: 'entry-1',
+          userId: 'admin-123',
+          // 500min brutos entre clockIn e clockOut; a origem (contrato 480,
+          // limiar 30) ja gravou workedMinutes 480, nao 500.
+          clockIn: new Date('2026-05-08T11:00:00.000Z'),
+          clockOut: new Date('2026-05-08T19:20:00.000Z'),
+          workedMinutes: 480,
+          overtimeMinutes50: 0,
+          overtimeMinutes100: 0,
+          bankHoursAccruedMinutes: 0,
+          user: {
+            id: 'admin-123',
+            name: 'Admin',
+            email: 'admin@test.com',
+            hourlyRate: 10,
+            timeZone: 'UTC',
+          },
+        },
+      ]);
+
+      await reportController.getDailyBreakdown(req, res);
+
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.rows[0].workedMinutes).toBe(480);
+      // (480/60) * 10 = 80. Se o custo ressuscitasse os 500 brutos, daria 83.33.
+      expect(payload.rows[0].totalCost).toBe(80);
+    });
   });
 });

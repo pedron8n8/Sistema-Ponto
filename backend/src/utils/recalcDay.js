@@ -206,6 +206,18 @@ const recalculateUserDay = async ({ userId, date }) => {
       continue;
     }
 
+    // Minuto engolido pelo limiar sai do reconhecido, igual ao tratamento da HE
+    // negada logo acima: as duas situacoes sao "esse tempo nao vira hora
+    // extra", e deixar uma delas virar hora normal paga e o que fazia a
+    // planilha pagar 490 minutos num dia de contrato 480.
+    //
+    // overtimeMinutesBeforeThreshold so e > 0 quando houve excedente e o
+    // limiar o zerou; se overtimeMinutes ja veio > 0 (excedente real, acima do
+    // limiar, ou sem limiar configurado) nada e engolido.
+    const swallowedByThreshold =
+      overtime.overtimeMinutes === 0 ? overtime.overtimeMinutesBeforeThreshold : 0;
+    const recognizedMinutes = Math.max(0, overtime.workedMinutes - swallowedByThreshold);
+
     // GRAVA PRIMEIRO, CREDITA DEPOIS. accrueBankHours relê o registro no banco
     // para decidir se o crédito está represado (batida offline aguardando o
     // supervisor). Creditando antes deste update, um registro represado que
@@ -222,7 +234,7 @@ const recalculateUserDay = async ({ userId, date }) => {
     await prisma.timeEntry.update({
       where: { id: entry.id },
       data: {
-        workedMinutes: overtime.workedMinutes,
+        workedMinutes: recognizedMinutes,
         overtimeMinutes: overtime.overtimeMinutes,
         overtimeMinutes50: overtime.overtimeMinutes50,
         overtimeMinutes100: overtime.overtimeMinutes100,
@@ -268,10 +280,13 @@ const recalculateUserDay = async ({ userId, date }) => {
       );
     }
 
+    // Acumula o tempo CHEIO, nao o reconhecido: a diferenca cai inteira na
+    // faixa acima do contrato (mesma razao do comentario no ramo REJECTED
+    // acima), entao nao pode deslocar a hora extra das marcacoes seguintes.
     workedMinutesBeforeEntry += overtime.workedMinutes;
     results.push({
       id: entry.id,
-      workedMinutes: overtime.workedMinutes,
+      workedMinutes: recognizedMinutes,
       overtimeMinutes: overtime.overtimeMinutes,
       bankHoursAccruedMinutes: bankHoursResult.accruedMinutes,
     });

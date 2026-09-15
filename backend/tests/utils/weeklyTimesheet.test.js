@@ -68,8 +68,10 @@ describe('buildWeeklyTimesheet', () => {
     const result = buildWeeklyTimesheet({ ...base, minOvertimeMinutes: 10, entries: [short] });
 
     expect(result.days[0].overtimeMinutes).toBe(0);
-    // O tempo trabalhado e fato e nao muda por causa de uma regra de HE.
-    expect(result.days[0].workedMinutes).toBe(486);
+    // O minuto que o limiar engoliu sai do reconhecido, igual ao que a origem
+    // (recalcDay/clock-out) ja grava: sem este corte aqui, o dia ainda aberto
+    // mostraria 486 e o mesmo dia fechado mostraria 480.
+    expect(result.days[0].workedMinutes).toBe(480);
   });
 
   it('tira a HE do TOTAL do dia, nao da fatia de cada marcacao', () => {
@@ -168,7 +170,8 @@ describe('buildWeeklyTimesheet', () => {
       entries: [segunda, terca],
     });
 
-    expect(result.totalWorkedMinutes).toBe(972);
+    // Cada dia engole seus proprios 6min (486 -> 480): 960, nao 972.
+    expect(result.totalWorkedMinutes).toBe(960);
     expect(result.totalOvertimeMinutes).toBe(0);
   });
 });

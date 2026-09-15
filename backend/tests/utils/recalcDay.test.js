@@ -248,6 +248,41 @@ describe('recalculateUserDay', () => {
 
       expect(result.overtimeMinutes).toBe(20);
     });
+
+    it('tira do reconhecido o minuto que o limiar engoliu', async () => {
+      // 500 trabalhados, contrato 480, limiar 30: os 20 de excedente nao viram
+      // hora extra E nao ficam como hora normal paga.
+      const stored = arrangeEntry(shortOvertimeEntry({ overtimeMinMinutesApplied: 30 }));
+
+      const [result] = await recalculateUserDay({ userId: 'user-123', date: DAY });
+
+      expect(result.overtimeMinutes).toBe(0);
+      expect(result.workedMinutes).toBe(480);
+      expect(stored.workedMinutes).toBe(480);
+    });
+
+    it('acima do limiar o excedente continua inteiro no reconhecido', async () => {
+      const stored = arrangeEntry(shortOvertimeEntry({ overtimeMinMinutesApplied: 15 }));
+
+      const [result] = await recalculateUserDay({ userId: 'user-123', date: DAY });
+
+      expect(result.overtimeMinutes).toBe(20);
+      expect(stored.workedMinutes).toBe(500);
+    });
+
+    it('dia abaixo do contrato nao e tocado', async () => {
+      const stored = arrangeEntry(
+        shortOvertimeEntry({
+          clockIn: new Date(DAY.getTime() - 400 * 60 * 1000),
+          overtimeMinMinutesApplied: 30,
+        })
+      );
+
+      const [result] = await recalculateUserDay({ userId: 'user-123', date: DAY });
+
+      expect(result.workedMinutes).toBe(400);
+      expect(stored.workedMinutes).toBe(400);
+    });
   });
 });
 
@@ -370,8 +405,9 @@ describe('recalculateUserDay com limiar de HE curta do tenant', () => {
     expect(result.overtimeMinutes).toBe(0);
     // Sem HE a decidir, nao pode sobrar pendencia na fila do supervisor.
     expect(stored.overtimeStatus).toBeNull();
-    // O tempo trabalhado e fato e nao muda por causa do limiar.
-    expect(stored.workedMinutes).toBe(485);
+    // O minuto que o limiar engoliu sai do reconhecido: 485 trabalhados com
+    // contrato 480 e limiar 10 vira 480 gravados, nao 485 (Task 2).
+    expect(stored.workedMinutes).toBe(480);
   });
 
   it('mantem a HE que cruza o limiar do tenant', async () => {

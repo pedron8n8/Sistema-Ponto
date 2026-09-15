@@ -139,6 +139,7 @@ const calculateIncrementalOvertimeSummary = ({
       workedMinutesBeforeEntry: Math.max(0, Math.floor(Number(workedMinutesBeforeEntry) || 0)),
       workedMinutesAfterEntry: Math.max(0, Math.floor(Number(workedMinutesBeforeEntry) || 0)),
       contractDailyMinutes: resolveContractDailyMinutes(contractDailyMinutes),
+      overtimeMinutesBeforeThreshold: 0,
     };
   }
 
@@ -154,14 +155,16 @@ const calculateIncrementalOvertimeSummary = ({
   // de virarem zero cada uma: ao cruzar o limiar, os minutos antes suprimidos
   // voltam na entrada que cruzou.
   const threshold = resolveMinOvertimeMinutes(minOvertimeMinutes);
-  const overtimeBefore = applyOvertimeThreshold(
-    Math.max(0, minutesBefore - effectiveContractMinutes),
-    threshold
-  );
-  const overtimeAfter = applyOvertimeThreshold(
-    Math.max(0, totalAfterEntry - effectiveContractMinutes),
-    threshold
-  );
+  // Excedente ANTES do corte do limiar, incremental igual ao overtimeMinutes
+  // abaixo, so que sem aplicar applyOvertimeThreshold. Existe para o chamador
+  // distinguir "nao houve excedente" (0 tambem aqui) de "houve e o limiar
+  // engoliu" (0 em overtimeMinutes, > 0 aqui) — a franquia que sai do
+  // reconhecido é exatamente essa diferença.
+  const rawOvertimeBefore = Math.max(0, minutesBefore - effectiveContractMinutes);
+  const rawOvertimeAfter = Math.max(0, totalAfterEntry - effectiveContractMinutes);
+  const overtimeMinutesBeforeThreshold = Math.max(0, rawOvertimeAfter - rawOvertimeBefore);
+  const overtimeBefore = applyOvertimeThreshold(rawOvertimeBefore, threshold);
+  const overtimeAfter = applyOvertimeThreshold(rawOvertimeAfter, threshold);
   const overtimeMinutes = Math.max(0, overtimeAfter - overtimeBefore);
   const { isSpecialDay, dayType } = resolveDayType(start);
 
@@ -175,6 +178,7 @@ const calculateIncrementalOvertimeSummary = ({
     workedMinutesBeforeEntry: minutesBefore,
     workedMinutesAfterEntry: totalAfterEntry,
     contractDailyMinutes: effectiveContractMinutes,
+    overtimeMinutesBeforeThreshold,
   };
 };
 

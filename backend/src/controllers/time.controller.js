@@ -1051,8 +1051,16 @@ const clockOut = async (req, res) => {
       minOvertimeMinutes: resolveMinOvertimeMinutes(userConfig),
     });
 
+    // Minuto engolido pelo limiar sai do reconhecido, mesmo tratamento do
+    // recalculo do dia (recalcDay.js): as duas situacoes sao "esse tempo nao
+    // vira hora extra", e nao cortar aqui faria o clock-out gravar hora normal
+    // paga pelo minuto que o limiar zerou.
+    const swallowedByThreshold =
+      overtime.overtimeMinutes === 0 ? overtime.overtimeMinutesBeforeThreshold : 0;
+    const recognizedMinutes = Math.max(0, overtime.workedMinutes - swallowedByThreshold);
+
     const financial = calculateFinancialSummary({
-      workedMinutes: overtime.workedMinutes,
+      workedMinutes: recognizedMinutes,
       overtimeMinutes50: overtime.overtimeMinutes50,
       overtimeMinutes100: overtime.overtimeMinutes100,
       hourlyRate: userConfig?.hourlyRate,
@@ -1071,7 +1079,7 @@ const clockOut = async (req, res) => {
         ...(openEntry.breakStartedAt && {
           breaks: [...(Array.isArray(openEntry.breaks) ? openEntry.breaks : []), { start: openEntry.breakStartedAt, end: clockOutTime }],
         }),
-        workedMinutes: overtime.workedMinutes,
+        workedMinutes: recognizedMinutes,
         overtimeMinutes: overtime.overtimeMinutes,
         overtimeMinutes50: overtime.overtimeMinutes50,
         overtimeMinutes100: overtime.overtimeMinutes100,
