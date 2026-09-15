@@ -1835,23 +1835,25 @@ const approveOvertime = async (req, res) => {
 };
 
 /**
+ * Comentário do log de negação de HE: o que o supervisor escreveu (se escreveu)
+ * mais os minutos originais, que é o que permite auditar o número revertido.
+ */
+const buildOvertimeRejectionNote = (trimmedComment, entry) => {
+  const original = `[HE original: ${entry.overtimeMinutes}min (50%: ${entry.overtimeMinutes50}min, 100%: ${entry.overtimeMinutes100}min), banco: ${entry.bankHoursAccruedMinutes}min]`;
+  return trimmedComment ? `${trimmedComment} ${original}` : original;
+};
+
+/**
  * PATCH /supervisor/overtime/:id/reject
  * Nega as horas extras de um registro: zera o efeito (não paga, não acumula banco)
  * revertendo o crédito de banco de horas já lançado. O ponto continua aprovável depois.
+ * Comentário é opcional (diferente da rejeição da marcação em si).
  */
 const rejectOvertime = async (req, res) => {
   try {
     const supervisorId = req.user.id;
     const { id } = req.params;
-    const { comment } = req.body || {};
-
-    // Comentário obrigatório para negar horas extras
-    if (!comment || comment.trim().length < 5) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Comentário obrigatório para negar horas extras (mínimo 5 caracteres)',
-      });
-    }
+    const comment = typeof (req.body || {}).comment === 'string' ? req.body.comment.trim() : '';
 
     const entry = await loadEntryForOvertimeDecision(req, res);
     if (!entry) return;
@@ -1891,7 +1893,7 @@ const rejectOvertime = async (req, res) => {
           timeEntryId: id,
           reviewerId: supervisorId,
           action: 'OVERTIME_REJECTED',
-          comment: `${comment.trim()} [HE original: ${entry.overtimeMinutes}min (50%: ${entry.overtimeMinutes50}min, 100%: ${entry.overtimeMinutes100}min), banco: ${entry.bankHoursAccruedMinutes}min]`,
+          comment: buildOvertimeRejectionNote(comment, entry),
         },
       }),
     ]);
@@ -1931,6 +1933,142 @@ const rejectOvertime = async (req, res) => {
     res.status(500).json({
       error: 'Internal Server Error',
       message: 'Erro ao negar horas extras',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message }),
+    });
+  }
+};
+
+/**
+ * POST /supervisor/overtime/bulk/reject
+ * Nega a hora extra de vários registros de uma vez: zera o efeito de cada um e
+ * reverte o banco de horas, SEM tocar no status da marcação em si — o ponto
+ * continua PENDING e aprovável depois. Comentário é opcional, igual ao
+ * endpoint de um registro só (rejectOvertime).
+ * Body: { entryIds: string[] } (1..200 ids), comment?: string
+ */
+const rejectOvertimeBulk = async (req, res) => {
+  try {
+    const supervisorId = req.user.id;
+    const { entryIds, comment } = req.body || {};
+    const trimmedComment = typeof comment === 'string' ? comment.trim() : '';
+
+    if (!Array.isArray(entryIds) || entryIds.length === 0 || entryIds.length > 200) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Informe entryIds como um array com 1 a 200 registros.',
+      });
+    }
+
+    const entries = await prisma.timeEntry.findMany({
+      where: { id: { in: entryIds } },
+      include: BULK_ENTRY_INCLUDE,
+    });
+
+    const foundIds = new Set(entries.map((entry) => entry.id));
+    const skipped = entryIds
+      .filter((id) => !foundIds.has(id))
+      .map((id) => ({ id, reason: 'NOT_FOUND' }));
+
+    // Reaproveita a mesma classificação de autorização/estado da marcação que o
+    // resto do lote usa (FORBIDDEN, ENTRY_NOT_PENDING, ENTRY_OPEN). `skipped` é
+    // mutado in-place por classifyBulkEntries.
+    const { eligible } = await classifyBulkEntries(req.user, entries, skipped);
+
+    // Diferente de rejectEntriesBulk: aqui só a trilha de HE é decidida. Uma
+    // marcação elegível (PENDING, com clockOut) mas sem HE PENDING não é erro —
+    // é um pulo com motivo próprio, porque não há hora extra para negar.
+    const overtimeEntries = [];
+    for (const entry of eligible) {
+      if (entry.overtimeStatus === 'PENDING') {
+        overtimeEntries.push(entry);
+      } else {
+        skipped.push({ id: entry.id, reason: 'OVERTIME_NOT_PENDING' });
+      }
+    }
+
+    if (overtimeEntries.length === 0) {
+      return res.status(409).json({
+        error: 'Conflict',
+        message: 'Nenhuma hora extra elegível para negação. Atualize a lista.',
+        overtimeRejectedCount: 0,
+        skipped,
+      });
+    }
+
+    const overtimeIds = overtimeEntries.map((entry) => entry.id);
+
+    // Planeja a reversão do banco de horas: LÊ agora, ESCREVE dentro da
+    // transação abaixo. Mesmo formato de rejectEntriesBulk — nada de laço
+    // sequencial de reverseEntryBankHours antes da transação.
+    const bankReversal = await planEntryBankHoursReversal(overtimeIds);
+
+    // Um UPDATE POR LINHA: o tempo reconhecido depende do registro
+    // (workedMinutes menos a HE negada daquela linha), e cada um leva o
+    // predicado de estado `overtimeStatus: 'PENDING'` no próprio WHERE, para o
+    // banco decidir quem venceu uma corrida — não a leitura anterior.
+    const overtimeUpdateOps = overtimeEntries.map((entry) =>
+      prisma.timeEntry.updateMany({
+        where: { id: entry.id, overtimeStatus: 'PENDING' },
+        data: {
+          overtimeStatus: 'REJECTED',
+          workedMinutes: Math.max(
+            0,
+            (Number(entry.workedMinutes) || 0) - (Number(entry.overtimeMinutes) || 0)
+          ),
+          overtimeMinutes: 0,
+          overtimeMinutes50: 0,
+          overtimeMinutes100: 0,
+          overtimePercent: 0,
+          bankHoursAccruedMinutes: 0,
+        },
+      })
+    );
+
+    const results = await prisma.$transaction([
+      ...overtimeUpdateOps,
+      prisma.approvalLog.createMany({
+        data: overtimeEntries.map((entry) => ({
+          timeEntryId: entry.id,
+          reviewerId: supervisorId,
+          action: 'OVERTIME_REJECTED',
+          comment: buildOvertimeRejectionNote(trimmedComment, entry),
+        })),
+      }),
+      ...(bankReversal.accrualIds.length
+        ? [
+            prisma.bankHoursEntry.deleteMany({
+              where: { id: { in: bankReversal.accrualIds } },
+            }),
+            ...bankReversal.decrementsByUser.map(({ userId, minutes }) =>
+              prisma.user.update({
+                where: { id: userId },
+                data: { bankHoursBalanceMinutes: { decrement: minutes } },
+              })
+            ),
+          ]
+        : []),
+    ]);
+
+    // Cada updateMany por linha devolve o próprio count: o número REAL escrito
+    // pelo banco, não o tamanho da lista em memória que perde para uma corrida.
+    const overtimeRejectedCount = results
+      .slice(0, overtimeIds.length)
+      .reduce((sum, result) => sum + (result?.count ?? 0), 0);
+
+    console.log(
+      `❌ ${overtimeRejectedCount} horas extras negadas em lote por ${req.user.email}`
+    );
+
+    res.json({
+      message: `${overtimeRejectedCount} hora(s) extra(s) negada(s)`,
+      overtimeRejectedCount,
+      skipped,
+    });
+  } catch (error) {
+    console.error('❌ Erro ao negar horas extras em lote:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Erro ao negar horas extras em lote',
       ...(process.env.NODE_ENV === 'development' && { details: error.message }),
     });
   }
@@ -2661,6 +2799,7 @@ module.exports = {
   rejectEntriesBulk,
   approveOvertime,
   rejectOvertime,
+  rejectOvertimeBulk,
   requestEdit,
   getEntryDetails,
   getTeamMembers,

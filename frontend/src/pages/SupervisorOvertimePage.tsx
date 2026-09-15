@@ -61,6 +61,11 @@ const SupervisorOvertimePage = () => {
   const [commentByEntry, setCommentByEntry] = useState<Record<string, string>>({})
   const [actionLoadingByEntry, setActionLoadingByEntry] = useState<Record<string, boolean>>({})
 
+  // Selecao para o "negar selecionadas" em lote (POST /supervisor/overtime/bulk/reject).
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkComment, setBulkComment] = useState('')
+  const [bulkLoading, setBulkLoading] = useState(false)
+
   const [overtimeFilter, setOvertimeFilter] = useState<OvertimeFilter>('PENDING')
   const [userId, setUserId] = useState('')
   const [startDate, setStartDate] = useState(() => toYmd(startOfCurrentWeek()))
@@ -181,19 +186,108 @@ const SupervisorOvertimePage = () => {
   const isPartialList = entries.length < serverTotal
   const partialSuffix = isPartialList ? '+' : ''
 
+  // Ids com HE pendente entre os que estao NA TELA agora (visibleEntries), que
+  // e o que "selecionar tudo" precisa cobrir — nunca o periodo inteiro nao
+  // carregado.
+  const selectablePendingIds = useMemo(
+    () => visibleEntries.filter((entry) => entry.overtimeStatus === 'PENDING').map((entry) => entry.id),
+    [visibleEntries]
+  )
+  const allSelected =
+    selectablePendingIds.length > 0 && selectablePendingIds.every((id) => selectedIds.has(id))
+
+  // Uma decisao (individual ou em lote) ou uma troca de filtro/pagina pode
+  // tirar uma marcacao de PENDING sem que a selecao seja limpa por outro
+  // caminho. Poda o que nao esta mais pendente em vez de confiar em cada
+  // chamador lembrar de limpar.
+  useEffect(() => {
+    const stillPending = new Set(
+      overtimeEntries.filter((entry) => entry.overtimeStatus === 'PENDING').map((entry) => entry.id)
+    )
+    setSelectedIds((prev) => {
+      let changed = false
+      const next = new Set<string>()
+      prev.forEach((id) => {
+        if (stillPending.has(id)) next.add(id)
+        else changed = true
+      })
+      return changed ? next : prev
+    })
+  }, [overtimeEntries])
+
+  const toggleSelect = (entryId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(entryId)) next.delete(entryId)
+      else next.add(entryId)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (allSelected) {
+        selectablePendingIds.forEach((id) => next.delete(id))
+      } else {
+        selectablePendingIds.forEach((id) => next.add(id))
+      }
+      return next
+    })
+  }
+
+  const denySelectedOvertime = async () => {
+    if (!token || selectedIds.size === 0) return
+
+    const comment = bulkComment.trim()
+    setError('')
+    setNotice('')
+    setBulkLoading(true)
+
+    try {
+      // skipIdempotency: repetir o mesmo corpo no mesmo dia (mesmo lote negado
+      // duas vezes por engano) devolveria 202 sem os contadores, e a tela leria
+      // isso como "zero negadas".
+      const result = await apiFetch<{
+        message: string
+        overtimeRejectedCount: number
+        skipped?: { id: string; reason: string }[]
+      }>('/supervisor/overtime/bulk/reject', {
+        token,
+        method: 'POST',
+        body: { entryIds: [...selectedIds], ...(comment ? { comment } : {}) },
+        skipIdempotency: true,
+      })
+
+      const skippedCount = result.skipped?.length || 0
+      setNotice(
+        t(
+          `${result.overtimeRejectedCount} overtime record(s) denied.${
+            skippedCount ? ` ${skippedCount} skipped.` : ''
+          }`,
+          `${result.overtimeRejectedCount} hora(s) extra(s) negada(s).${
+            skippedCount ? ` ${skippedCount} ignorada(s).` : ''
+          }`
+        )
+      )
+      setSelectedIds(new Set())
+      setBulkComment('')
+      await loadRange(1, pagesLoaded)
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : t('Could not deny selected overtime.', 'Erro ao negar horas extras selecionadas')
+      )
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
   const reviewOvertime = async (entryId: string, decision: 'APPROVE' | 'REJECT') => {
     if (!token) return
 
     const comment = (commentByEntry[entryId] || '').trim()
-    if (decision === 'REJECT' && comment.length < 5) {
-      setError(
-        t(
-          'To deny overtime, provide a comment with at least 5 characters.',
-          'Para negar horas extras, informe comentario com pelo menos 5 caracteres.'
-        )
-      )
-      return
-    }
 
     setError('')
     setNotice('')
@@ -320,6 +414,41 @@ const SupervisorOvertimePage = () => {
         {error ? <p className="mt-4 text-sm text-rose-600">{error}</p> : null}
         {notice ? <p className="mt-4 text-sm text-emerald-700">{notice}</p> : null}
 
+        {selectablePendingIds.length > 0 ? (
+          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50 p-3">
+            <label className="flex items-center gap-2 text-xs text-slate-600">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={toggleSelectAll}
+                aria-label={t('Select all listed', 'Selecionar todas as listadas')}
+                className="h-4 w-4"
+              />
+              {t('Select all listed', 'Selecionar todas as listadas')}
+            </label>
+
+            <input
+              type="text"
+              value={bulkComment}
+              onChange={(event) => setBulkComment(event.target.value)}
+              placeholder={t('Reason for the selected (optional)', 'Justificativa para as selecionadas (opcional)')}
+              aria-label={t('Bulk denial reason', 'Justificativa da negacao em lote')}
+              className="min-h-[44px] min-w-[14rem] flex-1 rounded-full border border-slate-200 bg-white px-3 text-xs md:min-h-0 md:py-2"
+            />
+
+            <button
+              type="button"
+              onClick={denySelectedOvertime}
+              disabled={selectedIds.size === 0 || bulkLoading}
+              className="min-h-[44px] rounded-full border border-rose-200 bg-white px-4 text-xs font-semibold text-rose-700 disabled:opacity-50 md:min-h-0 md:py-2"
+            >
+              {bulkLoading
+                ? t('Denying...', 'Negando...')
+                : t(`Deny selected overtime (${selectedIds.size})`, `Negar HE selecionadas (${selectedIds.size})`)}
+            </button>
+          </div>
+        ) : null}
+
         <div className="mt-5">
           {/* `entries.length === 0` no gate: com paginacao, `loading` tambem
               cobre o "carregar mais" e a releitura pos-decisao. Trocar a lista
@@ -337,6 +466,8 @@ const SupervisorOvertimePage = () => {
               onDecision={reviewOvertime}
               loadingByEntry={actionLoadingByEntry}
               locale={locale}
+              selectedIds={selectedIds}
+              onToggleSelect={toggleSelect}
             />
           )}
         </div>

@@ -8,6 +8,7 @@ const {
   rejectEntriesBulk,
   approveOvertime,
   rejectOvertime,
+  rejectOvertimeBulk,
   requestEdit,
   getEntryDetails,
   getTeamMembers,
@@ -104,9 +105,18 @@ router.patch('/overtime/:id/approve', approveOvertime);
 /**
  * PATCH /supervisor/overtime/:id/reject
  * Nega as horas extras de um registro (zera efeito e reverte banco de horas)
- * Body: { comment: string } (obrigatório)
+ * Body: { comment?: string } (opcional)
  */
 router.patch('/overtime/:id/reject', rejectOvertime);
+
+/**
+ * POST /supervisor/overtime/bulk/reject
+ * Nega a hora extra de vários registros de uma vez (zera efeito e reverte banco
+ * de horas de cada um). NÃO mexe no status da marcação: o ponto continua
+ * PENDING e aprovável depois.
+ * Body: { entryIds: string[], comment?: string } (comentário opcional)
+ */
+router.post('/overtime/bulk/reject', rejectOvertimeBulk);
 
 /**
  * PATCH /supervisor/request-edit/:id

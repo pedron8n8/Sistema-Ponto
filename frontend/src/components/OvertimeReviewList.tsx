@@ -30,11 +30,14 @@ type Props = {
   loadingByEntry: Record<string, boolean>
   locale: string
   emptyLabel?: string
+  // Selecao multipla e opcional: so a pagina dedicada de hora extra usa (para o
+  // "negar selecionadas" em lote). Sem estas duas props a checkbox nem aparece,
+  // entao a aba de pendencias continua igual.
+  selectedIds?: Set<string>
+  onToggleSelect?: (entryId: string) => void
 }
 
 const fmtHM = (minutes: number) => `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`
-
-const MIN_DENY_COMMENT = 5
 
 const OvertimeReviewList = ({
   entries,
@@ -44,6 +47,8 @@ const OvertimeReviewList = ({
   loadingByEntry,
   locale,
   emptyLabel,
+  selectedIds,
+  onToggleSelect,
 }: Props) => {
   const { t: i18nT, i18n } = useTranslation()
   const isPt = i18n.resolvedLanguage?.toLowerCase().startsWith('pt')
@@ -82,7 +87,6 @@ const OvertimeReviewList = ({
         const ot100 = entry.overtimeMinutes100 ?? 0
         const isPending = entry.overtimeStatus === 'PENDING'
         const busy = Boolean(loadingByEntry[entry.id])
-        const denyComment = (comment[entry.id] || '').trim()
 
         return (
           <li
@@ -90,11 +94,22 @@ const OvertimeReviewList = ({
             className="rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm backdrop-blur"
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-slate-800">{entry.user.name || entry.user.email}</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {fmtDateTime(entry.clockIn)} &rarr; {fmtDateTime(entry.clockOut)}
-                </p>
+              <div className="flex min-w-0 items-start gap-3">
+                {isPending && onToggleSelect ? (
+                  <input
+                    type="checkbox"
+                    checked={Boolean(selectedIds?.has(entry.id))}
+                    onChange={() => onToggleSelect(entry.id)}
+                    aria-label={t('Select for bulk denial', 'Selecionar para negacao em lote')}
+                    className="mt-1 h-4 w-4 shrink-0"
+                  />
+                ) : null}
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-slate-800">{entry.user.name || entry.user.email}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {fmtDateTime(entry.clockIn)} &rarr; {fmtDateTime(entry.clockOut)}
+                  </p>
+                </div>
               </div>
               <span className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${statusTone(entry)}`}>
                 {statusLabel(entry)}
@@ -114,13 +129,13 @@ const OvertimeReviewList = ({
 
             {isPending ? (
               <div className="mt-4 space-y-2">
-                {/* Negar exige justificativa de 5 caracteres (o backend devolve 400
-                    sem ela); o mesmo campo serve de comentario opcional do aprovar. */}
+                {/* Comentario opcional para as duas decisoes: negar HE nao exige
+                    justificativa (diferente de negar o ponto em si). */}
                 <input
                   type="text"
                   value={comment[entry.id] || ''}
                   onChange={(event) => onCommentChange(entry.id, event.target.value)}
-                  placeholder={t('Reason (required to deny)', 'Justificativa (obrigatoria para negar)')}
+                  placeholder={t('Reason (optional)', 'Justificativa (opcional)')}
                   aria-label={t('Overtime decision reason', 'Justificativa da decisao de hora extra')}
                   className="min-h-[44px] w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm md:min-h-0"
                 />
@@ -136,12 +151,7 @@ const OvertimeReviewList = ({
                   <button
                     type="button"
                     onClick={() => onDecision(entry.id, 'REJECT')}
-                    disabled={busy || denyComment.length < MIN_DENY_COMMENT}
-                    title={
-                      denyComment.length < MIN_DENY_COMMENT
-                        ? t('A reason of at least 5 characters is required.', 'Informe justificativa de pelo menos 5 caracteres.')
-                        : undefined
-                    }
+                    disabled={busy}
                     className="min-h-[44px] flex-1 rounded-xl border border-rose-200 px-4 text-sm font-medium text-rose-700 disabled:opacity-50 md:min-h-0 md:flex-none md:py-2"
                   >
                     {t('Deny overtime', 'Negar HE')}

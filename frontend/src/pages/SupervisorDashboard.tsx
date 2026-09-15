@@ -722,15 +722,6 @@ const SupervisorDashboard = () => {
   const submitOvertimeReview = async (decision: 'APPROVE' | 'REJECT') => {
     if (!token || !review.entry) return
     const comment = review.comment.trim()
-    if (decision === 'REJECT' && comment.length < 5) {
-      setError(
-        t(
-          'To deny overtime, provide a comment with at least 5 characters.',
-          'Para negar horas extras, informe comentario com pelo menos 5 caracteres.'
-        )
-      )
-      return
-    }
     setError('')
     try {
       await apiFetch(`/supervisor/overtime/${review.entry.id}/${decision === 'APPROVE' ? 'approve' : 'reject'}`, {
@@ -1652,8 +1643,8 @@ const SupervisorDashboard = () => {
                 </p>
                 <p className="mt-1 text-xs text-amber-700">
                   {t(
-                    'Approve or deny the overtime before approving the entry. Denying requires a comment (min. 5 characters).',
-                    'Aprove ou negue as horas extras antes de aprovar o ponto. Negar exige comentario (min. 5 caracteres).'
+                    'Approve or deny the overtime before approving the entry. Comment is optional.',
+                    'Aprove ou negue as horas extras antes de aprovar o ponto. Comentario e opcional.'
                   )}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
