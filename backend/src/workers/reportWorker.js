@@ -5,7 +5,12 @@ const fs = require('fs');
 const path = require('path');
 const xlsx = require('xlsx');
 const { parseDateFilter, resolveTimeZone } = require('../utils/dateFilters');
-const { calculateDayPaymentRaw, resolveSettledOvertime } = require('../utils/entryPayment');
+const {
+  calculateDayPaymentRaw,
+  allocateDayNormalMinutes,
+  resolveIncurredOvertime,
+  resolveSettledOvertime,
+} = require('../utils/entryPayment');
 const { resolveContractDailyMinutes } = require('../utils/overtime');
 
 // Fila de exportação de relatórios
@@ -105,11 +110,6 @@ const resolveHourlyRate = (user) => {
   return Number.isFinite(rate) && rate > 0 ? rate : 0;
 };
 
-const resolveOvertimeMinutes = (entry) => ({
-  ot50: Math.max(0, Number(entry.overtimeMinutes50) || 0),
-  ot100: Math.max(0, Number(entry.overtimeMinutes100) || 0),
-});
-
 // HE só conta (horas e adicional) depois de aprovada. overtimeStatus null ⇒ registro sem HE
 // a decidir (recalcDay.js:132), então o gate nunca descarta hora extra legítima.
 // Delegado para entryPayment.resolveSettledOvertime (a mesma política, nomeada e
@@ -119,87 +119,53 @@ const resolveApprovedOvertime = (entry) => {
   return { ot50: settled.overtimeMinutes50, ot100: settled.overtimeMinutes100 };
 };
 
-// Normais = trabalhado menos TODA a HE (inclusive a pendente), para que HE aguardando
-// decisão não seja promovida a hora normal.
-const resolveRegularMinutes = (entry) => {
-  const { ot50, ot100 } = resolveOvertimeMinutes(entry);
-  return Math.max(0, resolveWorkedMinutes(entry) - ot50 - ot100);
-};
-
-// Agrupa entries por (usuário, dia civil DO USUÁRIO) — mesma chave usada pelo
-// teto do contrato em toda esta planilha. REJECTED nunca entra num bucket: hora
-// rejeitada não é hora a pagar, e não deve consumir nem ceder fatia do teto do
-// dia de mais ninguém.
-const buildDayBuckets = (entries) => {
-  const buckets = new Map();
-
-  entries
-    .filter((entry) => entry.status === 'PENDING' || entry.status === 'APPROVED')
-    .forEach((entry) => {
-      const dayKey = resolveDayKeyForUser(entry.clockIn, entry.user.timeZone);
-      const bucketKey = `${entry.user.id}::${dayKey}`;
-      if (!buckets.has(bucketKey)) {
-        buckets.set(bucketKey, { user: entry.user, entries: [] });
-      }
-      buckets.get(bucketKey).entries.push(entry);
-    });
-
-  return buckets;
-};
-
 // A ÚNICA função que decide quanto CADA entry paga. buildDailyLogs e buildSummary
 // só consultam o resultado (por id) — nenhuma das duas recalcula por conta
 // própria — para que as duas planilhas do mesmo workbook nunca mais possam
 // divergir uma da outra (foi exatamente aí que a rodada anterior quebrou:
 // buildDailyLogs usava minutos normais crus, sem teto, e buildSummary já capava).
 //
-// Como o teto é por (usuário, dia) mas cada entry paga sua própria linha,
-// distribuímos os minutos normais do dia por ENCHIMENTO CRONOLÓGICO: ordena os
-// entries do dia por clockIn e cada um consome, em ordem, a fatia do teto que
-// ainda sobra; uma vez esgotado, os entries seguintes daquele dia (qualquer
-// status) ficam com 0 minuto normal — são literalmente os últimos minutos
-// trabalhados no dia, e é essa a explicação para quem lê a planilha. HE
-// aprovada fica anexada ao próprio entry (resolveApprovedOvertime), sem entrar
-// nesse enchimento — o teto nunca reduz o adicional já decidido.
+// O teto do dia é distribuído por entry via entryPayment.allocateDayNormalMinutes
+// (enchimento cronológico) — a MESMA função que report.controller.js usa para o
+// drill-down da página de custo. Este módulo só entrega os acessores (como ler
+// id/usuário/dia/HE incorrida/contrato de UM entry deste formato) e decide qual
+// HE vira adicional (aqui, só a aprovada — resolveApprovedOvertime); REJECTED
+// nunca entra: hora rejeitada não consome nem cede fatia do teto de ninguém.
 const computeEntryPayments = (entries) => {
+  const relevant = entries.filter((entry) => entry.status === 'PENDING' || entry.status === 'APPROVED');
+
+  const normalMinutesByEntryId = allocateDayNormalMinutes({
+    entries: relevant,
+    getEntryId: (entry) => entry.id,
+    getUserId: (entry) => entry.user.id,
+    getDayKey: (entry) => resolveDayKeyForUser(entry.clockIn, entry.user.timeZone),
+    getClockIn: (entry) => entry.clockIn,
+    getWorkedMinutes: resolveWorkedMinutes,
+    getIncurredOvertime: resolveIncurredOvertime,
+    getContractDailyMinutes: (entry) => resolveContractDailyMinutes(entry.user.contractDailyMinutes),
+  });
+
   const paymentByEntryId = new Map();
-  const buckets = buildDayBuckets(entries);
 
-  buckets.forEach((bucket) => {
-    const contractDailyMinutes = resolveContractDailyMinutes(bucket.user.contractDailyMinutes);
-    const rate = resolveHourlyRate(bucket.user);
-    const sorted = [...bucket.entries].sort((a, b) => new Date(a.clockIn) - new Date(b.clockIn));
+  relevant.forEach((entry) => {
+    const paidNormalMinutes = normalMinutesByEntryId.get(entry.id) || 0;
+    const contractDailyMinutes = resolveContractDailyMinutes(entry.user.contractDailyMinutes);
+    const rate = resolveHourlyRate(entry.user);
+    const { ot50, ot100 } = resolveApprovedOvertime(entry);
 
-    let cumulativeBeforeRaw = 0;
+    const payment = calculateDayPaymentRaw({
+      normalMinutes: paidNormalMinutes,
+      overtimeMinutes50: ot50,
+      overtimeMinutes100: ot100,
+      contractDailyMinutes,
+      hourlyRate: rate,
+    });
 
-    sorted.forEach((entry) => {
-      const regularMinutes = resolveRegularMinutes(entry);
-      const cumulativeAfterRaw = cumulativeBeforeRaw + regularMinutes;
-      // min(cumulativo, contrato) antes e depois: a diferença é exatamente a
-      // fatia do teto que sobrava quando este entry começou a consumi-lo — o
-      // mesmo "gatilho, não desconto" incremental que calculateIncrementalOvertimeSummary
-      // já usa (utils/overtime.js) para HE, aqui aplicado ao teto do normal.
-      const paidNormalMinutes = Math.max(
-        0,
-        Math.min(cumulativeAfterRaw, contractDailyMinutes) - Math.min(cumulativeBeforeRaw, contractDailyMinutes)
-      );
-      cumulativeBeforeRaw = cumulativeAfterRaw;
-
-      const { ot50, ot100 } = resolveApprovedOvertime(entry);
-      const payment = calculateDayPaymentRaw({
-        normalMinutes: paidNormalMinutes,
-        overtimeMinutes50: ot50,
-        overtimeMinutes100: ot100,
-        contractDailyMinutes,
-        hourlyRate: rate,
-      });
-
-      paymentByEntryId.set(entry.id, {
-        paidNormalMinutes,
-        approvedOt50: ot50,
-        approvedOt100: ot100,
-        totalAmount: payment.totalAmount,
-      });
+    paymentByEntryId.set(entry.id, {
+      paidNormalMinutes,
+      approvedOt50: ot50,
+      approvedOt100: ot100,
+      totalAmount: payment.totalAmount,
     });
   });
 

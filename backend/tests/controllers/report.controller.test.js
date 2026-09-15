@@ -580,6 +580,12 @@ describe('Report Controller', () => {
       expect(row.regularCost).toBe(240);
       expect(row.totalCost).toBe(240);
       expect(row.settledCost).toBe(240);
+      // O drill-down (entries[]) tem que bater com a linha: antes desta rodada
+      // do fix, entries[0].totalCost ficava em 245 (valor pré-teto, sem cap)
+      // enquanto row.totalCost já mostrava 240 — a mesma divergência de "duas
+      // respostas no mesmo documento" que existia entre as abas do export.
+      expect(row.entries).toHaveLength(1);
+      expect(row.entries[0].totalCost).toBe(240);
     });
 
     it('linha 2: worked 495, mesma tolerância -> paga 240, não 247.50', async () => {
@@ -627,6 +633,9 @@ describe('Report Controller', () => {
       expect(row.totalCost).toBe(240);
       expect(row.settledCost).toBe(240);
       expect(row.pendingOvertimeCost).toBe(0);
+      // Drill-down bate com a linha: a HE negada não reaparece como custo extra
+      // no entry isolado (270 seria o valor pré-teto errado).
+      expect(row.entries[0].totalCost).toBe(240);
     });
 
     it('teto por dia, não por entry: dois entries de 300 e 240min pagam min(540,480), não 300+240', async () => {
@@ -645,6 +654,12 @@ describe('Report Controller', () => {
       expect(row.workedMinutes).toBe(540);
       expect(row.totalCost).toBe(240);
       expect(row.settledCost).toBe(240);
+      // Drill-down: o enchimento cronológico dá 150 ao primeiro entry (300min,
+      // dentro do teto) e 90 ao segundo (180min de sobra no teto, não os 240
+      // inteiros) — soma exatamente aos 240 da linha, nunca 300+240=540min de
+      // custo (270).
+      expect(row.entries.map((e) => e.totalCost)).toEqual([150, 90]);
+      expect(row.entries.reduce((sum, e) => sum + e.totalCost, 0)).toBe(row.totalCost);
     });
 
     it('dia abaixo do contrato fica inalterado: 400 trabalhado paga 400min (200)', async () => {

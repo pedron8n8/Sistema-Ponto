@@ -3,9 +3,16 @@ jest.mock('bullmq', () => ({
   Worker: jest.fn(),
 }));
 jest.mock('../../src/config/redis', () => ({}));
-jest.mock('../../src/config/database', () => ({ prisma: {} }));
+// mockPrisma (prefixo exigido pelo Jest para poder referenciar fora do factory,
+// mesmo padrão de tests/controllers/report.controller.test.js) — controlável o
+// bastante para exercitar report.controller.js de verdade neste arquivo, sem
+// mockar reportWorker.js (é o módulo sob teste aqui, então não há o conflito de
+// mock que existe em report.controller.test.js).
+const mockPrisma = require('../mocks/prisma.mock');
+jest.mock('../../src/config/database', () => ({ prisma: mockPrisma }));
 
 const { buildDailyLogs, buildSummary, computeEntryPayments } = require('../../src/workers/reportWorker');
+const reportController = require('../../src/controllers/report.controller');
 
 const makeEntry = ({
   status,
@@ -17,16 +24,19 @@ const makeEntry = ({
   day = '2026-08-10',
   userId = 'user-1',
   contractDailyMinutes,
+  clockInHour = '13:00:00',
 }) => ({
-  id: `entry-${userId}-${day}-${status}-${workedMinutes}-${overtimeStatus}`,
+  id: `entry-${userId}-${day}-${status}-${workedMinutes}-${overtimeStatus}-${clockInHour}`,
+  userId,
   status,
-  clockIn: new Date(`${day}T13:00:00Z`),
+  clockIn: new Date(`${day}T${clockInHour}Z`),
   clockOut: new Date(`${day}T21:00:00Z`),
   workedMinutes,
   breakMinutes: 0,
   overtimeMinutes50: overtime50,
   overtimeMinutes100: overtime100,
   overtimeStatus,
+  bankHoursAccruedMinutes: 0,
   logs: [],
   bankHoursEntries: [],
   user: { id: userId, name: 'Ana', email: 'ana@test.com', hourlyRate: rate, timeZone: 'UTC', contractDailyMinutes },
@@ -239,6 +249,72 @@ describe('reportWorker payment columns', () => {
       const total = expectSheetsReconcile([
         makeEntry({ status: 'APPROVED', workedMinutes: 300, rate: 30 }),
         makeEntry({ status: 'APPROVED', workedMinutes: 240, rate: 30 }),
+      ]);
+      expect(total).toBe(240);
+    });
+  });
+
+  // Round 2 do fix: report.controller.js (página de custo) tinha o MESMO defeito
+  // um nível abaixo — row.totalCost já vinha capado, mas entries[].totalCost (o
+  // drill-down que Reports.tsx expande) ainda usava o valor pré-teto. As duas
+  // telas (página de custo e export) agora chamam a MESMA alocação
+  // (entryPayment.allocateDayNormalMinutes) — isto encadeia as três pontas num
+  // único número: drill-down soma para a linha, e a linha bate com o que o
+  // export paga para os mesmos entries.
+  describe('reconciliação de ponta a ponta: drill-down -> linha -> export', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'admin-1', isActive: true }]);
+    });
+
+    const exportTotalPayment = (entries) => {
+      const { headers, rows } = buildSummary(entries);
+      return rows[0][headers.indexOf('Total Payment')];
+    };
+
+    const expectFullChainReconciles = async (entries) => {
+      mockPrisma.timeEntry.findMany.mockResolvedValue(entries);
+
+      const req = { user: { id: 'admin-1', role: 'ADMIN', timeZone: 'UTC' }, query: { date: '2026-05-08' }, params: {} };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await reportController.getDailyBreakdown(req, res);
+
+      const row = res.json.mock.calls[0][0].rows[0];
+      const drillDownSum = Number(row.entries.reduce((sum, e) => sum + e.totalCost, 0).toFixed(2));
+
+      // 1. Drill-down soma exatamente à linha (o defeito que esta rodada corrige).
+      expect(drillDownSum).toBe(row.totalCost);
+      // 2. A linha bate com o que o export pagaria para os MESMOS entries.
+      expect(row.totalCost).toBe(exportTotalPayment(entries));
+
+      return row.totalCost;
+    };
+
+    it('tolerância engoliu o excesso (worked 490): drill-down, linha e export batem em 240 (não 245)', async () => {
+      const total = await expectFullChainReconciles([
+        makeEntry({ status: 'APPROVED', workedMinutes: 490, rate: 30, userId: 'u-tolerancia' }),
+      ]);
+      expect(total).toBe(240);
+    });
+
+    it('HE negada (worked 540, colunas zeradas): drill-down, linha e export batem em 240 (não 270)', async () => {
+      const total = await expectFullChainReconciles([
+        makeEntry({
+          status: 'APPROVED',
+          workedMinutes: 540,
+          rate: 30,
+          overtime50: 0,
+          overtimeStatus: 'REJECTED',
+          userId: 'u-negada',
+        }),
+      ]);
+      expect(total).toBe(240);
+    });
+
+    it('dia partido em 300+240min: drill-down, linha e export batem em 240 (não 270)', async () => {
+      const total = await expectFullChainReconciles([
+        makeEntry({ status: 'APPROVED', workedMinutes: 300, rate: 30, userId: 'u-split', clockInHour: '08:00:00' }),
+        makeEntry({ status: 'APPROVED', workedMinutes: 240, rate: 30, userId: 'u-split', clockInHour: '14:00:00' }),
       ]);
       expect(total).toBe(240);
     });

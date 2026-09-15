@@ -25,7 +25,11 @@
 // entries de 300 e 240min com contrato 480 paga min(540,480)=480, nao 300+240).
 // calculateDayPaymentRaw concentra essa regra; calculateEntryPaymentRaw continua
 // existindo tal como antes para quem precisa do valor de UM entry isolado (o
-// clock-out nunca soma dias, so mostra o proprio entry).
+// clock-out nunca soma dias, so mostra o proprio entry). Quando o teto de UM
+// dia precisa ser distribuido de volta por LINHA (o export tem uma linha por
+// entry; a pagina de custo tem um drill-down por entry dentro de cada linha),
+// use allocateDayNormalMinutes — o enchimento cronologico, e a UNICA copia
+// dele no codebase (ver comentario da propria funcao).
 //
 // Arredondamento: calculateEntryPaymentRaw NAO arredonda nada — devolve os
 // valores exatos em ponto flutuante. calculateEntryPayment arredonda por cima
@@ -136,6 +140,84 @@ const calculateDayPaymentRaw = ({
   };
 };
 
+// Aloca, por (usuario, dia), quantos MINUTOS NORMAIS cada entry ganha do teto
+// diario — enchimento CRONOLOGICO: agrupa os entries por usuario+dia, ordena
+// cada grupo por clockIn e cada entry consome, em ordem, a fatia do teto que
+// ainda sobra; uma vez esgotado, os entries seguintes daquele dia (nao importa
+// quem os chama depois) ficam com 0 minuto normal — sao literalmente os
+// ultimos minutos trabalhados no dia. E o mesmo "gatilho, nao desconto"
+// incremental que calculateIncrementalOvertimeSummary (utils/overtime.js) usa
+// para HE, aplicado aqui ao teto do normal.
+//
+// Esta e a UNICA alocacao do teto diario no codebase: pagina de custo
+// (report.controller, para entries[].totalCost E para o total da linha, que
+// tem que ser a MESMA soma) e export em XLSX (reportWorker, para Daily Logs E
+// Summary) chamam esta mesma funcao — nenhuma das duas reimplementa o
+// enchimento com a propria copia, que foi exatamente como as duas telas
+// divergiram numa rodada anterior deste trabalho.
+//
+// Livre de Prisma/worker/controller: recebe os entries como estao (nao
+// conhece a forma de nenhum dos dois) e um conjunto de acessores que dizem
+// como extrair de cada entry o que a alocacao precisa. `getIncurredOvertime`
+// normalmente e resolveIncurredOvertime deste mesmo modulo (trabalhado menos
+// TODA a HE registrada, decidida ou nao — nunca promove HE pendente/negada a
+// minuto normal); `getContractDailyMinutes` normalmente envolve
+// resolveContractDailyMinutes (utils/overtime.js) para o default de 480.
+//
+// Devolve só MINUTOS (Map entryId -> minutos), nao dinheiro: precificar (que
+// HE entra como adicional — settled ou incurred) e decisao de cada chamador,
+// via calculateDayPaymentRaw, exatamente como antes.
+const allocateDayNormalMinutes = ({
+  entries,
+  getEntryId,
+  getUserId,
+  getDayKey,
+  getClockIn,
+  getWorkedMinutes,
+  getIncurredOvertime,
+  getContractDailyMinutes,
+}) => {
+  const dayBuckets = new Map();
+
+  entries.forEach((entry) => {
+    const bucketKey = `${getUserId(entry)}::${getDayKey(entry)}`;
+    if (!dayBuckets.has(bucketKey)) {
+      dayBuckets.set(bucketKey, []);
+    }
+    dayBuckets.get(bucketKey).push(entry);
+  });
+
+  const normalMinutesByEntryId = new Map();
+
+  dayBuckets.forEach((dayEntries) => {
+    const sorted = [...dayEntries].sort((a, b) => new Date(getClockIn(a)) - new Date(getClockIn(b)));
+    let cumulativeBeforeRaw = 0;
+
+    sorted.forEach((entry) => {
+      const workedMinutes = Math.max(0, Number(getWorkedMinutes(entry)) || 0);
+      const incurred = getIncurredOvertime(entry);
+      const regularMinutes = Math.max(
+        0,
+        workedMinutes - incurred.overtimeMinutes50 - incurred.overtimeMinutes100
+      );
+      const contractDailyMinutes = Math.max(0, Number(getContractDailyMinutes(entry)) || 0);
+
+      const cumulativeAfterRaw = cumulativeBeforeRaw + regularMinutes;
+      // min(cumulativo, contrato) antes e depois: a diferenca e exatamente a
+      // fatia do teto que sobrava quando este entry comecou a consumi-lo.
+      const paidNormalMinutes = Math.max(
+        0,
+        Math.min(cumulativeAfterRaw, contractDailyMinutes) - Math.min(cumulativeBeforeRaw, contractDailyMinutes)
+      );
+      cumulativeBeforeRaw = cumulativeAfterRaw;
+
+      normalMinutesByEntryId.set(getEntryId(entry), paidNormalMinutes);
+    });
+  });
+
+  return normalMinutesByEntryId;
+};
+
 // HE ja liquidada para pagamento: só conta quando a decisao foi APPROVED.
 // overtimeStatus null/undefined (sem HE a decidir) ou PENDING/REJECTED => zero.
 const resolveSettledOvertime = (entry) => {
@@ -159,6 +241,7 @@ module.exports = {
   calculateEntryPayment,
   calculateEntryPaymentRaw,
   calculateDayPaymentRaw,
+  allocateDayNormalMinutes,
   resolveSettledOvertime,
   resolveIncurredOvertime,
 };
