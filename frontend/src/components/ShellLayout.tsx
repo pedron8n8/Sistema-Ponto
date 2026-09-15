@@ -156,7 +156,7 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
       items: [
         { to: '/app/colaborador', label: t('Time clock', 'Ponto'), icon: <TimeClockIcon /> },
         { to: '/app/colaborador/historico', label: t('History', 'Historico'), icon: <HistoryIcon /> },
-        { to: '/app/colaborador/saldo', label: t('Balance', 'Saldo'), icon: <ReportsIcon /> }, // Usando o icone de relatorios
+        // Saldo fica fora do menu por decisao de produto (a rota /app/colaborador/saldo continua existindo em App.tsx).
         ...(isGrowthOrBetter
           ? [
               {
@@ -331,12 +331,8 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
   const memberTabSlots: TabSlot[] = [
     [{ to: '/app/colaborador', label: t('Clock', 'Ponto') }],
     [{ to: '/app/colaborador/historico', label: t('History', 'Historico') }],
-    // Saldo resolve contra o item de menu do banco de horas; Relatorios fica
-    // como fallback caso esse item saia de navSections.
-    [
-      { to: '/app/colaborador/saldo', label: t('Balance', 'Saldo') },
-      { to: '/app/relatorios', label: t('Reports', 'Relatorios') },
-    ],
+    // Saldo saiu da interface (rota mantida em App.tsx); a aba cai direto em Relatorios.
+    [{ to: '/app/relatorios', label: t('Reports', 'Relatorios') }],
     [
       { to: '/app/colaborador/ferias', label: t('Vacations', 'Ferias') },
       { to: '/app', label: t('Overview', 'Geral') },
