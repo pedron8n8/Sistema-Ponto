@@ -205,6 +205,36 @@ Fazer na **origem**, não na camada de relatório: é o que faz todo consumidor 
 
 **Atenção:** dia abaixo do contrato não muda (400 trabalhados seguem 400). E o excedente ACIMA do limiar continua inteiro no reconhecido, porque aí ele é hora extra de verdade.
 
+**O relatório AO VIVO precisa do mesmo corte, e este é o ponto que quase passou.**
+`backend/src/utils/weeklyTimesheet.js:102` monta o dia assim:
+
+```js
+const overtimeMinutes = applyMinOvertimeMinutes(workedMinutes - contract, minOvertimeMinutes);
+```
+
+Ele já zera a hora extra abaixo do limiar, mas devolve `workedMinutes` cheio. Sem
+cortar aqui também, um dia FECHADO mostraria 480 (cortado na origem) e o MESMO
+dia ainda aberto mostraria 490 — ao vivo e fechamento discordando, que é
+exatamente o que este endpoint existe para acabar (o comentário dele em
+`:106-109` diz isso com todas as letras).
+
+Corte o total do dia quando o limiar engoliu o excedente:
+
+```js
+    // Mesmo corte da origem: o minuto que o limiar engoliu nao e hora extra E
+    // nao e hora normal reconhecida. Sem isto, o dia aberto mostra 490 e o
+    // mesmo dia fechado mostra 480.
+    const recognizedDayMinutes =
+      overtimeMinutes === 0 ? Math.min(workedMinutes, contract) : workedMinutes;
+```
+
+devolvendo `workedMinutes: recognizedDayMinutes`.
+
+O `.xlsx` e a página de custo **não** precisam de mudança: os dois leem o
+`workedMinutes` GRAVADO, que já vem cortado da origem, e o predicado
+`isWorkedMinutesAuthoritative` (`utils/recognizedMinutes.js`) faz o valor gravado
+vencer o fallback de duração. Confirme com teste em vez de assumir.
+
 - [ ] **Step 1: Escreva os testes que falham**
 
 Em `backend/tests/utils/recalcDay.test.js`, no describe da Task 1:
