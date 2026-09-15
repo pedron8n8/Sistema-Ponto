@@ -1077,6 +1077,10 @@ const clockOut = async (req, res) => {
         overtimeMinutes100: overtime.overtimeMinutes100,
         overtimePercent: overtime.overtimePercent,
         overtimeStatus: overtime.overtimeMinutes > 0 ? 'PENDING' : null,
+        // Congela o limiar com que ESTE registro foi calculado, para o
+        // recalculo do dia (edicao do RH num dia ja fechado) nao reler o
+        // vigente do tenant e mudar hora extra ja aprovada.
+        overtimeMinMinutesApplied: resolveMinOvertimeMinutes(userConfig),
       },
       include: {
         user: {

@@ -133,7 +133,15 @@ const recalculateUserDay = async ({ userId, date }) => {
       clockOut: { not: null },
     },
     orderBy: { clockIn: 'asc' },
-    select: { id: true, clockIn: true, clockOut: true, breakMinutes: true, status: true, overtimeStatus: true },
+    select: {
+      id: true,
+      clockIn: true,
+      clockOut: true,
+      breakMinutes: true,
+      status: true,
+      overtimeStatus: true,
+      overtimeMinMinutesApplied: true,
+    },
   });
 
   let workedMinutesBeforeEntry = 0;
@@ -143,13 +151,19 @@ const recalculateUserDay = async ({ userId, date }) => {
     // Remove crédito pendente anterior deste registro para evitar contagem dupla.
     await reverseEntryBankHours(entry.id);
 
+    // Carimbo do proprio registro quando existe; so cai no vigente do tenant
+    // para marcacao anterior a este campo, onde usar o vigente e o que preserva
+    // o numero que ela ja tinha.
+    const entryMinOvertimeMinutes =
+      entry.overtimeMinMinutesApplied ?? minOvertimeMinutes;
+
     const overtime = calculateIncrementalOvertimeSummary({
       clockIn: entry.clockIn,
       clockOut: entry.clockOut,
       contractDailyMinutes: userConfig?.contractDailyMinutes,
       workedMinutesBeforeEntry,
       breakMinutes: entry.breakMinutes,
-      minOvertimeMinutes,
+      minOvertimeMinutes: entryMinOvertimeMinutes,
     });
 
     // HE negada é definitiva: mantém efeito zerado e não re-credita banco de horas,

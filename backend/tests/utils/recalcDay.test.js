@@ -34,10 +34,19 @@ const deferredLocation = {
 describe('recalculateUserDay', () => {
   // Banco de mentira só do necessário: o estado do registro é lido de volta por
   // accrueBankHours, então o update TEM que ser visível para a leitura seguinte.
-  const arrangeEntry = (entry) => {
+  // Segundo argumento opcional: configuracao do tenant (limiar de HE curta).
+  // Sem ele, mantem o default de sempre — os testes existentes nao mudam.
+  const arrangeEntry = (entry, tenantConfig) => {
     const stored = { ...entry };
 
-    mockPrisma.user.findUnique.mockResolvedValue({ contractDailyMinutes: 480 });
+    mockPrisma.user.findUnique.mockResolvedValue(
+      tenantConfig
+        ? {
+            contractDailyMinutes: 480,
+            organizationAdmin: { overtimeMinMinutes: tenantConfig.overtimeMinMinutes },
+          }
+        : { contractDailyMinutes: 480 }
+    );
     mockPrisma.timeEntry.findMany.mockResolvedValue([stored]);
     mockPrisma.bankHoursEntry.findMany.mockResolvedValue([]);
     mockPrisma.timeEntry.update.mockImplementation(async ({ data }) => {
@@ -189,6 +198,56 @@ describe('recalculateUserDay', () => {
     expect(mockPrisma.user.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { bankHoursBalanceMinutes: { decrement: 120 } } })
     );
+  });
+
+  describe('limiar congelado no registro', () => {
+    // 8h20 numa jornada de 8h => 20 min acima do contrato.
+    const shortOvertimeEntry = (over = {}) => ({
+      id: 'entry-1',
+      userId: 'user-123',
+      clockIn: new Date(DAY.getTime() - 500 * 60 * 1000),
+      clockOut: new Date(DAY.getTime()),
+      breakMinutes: 0,
+      status: 'PENDING',
+      overtimeStatus: 'PENDING',
+      location: null,
+      overtimeMinMinutesApplied: null,
+      ...over,
+    });
+
+    it('usa o limiar gravado no registro e ignora o vigente do tenant', async () => {
+      // Tenant hoje em 10, registro carimbado com 30: 20 min de excedente
+      // ficam abaixo do carimbo e nao geram hora extra.
+      const stored = arrangeEntry(shortOvertimeEntry({ overtimeMinMinutesApplied: 30 }), {
+        overtimeMinMinutes: 10,
+      });
+
+      const [result] = await recalculateUserDay({ userId: 'user-123', date: DAY });
+
+      expect(result.overtimeMinutes).toBe(0);
+      expect(stored.overtimeStatus).toBeNull();
+    });
+
+    it('sem carimbo, cai no limiar vigente do tenant (comportamento de hoje)', async () => {
+      const stored = arrangeEntry(shortOvertimeEntry({ overtimeMinMinutesApplied: null }), {
+        overtimeMinMinutes: 30,
+      });
+
+      const [result] = await recalculateUserDay({ userId: 'user-123', date: DAY });
+
+      expect(result.overtimeMinutes).toBe(0);
+      expect(stored.overtimeStatus).toBeNull();
+    });
+
+    it('o carimbo nao vira franquia: acima dele o excedente vale inteiro', async () => {
+      arrangeEntry(shortOvertimeEntry({ overtimeMinMinutesApplied: 15 }), {
+        overtimeMinMinutes: 0,
+      });
+
+      const [result] = await recalculateUserDay({ userId: 'user-123', date: DAY });
+
+      expect(result.overtimeMinutes).toBe(20);
+    });
   });
 });
 

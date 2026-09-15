@@ -183,6 +183,12 @@ model TimeEntry {
   overtimeMinutes50 Int     @default(0)
   overtimeMinutes100 Int    @default(0)
   overtimePercent Int       @default(0)
+  // Limiar de hora extra curta com que ESTE registro foi calculado. Congelado
+  // aqui pelo mesmo motivo de overtimePercent: o recalculo do dia nao pode reler
+  // a configuracao atual do tenant e mudar hora extra ja aprovada. null =
+  // registro anterior a este carimbo, que cai no vigente para nao alterar dia
+  // ja fechado.
+  overtimeMinMinutesApplied Int?
   bankHoursAccruedMinutes Int @default(0)
   overtimeStatus EntryStatus? // null = sem HE a decidir; decisão prévia obrigatória antes de aprovar/rejeitar o ponto
   status      EntryStatus   @default(PENDING)

@@ -4,6 +4,10 @@ const { sendResendEmail } = require('../utils/resendNotifier');
 const { parseLocalDate } = require('../utils/timeCalculations');
 const { resolveVisibleUserIds, canViewUser } = require('../utils/visibleUsers');
 const { isHrLevel } = require('../utils/roles');
+const {
+  TENANT_OVERTIME_POLICY_SELECT,
+  resolveMinOvertimeMinutes,
+} = require('../utils/tenantOvertimePolicy');
 
 const TEAM_MEMBER_ROLES = ['INTEGRATOR', 'HR', 'SUPERVISOR', 'MEMBER'];
 
@@ -375,7 +379,14 @@ const createHrEntry = async (req, res) => {
 
     const target = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, name: true, email: true, role: true, organizationAdminId: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        organizationAdminId: true,
+        ...TENANT_OVERTIME_POLICY_SELECT,
+      },
     });
     if (!target) return res.status(404).json({ error: 'Not Found', message: 'Colaborador não encontrado.' });
     if (!canManageTarget(req.user, target)) {
@@ -403,6 +414,10 @@ const createHrEntry = async (req, res) => {
         breakMinutes: normalizedBreak,
         notes: notes == null ? null : String(notes),
         status: 'APPROVED',
+        // Congela o limiar com que ESTE registro nasce fechado, pelo mesmo
+        // motivo do clock-out: o recalculo do dia nao pode reler o vigente do
+        // tenant e mudar hora extra ja aprovada.
+        overtimeMinMinutesApplied: resolveMinOvertimeMinutes(target),
       },
     });
 
