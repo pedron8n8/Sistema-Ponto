@@ -310,15 +310,12 @@ const ColaboradorHistoryPage = () => {
                   </p>
                 </div>
 
-                <div className="mt-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-3">
+                <div className="mt-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
                   <span className="rounded-full bg-white px-3 py-1">
                     {t('Worked:', 'Trabalhado:')} {formatMinutesLabel(day.workedMinutes)}
                   </span>
                   <span className="rounded-full bg-white px-3 py-1">
-                    {t('Overtime 50%:', 'HE 50%:')} {formatMinutesLabel(day.overtimeMinutes50)}
-                  </span>
-                  <span className="rounded-full bg-white px-3 py-1">
-                    {t('Overtime 100%:', 'HE 100%:')} {formatMinutesLabel(day.overtimeMinutes100)}
+                    {t('Overtime:', 'HE:')} {formatMinutesLabel(day.overtimeMinutes50 + day.overtimeMinutes100)}
                   </span>
                 </div>
 

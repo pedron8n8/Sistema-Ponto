@@ -666,13 +666,6 @@ const SupervisorPendingItemsPage = () => {
   const formatDayLabel = (dayKey: string) =>
     parseYmd(dayKey).toLocaleDateString(locale, { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })
 
-  const overtimeSplitLabel = (entry: Entry) => {
-    const parts: string[] = []
-    if ((entry.overtimeMinutes50 ?? 0) > 0) parts.push(`50% ${fmtHM(entry.overtimeMinutes50 || 0)}`)
-    if ((entry.overtimeMinutes100 ?? 0) > 0) parts.push(`100% ${fmtHM(entry.overtimeMinutes100 || 0)}`)
-    return parts.join(' · ')
-  }
-
   const overtimeBadgeClass = (entry: Entry) =>
     entry.overtimeStatus === 'APPROVED'
       ? 'rounded-full bg-emerald-100 px-3 py-1 font-semibold text-emerald-700'
@@ -1088,11 +1081,6 @@ const SupervisorPendingItemsPage = () => {
                               {' — '}
                               {overtimeStatusLabel(entry)}
                             </span>
-                            {overtimeSplitLabel(entry) ? (
-                              <span className="rounded-full bg-slate-100 px-3 py-1 font-semibold text-slate-700">
-                                {overtimeSplitLabel(entry)}
-                              </span>
-                            ) : null}
                           </div>
                         ) : null}
 

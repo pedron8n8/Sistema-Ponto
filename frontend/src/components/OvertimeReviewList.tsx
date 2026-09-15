@@ -76,8 +76,6 @@ const OvertimeReviewList = ({
     <ul className="space-y-3">
       {entries.map((entry) => {
         const otMinutes = entry.overtimeMinutes ?? 0
-        const ot50 = entry.overtimeMinutes50 ?? 0
-        const ot100 = entry.overtimeMinutes100 ?? 0
         const isPending = entry.overtimeStatus === 'PENDING'
         const busy = Boolean(loadingByEntry[entry.id])
 
@@ -102,8 +100,6 @@ const OvertimeReviewList = ({
               <span className="rounded-full bg-slate-100 px-3 py-1">
                 {t('Overtime', 'Hora extra')} {fmtHM(otMinutes)}
               </span>
-              {ot50 > 0 ? <span className="rounded-full bg-slate-100 px-3 py-1">50% {fmtHM(ot50)}</span> : null}
-              {ot100 > 0 ? <span className="rounded-full bg-slate-100 px-3 py-1">100% {fmtHM(ot100)}</span> : null}
               <span className="rounded-full bg-slate-100 px-3 py-1">
                 {t('Recognized', 'Reconhecido')} {fmtHM(entry.workedMinutes ?? 0)}
               </span>
