@@ -483,7 +483,7 @@ describe('Report Controller', () => {
           bankHoursAccruedMinutes: 0,
           user: { id: 'user-plain', name: 'Plain', email: 'plain@test.com', hourlyRate: 20, timeZone: 'UTC' },
         },
-        // HE aprovada: 240min normais + 60 a 1.5x + 60 a 2x, $10/h => 40+15+20 = 75, tudo já pagável.
+        // HE aprovada: 240min normais + 60 HE50 + 60 HE100, $10/h, tudo a 1x (adicionais em standby) => 40+10+10 = 60, tudo já pagável.
         {
           id: 'entry-approved',
           userId: 'user-approved',
@@ -496,8 +496,8 @@ describe('Report Controller', () => {
           bankHoursAccruedMinutes: 0,
           user: { id: 'user-approved', name: 'Approved', email: 'approved@test.com', hourlyRate: 10, timeZone: 'UTC' },
         },
-        // Mesma jornada, mas HE ainda pendente de decisão: mesmo total de custo (75, pior
-        // caso), porém só 40 já são pagáveis — os outros 35 (15+20 de adicional) ficam
+        // Mesma jornada, mas HE ainda pendente de decisão: mesmo total de custo (60, pior
+        // caso), porém só 40 já são pagáveis — os outros 20 (10+10 da HE) ficam
         // pendentes. É EXATAMENTE o mesmo cenário e os mesmos números do teste
         // "não paga adicional de HE ainda pendente de decisão" em reportWorker.test.js,
         // que fixa o "Approved Payment" do export em 40 para este entry.
@@ -527,15 +527,15 @@ describe('Report Controller', () => {
       expect(plain.totalCost).toBe(plain.settledCost + plain.pendingOvertimeCost);
 
       const approved = rowByUser['user-approved'];
-      expect(approved.totalCost).toBe(75);
+      expect(approved.totalCost).toBe(60);
       expect(approved.pendingOvertimeCost).toBe(0);
-      expect(approved.settledCost).toBe(75);
+      expect(approved.settledCost).toBe(60);
       expect(approved.totalCost).toBe(approved.settledCost + approved.pendingOvertimeCost);
 
       const pending = rowByUser['user-pending'];
-      expect(pending.totalCost).toBe(75);
+      expect(pending.totalCost).toBe(60);
       expect(pending.pendingOvertimeMinutes).toBe(120);
-      expect(pending.pendingOvertimeCost).toBe(35);
+      expect(pending.pendingOvertimeCost).toBe(20);
       // O que sobra pagável agora (40) é exatamente o que o export (reportWorker,
       // política resolveSettledOvertime) pagaria para o mesmo entry — prova que as
       // duas telas reconciliam por construção, não por coincidência de arredondamento.
@@ -543,10 +543,10 @@ describe('Report Controller', () => {
       expect(pending.totalCost).toBe(pending.settledCost + pending.pendingOvertimeCost);
 
       // Também vale agregado, no summary.
-      expect(payload.summary.totalCost).toBe(310);
+      expect(payload.summary.totalCost).toBe(280);
       expect(payload.summary.pendingOvertimeMinutes).toBe(120);
-      expect(payload.summary.pendingOvertimeCost).toBe(35);
-      expect(payload.summary.settledCost).toBe(275);
+      expect(payload.summary.pendingOvertimeCost).toBe(20);
+      expect(payload.summary.settledCost).toBe(260);
       expect(payload.summary.totalCost).toBe(payload.summary.settledCost + payload.summary.pendingOvertimeCost);
     });
 
@@ -602,7 +602,7 @@ describe('Report Controller', () => {
       expect(row.totalCost).toBe(240);
     });
 
-    it('linha 3: worked 540, HE 60min APROVADA -> inalterado (285)', async () => {
+    it('linha 3: worked 540, HE 60min APROVADA -> inalterado (270, HE a 1x)', async () => {
       req.user = { id: 'admin-123', role: 'ADMIN', timeZone: 'UTC' };
       req.query = { date: '2026-05-08' };
       mockPrisma.user.findMany.mockResolvedValue([{ id: 'admin-123' }]);
@@ -613,8 +613,8 @@ describe('Report Controller', () => {
       await reportController.getDailyBreakdown(req, res);
 
       const row = res.json.mock.calls[0][0].rows[0];
-      expect(row.totalCost).toBe(285);
-      expect(row.settledCost).toBe(285);
+      expect(row.totalCost).toBe(270);
+      expect(row.settledCost).toBe(270);
       expect(row.pendingOvertimeCost).toBe(0);
     });
 

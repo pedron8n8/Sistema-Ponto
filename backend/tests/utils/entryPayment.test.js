@@ -9,8 +9,8 @@ const {
 } = require('../../src/utils/entryPayment');
 
 describe('calculateEntryPayment', () => {
-  it('calcula normais + HE 50% + HE 100% e arredonda para 2 casas', () => {
-    // 240min normais + 60min a 1.5x + 60min a 2x, a $10/h => 40 + 15 + 20 = 75
+  it('calcula normais + HE 50% + HE 100% (adicionais em standby: multiplicador 1)', () => {
+    // 240min normais + 60min HE50 + 60min HE100, a $10/h, tudo a 1x => 40 + 10 + 10 = 60
     const result = calculateEntryPayment({
       workedMinutes: 360,
       overtimeMinutes50: 60,
@@ -21,10 +21,10 @@ describe('calculateEntryPayment', () => {
     expect(result).toEqual({
       hourlyRate: 10,
       regularAmount: 40,
-      overtime50Amount: 15,
-      overtime100Amount: 20,
-      overtimeTotalAmount: 35,
-      totalAmount: 75,
+      overtime50Amount: 10,
+      overtime100Amount: 10,
+      overtimeTotalAmount: 20,
+      totalAmount: 60,
     });
   });
 
@@ -204,7 +204,7 @@ describe('calculateDayPaymentRaw', () => {
     expect(result.totalAmount).toBe(240);
   });
 
-  it('linha 3: worked 540, HE 60min APROVADA -> inalterado (285)', () => {
+  it('linha 3: worked 540, HE 60min APROVADA -> inalterado (270, HE a 1x)', () => {
     // normalMinutes = 540 trabalhado - 60 HE incorrida = 480 (já no teto, sem sobra
     // acima dele) — por isso o teto não muda nada aqui, igual ao valor de antes.
     const result = calculateDayPaymentRaw({
@@ -216,8 +216,8 @@ describe('calculateDayPaymentRaw', () => {
     });
 
     expect(result.regularAmount).toBe(240);
-    expect(result.overtime50Amount).toBe(45);
-    expect(result.totalAmount).toBe(285);
+    expect(result.overtime50Amount).toBe(30);
+    expect(result.totalAmount).toBe(270);
   });
 
   it('linha 4: worked 540, HE 60min NEGADA (colunas zeradas) -> não vira hora normal (240, não 270)', () => {

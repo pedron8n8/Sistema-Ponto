@@ -48,6 +48,10 @@ const formatMinutesLabel = (minutes: number) => {
   return `${String(hours).padStart(2, '0')}h ${String(mins).padStart(2, '0')}m`
 }
 
+// ponytail: adicionais de HE em standby (mesma regra de backend/src/utils/entryPayment.js).
+const OVERTIME_50_MULTIPLIER = 1
+const OVERTIME_100_MULTIPLIER = 1
+
 const calculateGain = (entry: TimeEntry, hourlyRate: number) => {
   if (!hourlyRate || hourlyRate <= 0) return 0
 
@@ -57,8 +61,8 @@ const calculateGain = (entry: TimeEntry, hourlyRate: number) => {
   const regularMinutes = Math.max(0, workedMinutes - overtime50 - overtime100)
 
   const regularAmount = (regularMinutes / 60) * hourlyRate
-  const overtime50Amount = (overtime50 / 60) * hourlyRate * 1.5
-  const overtime100Amount = (overtime100 / 60) * hourlyRate * 2
+  const overtime50Amount = (overtime50 / 60) * hourlyRate * OVERTIME_50_MULTIPLIER
+  const overtime100Amount = (overtime100 / 60) * hourlyRate * OVERTIME_100_MULTIPLIER
 
   return Number((regularAmount + overtime50Amount + overtime100Amount).toFixed(2))
 }

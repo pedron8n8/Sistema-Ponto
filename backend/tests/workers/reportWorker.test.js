@@ -67,14 +67,14 @@ describe('reportWorker payment columns', () => {
     expect(columnOf(headers, rows, 'Hourly Rate')).toEqual([10, 10, 10]);
   });
 
-  it('aplica adicional de 50% e 100% nas horas extras aprovadas', () => {
-    // 240min normais + 60min a 1.5x + 60min a 2x, a $10/h => 40 + 15 + 20
+  it('paga HE aprovada pela hora normal (adicionais 50/100 em standby)', () => {
+    // 240min normais + 60min HE50 + 60min HE100, a $10/h, tudo a 1x => 40 + 10 + 10
     const entries = [
       makeEntry({ status: 'APPROVED', workedMinutes: 360, rate: 10, overtime50: 60, overtime100: 60 }),
     ];
     const { headers, rows } = buildDailyLogs(entries, computeEntryPayments(entries));
 
-    expect(columnOf(headers, rows, 'Approved Payment')).toEqual([75]);
+    expect(columnOf(headers, rows, 'Approved Payment')).toEqual([60]);
   });
 
   it('não paga adicional de HE ainda pendente de decisão', () => {
@@ -139,7 +139,7 @@ describe('reportWorker payment columns', () => {
     expect(columnOf(headers, rows, 'Total Hours')).toEqual(['10.00']);
     expect(columnOf(headers, rows, 'Approved Hours')).toEqual(['6.00']);
     expect(columnOf(headers, rows, 'Pending Hours')).toEqual(['4.00']);
-    expect(columnOf(headers, rows, 'Approved Payment')).toEqual([75]);
+    expect(columnOf(headers, rows, 'Approved Payment')).toEqual([60]);
     expect(columnOf(headers, rows, 'Pending Payment')).toEqual([40]);
   });
 
@@ -171,12 +171,12 @@ describe('reportWorker payment columns', () => {
       expect(columnOf(headers, rows, 'Approved Payment')).toEqual([240]);
     });
 
-    it('linha 3: worked 540, HE 60min APROVADA -> inalterado (285)', () => {
+    it('linha 3: worked 540, HE 60min APROVADA -> inalterado (270, HE a 1x)', () => {
       const { headers, rows } = buildSummary([
         makeEntry({ status: 'APPROVED', workedMinutes: 540, rate: 30, overtime50: 60 }),
       ]);
 
-      expect(columnOf(headers, rows, 'Approved Payment')).toEqual([285]);
+      expect(columnOf(headers, rows, 'Approved Payment')).toEqual([270]);
     });
 
     it('linha 4: worked 540, HE 60min NEGADA (colunas zeradas) -> não vira hora normal (240, não 270)', () => {

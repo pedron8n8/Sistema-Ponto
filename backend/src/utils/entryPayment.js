@@ -2,7 +2,7 @@
 // pagina de custo (report.controller) e export em XLSX (reportWorker).
 //
 // A formula de UM ENTRY e sempre a mesma: regular = trabalhado - HE50 - HE100, depois
-// regular * rate + HE50 * rate * 1.5 + HE100 * rate * 2. O que muda entre as duas
+// regular * rate + HE50 * rate * OVERTIME_50_MULTIPLIER + HE100 * rate * OVERTIME_100_MULTIPLIER. O que muda entre as duas
 // telas de relatorio e QUAIS minutos de HE entram na conta do adicional — e essa
 // diferenca e uma escolha deliberada, nao um bug:
 //
@@ -40,6 +40,12 @@
 // codigo original fazia — para nao acumular 1-2 centavos de erro por causa de
 // arredondar entry por entry antes de somar. calculateDayPaymentRaw segue a
 // mesma convencao: recebe minutos ja somados do dia (RAW) e devolve valores RAW.
+// ponytail: adicionais de HE em STANDBY por decisao de produto (2026-09-15) — HE
+// paga pela hora normal. Para religar, volte a 1.5 e 2. O split 50/100 continua
+// sendo gravado, entao religar nao exige recalcular nada.
+const OVERTIME_50_MULTIPLIER = 1;
+const OVERTIME_100_MULTIPLIER = 1;
+
 const calculateEntryPaymentRaw = ({ workedMinutes, overtimeMinutes50, overtimeMinutes100, hourlyRate }) => {
   const rate = Number(hourlyRate || 0);
   if (!Number.isFinite(rate) || rate <= 0) {
@@ -55,8 +61,8 @@ const calculateEntryPaymentRaw = ({ workedMinutes, overtimeMinutes50, overtimeMi
 
   const regularMinutes = Math.max(0, workedMinutes - overtimeMinutes50 - overtimeMinutes100);
   const regularAmount = (regularMinutes / 60) * rate;
-  const overtime50Amount = (overtimeMinutes50 / 60) * rate * 1.5;
-  const overtime100Amount = (overtimeMinutes100 / 60) * rate * 2;
+  const overtime50Amount = (overtimeMinutes50 / 60) * rate * OVERTIME_50_MULTIPLIER;
+  const overtime100Amount = (overtimeMinutes100 / 60) * rate * OVERTIME_100_MULTIPLIER;
   const overtimeTotalAmount = overtime50Amount + overtime100Amount;
   const totalAmount = regularAmount + overtimeTotalAmount;
 
@@ -124,8 +130,8 @@ const calculateDayPaymentRaw = ({
   // somado abaixo); o resto do "normal" acima do contrato nao e pago.
   const regularMinutes = Math.min(rawNormalMinutes, contract);
   const regularAmount = (regularMinutes / 60) * rate;
-  const overtime50Amount = (ot50 / 60) * rate * 1.5;
-  const overtime100Amount = (ot100 / 60) * rate * 2;
+  const overtime50Amount = (ot50 / 60) * rate * OVERTIME_50_MULTIPLIER;
+  const overtime100Amount = (ot100 / 60) * rate * OVERTIME_100_MULTIPLIER;
   const overtimeTotalAmount = overtime50Amount + overtime100Amount;
   const totalAmount = regularAmount + overtimeTotalAmount;
 
