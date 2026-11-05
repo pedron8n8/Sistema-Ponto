@@ -244,6 +244,11 @@ const ShellLayout = ({ children }: { children: React.ReactNode }) => {
                 label: t('Overtime rule', 'Regra de hora extra'),
                 icon: <SupervisorIcon />,
               },
+              {
+                to: '/app/admin/users',
+                label: t('Users', 'Usuarios'),
+                icon: <SupervisorIcon />,
+              },
             ]
           : []),
       ],

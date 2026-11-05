@@ -903,6 +903,7 @@ const updateUser = async (req, res) => {
     const { id } = req.params;
     const {
       name,
+      email,
       role,
       isActive,
       supervisorId,
@@ -1040,6 +1041,39 @@ const updateUser = async (req, res) => {
         error: 'Bad Request',
         message: 'Nome deve ter pelo menos 2 caracteres',
       });
+    }
+
+    // Trocar o email troca o login: com ele, um reset de senha entrega a conta. Por isso
+    // o HR fica de fora, embora edite nome pela mesma rota.
+    const normalizedEmail = email !== undefined ? String(email).trim().toLowerCase() : undefined;
+    const emailChanged = normalizedEmail !== undefined && normalizedEmail !== existingUser.email;
+
+    if (emailChanged) {
+      if (req.user.role === 'HR') {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'HR não pode alterar o email de usuários',
+        });
+      }
+
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'Email invalido',
+        });
+      }
+
+      const emailOwner = await prisma.user.findUnique({
+        where: { email: normalizedEmail },
+        select: { id: true },
+      });
+
+      if (emailOwner && emailOwner.id !== id) {
+        return res.status(409).json({
+          error: 'Conflict',
+          message: 'Ja existe um usuario com este email',
+        });
+      }
     }
 
     // Validar supervisor
@@ -1283,11 +1317,27 @@ const updateUser = async (req, res) => {
       )
     );
 
+    // O login vive no Supabase: ele muda primeiro, porque recusa email duplicado.
+    if (emailChanged) {
+      const { error: supabaseEmailError } = await supabaseAdmin.auth.admin.updateUserById(id, {
+        email: normalizedEmail,
+        email_confirm: true,
+      });
+
+      if (supabaseEmailError) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: supabaseEmailError.message || 'Erro ao atualizar email no sistema de autenticacao',
+        });
+      }
+    }
+
     // Atualiza usuário
     const updatedUser = await prisma.user.update({
       where: { id },
       data: {
         ...(name && { name: name.trim() }),
+        ...(emailChanged && { email: normalizedEmail }),
         role: nextRole,
         ...(nextIsActive !== existingUser.isActive && { isActive: nextIsActive }),
         ...(supervisorId !== undefined && { supervisorId }),
@@ -1323,7 +1373,23 @@ const updateUser = async (req, res) => {
           },
         },
       },
+    }).catch(async (updateError) => {
+      // Sem desfazer, o usuario passaria a logar com um email que o banco nao conhece.
+      if (emailChanged) {
+        const { error: revertError } = await supabaseAdmin.auth.admin.updateUserById(id, {
+          email: existingUser.email,
+          email_confirm: true,
+        });
+        if (revertError) {
+          console.error(`❌ Email divergente entre Supabase e banco para ${id}:`, revertError.message);
+        }
+      }
+      throw updateError;
     });
+
+    if (emailChanged) {
+      console.log(`✉️ Email do usuário ${id} alterado por ${req.user.id}`);
+    }
 
     const syncedSeatSnapshots = {};
     for (const adminId of adminIdsToSync) {
