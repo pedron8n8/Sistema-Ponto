@@ -302,7 +302,7 @@ const App = () => {
                 <Route
                   path="/app/admin/users"
                   element={
-                    <ProtectedRoute allowedRoles={['ADMIN']}>
+                    <ProtectedRoute allowedRoles={['ADMIN', 'INTEGRATOR']}>
                       <ShellLayout>
                         <AdminUsersPage />
                       </ShellLayout>

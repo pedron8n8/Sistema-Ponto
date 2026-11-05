@@ -115,6 +115,7 @@ const AdminUsersPage = () => {
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState({
     name: '',
+    email: '',
     role: 'MEMBER' as InvitableRole,
     supervisorId: '',
     pin: '',
@@ -126,6 +127,12 @@ const AdminUsersPage = () => {
 
   const canManageUsers = profile?.role === 'ADMIN'
   const isSuperAdmin = profile?.role === 'SUPERADMIN'
+  // INTEGRATOR entra nesta tela so para editar dados: criar, convidar, desativar, remover,
+  // PIN e cadeiras seguem do ADMIN. Espelha manageableRolesFor (backend/src/utils/roles.js).
+  const isIntegrator = profile?.role === 'INTEGRATOR'
+  const canEditUsers = canManageUsers || isIntegrator
+  const canEditTarget = (user: User) =>
+    canManageUsers || (isIntegrator && ['HR', 'SUPERVISOR', 'MEMBER'].includes(user.role))
 
   const loadUsers = async () => {
     if (!token) return
@@ -143,7 +150,7 @@ const AdminUsersPage = () => {
   }
 
   const loadAdminSeatAssignments = async () => {
-    if (!token) return
+    if (!token || isIntegrator) return
 
     const response = await apiFetch<{ admins: AdminSeatPayload[] }>('/users/admin-seats', { token })
     setAdminSeatAssignments(response.admins || [])
@@ -461,6 +468,7 @@ const AdminUsersPage = () => {
     setEditingUserId(user.id)
     setEditDraft({
       name: user.name || '',
+      email: user.email || '',
       role: editableRole,
       supervisorId: user.supervisor?.id || '',
       pin: '',
@@ -474,6 +482,7 @@ const AdminUsersPage = () => {
     setEditingUserId(null)
     setEditDraft({
       name: '',
+      email: '',
       role: 'MEMBER',
       supervisorId: '',
       pin: '',
@@ -482,11 +491,17 @@ const AdminUsersPage = () => {
   }
 
   const handleSaveUserData = async () => {
-    if (!token || !canManageUsers || !editingUserId || editSaving) return
+    if (!token || !canEditUsers || !editingUserId || editSaving) return
 
     const trimmedName = editDraft.name.trim()
     if (trimmedName.length < 2) {
       setError(t('Name must have at least 2 characters.', 'Nome deve ter pelo menos 2 caracteres.'))
+      return
+    }
+
+    const trimmedEmail = editDraft.email.trim().toLowerCase()
+    if (!trimmedEmail.includes('@')) {
+      setError(t('Invalid email.', 'Email invalido.'))
       return
     }
 
@@ -500,6 +515,7 @@ const AdminUsersPage = () => {
         method: 'PATCH',
         body: {
           name: trimmedName,
+          email: trimmedEmail,
           role: editDraft.role,
           supervisorId: editDraft.supervisorId || null,
         },
@@ -642,18 +658,21 @@ const AdminUsersPage = () => {
     <section className="grid gap-6">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
         <p className="text-xs uppercase tracking-[0.35em] text-teal-700">{t('Admin', 'Admin')}</p>
-        <h2 className="mt-4 text-3xl font-semibold text-slate-900">{t('Users and seats', 'Usuarios e assentos')}</h2>
+        <h2 className="mt-4 text-3xl font-semibold text-slate-900">{isIntegrator ? t('Users', 'Usuarios') : t('Users and seats', 'Usuarios e assentos')}</h2>
         <p className="mt-3 text-sm text-slate-600">
-          {t(
-            'Create, deactivate and remove team users, with visibility into free seats and deactivated users.',
-            'Crie, desative e remova usuarios do time, com visibilidade de cadeiras livres e usuarios desativados.'
-          )}
+          {isIntegrator
+            ? t('Edit the name, email, role and supervisor of team users.', 'Edite nome, email, cargo e supervisor dos usuarios do time.')
+            : t(
+                'Create, deactivate and remove team users, with visibility into free seats and deactivated users.',
+                'Crie, desative e remova usuarios do time, com visibilidade de cadeiras livres e usuarios desativados.'
+              )}
         </p>
       </div>
 
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">{error}</div> : null}
       {notice ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-700">{notice}</div> : null}
 
+      {!isIntegrator ? (
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-lg font-semibold text-slate-900">{t('Seat summary', 'Resumo de cadeiras')}</h3>
@@ -734,6 +753,7 @@ const AdminUsersPage = () => {
           <p className="mt-3 text-sm text-slate-500">{t('No seat data to display.', 'Sem dados de assentos para exibir.')}</p>
         )}
       </div>
+      ) : null}
 
       {canManageUsers ? (
         <div className="grid gap-6 lg:grid-cols-2">
@@ -900,7 +920,7 @@ const AdminUsersPage = () => {
                     <p className="mt-1 font-mono text-[10px] text-slate-400">ID: {user.id}</p>
                   </div>
 
-                  {canManageUsers ? (
+                  {canEditTarget(user) ? (
                     <div className="flex flex-wrap gap-2">
                       <button
                         onClick={() => (editingUserId === user.id ? closeUserEditor() : openUserEditor(user))}
@@ -908,9 +928,13 @@ const AdminUsersPage = () => {
                       >
                         {editingUserId === user.id
                           ? t('Close editor', 'Fechar edicao')
-                          : t('Edit data and PIN', 'Editar dados e PIN')}
+                          : canManageUsers
+                            ? t('Edit data and PIN', 'Editar dados e PIN')
+                            : t('Edit data', 'Editar dados')}
                       </button>
 
+                      {canManageUsers ? (
+                        <>
                       <button
                         onClick={() => handleDeactivate(user.id)}
                         disabled={user.id === profile?.id}
@@ -926,25 +950,40 @@ const AdminUsersPage = () => {
                       >
                         {t('Remove', 'Remover')}
                       </button>
+                        </>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
 
-                {canManageUsers && editingUserId === user.id ? (
+                {canEditUsers && editingUserId === user.id ? (
                   <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3">
                     <p className="text-xs text-slate-500">
-                      {t(
-                        'Update user profile and PIN. Password is not changed here.',
-                        'Atualize dados do usuario e PIN. A senha nao e alterada aqui.'
-                      )}
+                      {canManageUsers
+                        ? t(
+                            'Update user profile and PIN. Password is not changed here.',
+                            'Atualize dados do usuario e PIN. A senha nao e alterada aqui.'
+                          )
+                        : t(
+                            'Update user profile. Changing the email changes the login right away; the password stays the same.',
+                            'Atualize os dados do usuario. Trocar o email troca o login na hora; a senha continua a mesma.'
+                          )}
                     </p>
 
-                    <div className="mt-2 grid gap-2 md:grid-cols-3">
+                    <div className="mt-2 grid gap-2 md:grid-cols-2">
                       <input
                         type="text"
                         value={editDraft.name}
                         onChange={(event) => setEditDraft((prev) => ({ ...prev, name: event.target.value }))}
                         placeholder={t('Name', 'Nome')}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm"
+                      />
+
+                      <input
+                        type="email"
+                        value={editDraft.email}
+                        onChange={(event) => setEditDraft((prev) => ({ ...prev, email: event.target.value }))}
+                        placeholder={t('Email', 'Email')}
                         className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm"
                       />
 
@@ -958,7 +997,7 @@ const AdminUsersPage = () => {
                         <option value="MEMBER">MEMBER</option>
                         <option value="SUPERVISOR">SUPERVISOR</option>
                         <option value="HR">HR</option>
-                        <option value="INTEGRATOR">Integrator</option>
+                        {canManageUsers ? <option value="INTEGRATOR">Integrator</option> : null}
                       </select>
 
                       <select
@@ -989,6 +1028,7 @@ const AdminUsersPage = () => {
                       </button>
                     </div>
 
+                    {canManageUsers ? (
                     <div className="mt-3 grid gap-2 md:grid-cols-[1fr_auto_auto]">
                       <input
                         type="password"
@@ -1020,6 +1060,7 @@ const AdminUsersPage = () => {
                         {pinResetting ? t('Resetting...', 'Resetando...') : t('Reset PIN', 'Resetar PIN')}
                       </button>
                     </div>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -1044,7 +1085,7 @@ const AdminUsersPage = () => {
                     <p className="mt-1 font-mono text-[10px] text-slate-400">ID: {user.id}</p>
                   </div>
 
-                  {canManageUsers ? (
+                  {canEditTarget(user) ? (
                     <div className="flex flex-wrap gap-2">
                       <button
                         onClick={() => (editingUserId === user.id ? closeUserEditor() : openUserEditor(user))}
@@ -1052,34 +1093,53 @@ const AdminUsersPage = () => {
                       >
                         {editingUserId === user.id
                           ? t('Close editor', 'Fechar edicao')
-                          : t('Edit data and PIN', 'Editar dados e PIN')}
+                          : canManageUsers
+                            ? t('Edit data and PIN', 'Editar dados e PIN')
+                            : t('Edit data', 'Editar dados')}
                       </button>
 
+                      {canManageUsers ? (
+                        <>
                       <button
                         onClick={() => handleReactivate(user.id)}
                         className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white"
                       >
                         {t('Reactivate', 'Reativar')}
                       </button>
+                        </>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
 
-                {canManageUsers && editingUserId === user.id ? (
+                {canEditUsers && editingUserId === user.id ? (
                   <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3">
                     <p className="text-xs text-slate-500">
-                      {t(
-                        'Update user profile and PIN. Password is not changed here.',
-                        'Atualize dados do usuario e PIN. A senha nao e alterada aqui.'
-                      )}
+                      {canManageUsers
+                        ? t(
+                            'Update user profile and PIN. Password is not changed here.',
+                            'Atualize dados do usuario e PIN. A senha nao e alterada aqui.'
+                          )
+                        : t(
+                            'Update user profile. Changing the email changes the login right away; the password stays the same.',
+                            'Atualize os dados do usuario. Trocar o email troca o login na hora; a senha continua a mesma.'
+                          )}
                     </p>
 
-                    <div className="mt-2 grid gap-2 md:grid-cols-3">
+                    <div className="mt-2 grid gap-2 md:grid-cols-2">
                       <input
                         type="text"
                         value={editDraft.name}
                         onChange={(event) => setEditDraft((prev) => ({ ...prev, name: event.target.value }))}
                         placeholder={t('Name', 'Nome')}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm"
+                      />
+
+                      <input
+                        type="email"
+                        value={editDraft.email}
+                        onChange={(event) => setEditDraft((prev) => ({ ...prev, email: event.target.value }))}
+                        placeholder={t('Email', 'Email')}
                         className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm"
                       />
 
@@ -1093,7 +1153,7 @@ const AdminUsersPage = () => {
                         <option value="MEMBER">MEMBER</option>
                         <option value="SUPERVISOR">SUPERVISOR</option>
                         <option value="HR">HR</option>
-                        <option value="INTEGRATOR">Integrator</option>
+                        {canManageUsers ? <option value="INTEGRATOR">Integrator</option> : null}
                       </select>
 
                       <select
@@ -1124,6 +1184,7 @@ const AdminUsersPage = () => {
                       </button>
                     </div>
 
+                    {canManageUsers ? (
                     <div className="mt-3 grid gap-2 md:grid-cols-[1fr_auto_auto]">
                       <input
                         type="password"
@@ -1155,6 +1216,7 @@ const AdminUsersPage = () => {
                         {pinResetting ? t('Resetting...', 'Resetando...') : t('Reset PIN', 'Resetar PIN')}
                       </button>
                     </div>
+                    ) : null}
 
                     {pinSuccessMsg && (
                       <p className="mt-2 text-xs font-medium text-emerald-600">{pinSuccessMsg}</p>
