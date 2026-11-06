@@ -46,9 +46,9 @@ router.patch('/me/account', userController.updateMyAccount);
 
 /**
  * POST /api/v1/users/me/team-invite-link
- * Gera link de convite para o ADMIN montar time com role predefinida
+ * Gera link de convite para o ADMIN ou INTEGRATOR montar o time com role predefinida
  */
-router.post('/me/team-invite-link', roleCheck(['ADMIN']), userController.createMyTeamInviteLink);
+router.post('/me/team-invite-link', roleCheck(['ADMIN', 'INTEGRATOR']), userController.createMyTeamInviteLink);
 
 /**
  * PATCH /api/v1/users/me/plan

@@ -150,7 +150,7 @@ const AdminUsersPage = () => {
   }
 
   const loadAdminSeatAssignments = async () => {
-    if (!token || isIntegrator) return
+    if (!token) return
 
     const response = await apiFetch<{ admins: AdminSeatPayload[] }>('/users/admin-seats', { token })
     setAdminSeatAssignments(response.admins || [])
@@ -253,7 +253,7 @@ const AdminUsersPage = () => {
   }
 
   const handleCreate = async () => {
-    if (!token || createLoading || !canManageUsers) return
+    if (!token || createLoading || !canEditUsers) return
 
     // Erro proprio do formulario: o banner do topo da pagina fica acima da
     // dobra quando se esta preenchendo o card, e a recusa do servidor acabava
@@ -323,7 +323,7 @@ const AdminUsersPage = () => {
 
       if (response.status === 402) {
         const checkoutUrl = String(payload?.billing?.stripe?.checkoutUrl || '').trim()
-        if (checkoutUrl) {
+        if (checkoutUrl && canManageUsers) {
           setNotice(
             t(
               'Redirecting to additional seats checkout...',
@@ -336,7 +336,7 @@ const AdminUsersPage = () => {
 
         throw new Error(
           translateApiMessage(
-            payload.message ||
+            (canManageUsers && payload.message) ||
             t(
               'Seat limit exceeded for creating a new user.',
               'Limite de cadeiras excedido para criacao de novo usuario.'
@@ -369,7 +369,7 @@ const AdminUsersPage = () => {
   }
 
   const handleGenerateInviteLink = async () => {
-    if (!token || inviteLoading || !canManageUsers) return
+    if (!token || inviteLoading || !canEditUsers) return
 
     setInviteError('')
     setInviteNotice('')
@@ -417,7 +417,7 @@ const AdminUsersPage = () => {
 
       if (!response.ok) {
         const purchaseUrl = String(payload?.purchase?.url || '').trim()
-        if (purchaseUrl) {
+        if (purchaseUrl && canManageUsers) {
           setInvitePurchaseUrl(purchaseUrl)
         }
 
@@ -658,10 +658,10 @@ const AdminUsersPage = () => {
     <section className="grid gap-6">
       <div className="rounded-3xl border border-white/80 bg-white/80 p-8 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.55)] backdrop-blur">
         <p className="text-xs uppercase tracking-[0.35em] text-teal-700">{t('Admin', 'Admin')}</p>
-        <h2 className="mt-4 text-3xl font-semibold text-slate-900">{isIntegrator ? t('Users', 'Usuarios') : t('Users and seats', 'Usuarios e assentos')}</h2>
+        <h2 className="mt-4 text-3xl font-semibold text-slate-900">{t('Users and seats', 'Usuarios e assentos')}</h2>
         <p className="mt-3 text-sm text-slate-600">
           {isIntegrator
-            ? t('Edit the name, email, role and supervisor of team users.', 'Edite nome, email, cargo e supervisor dos usuarios do time.')
+            ? t('Create, invite and edit team users, with visibility into free seats.', 'Crie, convide e edite usuarios do time, com visibilidade de cadeiras livres.')
             : t(
                 'Create, deactivate and remove team users, with visibility into free seats and deactivated users.',
                 'Crie, desative e remova usuarios do time, com visibilidade de cadeiras livres e usuarios desativados.'
@@ -672,7 +672,6 @@ const AdminUsersPage = () => {
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">{error}</div> : null}
       {notice ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-700">{notice}</div> : null}
 
-      {!isIntegrator ? (
       <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-lg font-semibold text-slate-900">{t('Seat summary', 'Resumo de cadeiras')}</h3>
@@ -753,9 +752,8 @@ const AdminUsersPage = () => {
           <p className="mt-3 text-sm text-slate-500">{t('No seat data to display.', 'Sem dados de assentos para exibir.')}</p>
         )}
       </div>
-      ) : null}
 
-      {canManageUsers ? (
+      {canEditUsers ? (
         <div className="grid gap-6 lg:grid-cols-2">
           <div className="rounded-3xl border border-slate-100 bg-white/90 p-6 shadow-sm">
             <h3 className="text-lg font-semibold text-slate-900">{t('Create user', 'Criar usuario')}</h3>
@@ -796,7 +794,7 @@ const AdminUsersPage = () => {
                   <option value="MEMBER">MEMBER</option>
                   <option value="SUPERVISOR">SUPERVISOR</option>
                   <option value="HR">HR</option>
-                  <option value="INTEGRATOR">Integrator</option>
+                  {canManageUsers ? <option value="INTEGRATOR">Integrator</option> : null}
                 </select>
 
                 <select
@@ -845,7 +843,7 @@ const AdminUsersPage = () => {
                   <option value="MEMBER">MEMBER</option>
                   <option value="SUPERVISOR">SUPERVISOR</option>
                   <option value="HR">HR</option>
-                  <option value="INTEGRATOR">Integrator</option>
+                  {canManageUsers ? <option value="INTEGRATOR">Integrator</option> : null}
                 </select>
 
                 <input
