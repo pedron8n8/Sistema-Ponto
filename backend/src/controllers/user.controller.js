@@ -2477,10 +2477,11 @@ const updateMyAccount = async (req, res) => {
  */
 const createMyTeamInviteLink = async (req, res) => {
   try {
-    if (req.user.role !== 'ADMIN') {
+    const actorIsAdmin = req.user.role === 'ADMIN';
+    if (!actorIsAdmin && req.user.role !== 'INTEGRATOR') {
       return res.status(403).json({
         error: 'Forbidden',
-        message: 'Apenas ADMIN pode gerar convite de equipe.',
+        message: 'Apenas ADMIN ou INTEGRATOR podem gerar convite de equipe.',
       });
     }
 
@@ -2494,8 +2495,23 @@ const createMyTeamInviteLink = async (req, res) => {
       });
     }
 
+    if (!actorIsAdmin && !manageableRolesFor(req.user.role).includes(normalizedRole)) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: `Você só pode convidar usuários com papel: ${manageableRolesFor(req.user.role).join(', ')}`,
+      });
+    }
+
+    const ownerAdminId = actorIsAdmin ? req.user.id : req.user.organizationAdminId;
+    if (!ownerAdminId) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Usuário sem administrador vinculado.',
+      });
+    }
+
     const adminOwner = await prisma.user.findUnique({
-      where: { id: req.user.id },
+      where: { id: ownerAdminId },
       select: {
         id: true,
         email: true,
@@ -2522,7 +2538,7 @@ const createMyTeamInviteLink = async (req, res) => {
 
     const currentTeamSize = await prisma.user.count({
       where: {
-        organizationAdminId: req.user.id,
+        organizationAdminId: ownerAdminId,
         role: { in: TEAM_MEMBER_ROLES },
         isActive: true,
       },
@@ -2561,7 +2577,7 @@ const createMyTeamInviteLink = async (req, res) => {
     }
 
     const invite = issueTeamInviteToken({
-      adminId: req.user.id,
+      adminId: ownerAdminId,
       role: normalizedRole,
       issuedById: req.user.id,
       expiresInHours,
